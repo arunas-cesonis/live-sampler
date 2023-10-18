@@ -34,6 +34,10 @@ impl Buf {
     pub fn rewind(&mut self) {
         self.read = 0;
     }
+    pub fn seek(&mut self, pos: f32) {
+        assert!(pos >= 0.0 && pos <= 1.0);
+        self.read = ((self.data.len() as f32) * pos) as usize;
+    }
 }
 
 #[derive(Clone, Default)]
@@ -47,6 +51,9 @@ impl Bufs {
     }
     pub fn rewind(&mut self) {
         self.v.iter_mut().for_each(|b| b.rewind());
+    }
+    pub fn seek(&mut self, pos: f32) {
+        self.v.iter_mut().for_each(|b| b.seek(pos));
     }
     pub fn ensure_channel_count(&mut self, count: usize) {
         if count >= self.v.len() {
@@ -200,10 +207,12 @@ impl Plugin for LiveSampler {
                                 nih_warn!("already recording");
                             }
                         },
-                        50 => match self.state {
+                        60..=75 => match self.state {
                             State::Idle | State::Recording => {
                                 nih_warn!("start playing");
                                 self.state = State::Playing;
+                                let pos = (note - 60) as f32 / 16.0;
+                                self.buf.seek(pos);
                             }
                             State::Playing => {
                                 nih_warn!("already playing");
@@ -219,12 +228,11 @@ impl Plugin for LiveSampler {
                             State::Idle => (),
                             State::Playing => (),
                         },
-                        50 => match self.state {
+                        60..=75 => match self.state {
                             State::Recording => (),
                             State::Idle => (),
                             State::Playing => {
                                 self.state = State::Idle;
-                                self.buf.rewind();
                             }
                         },
                         _ => (),
