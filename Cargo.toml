@@ -1,0 +1,23 @@
+[package]
+name = "live-sampler"
+version = "0.1.0"
+edition = "2021"
+
+#[lib]
+#crate-type = ["cdylib"]
+
+[lib]
+name = "live_sampler"
+crate-type = ["cdylib", "lib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "cli"
+path = "src/main.rs"
+
+[dependencies.nih_plug]
+path = "../nih-plug"
+features = ["standalone", "vst3"]
+
+[dependencies.parking_lot]
+version = "0.12.1"
