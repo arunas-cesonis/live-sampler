@@ -5,6 +5,7 @@ use std::sync::Arc;
 #[derive(Clone, Default)]
 struct Buf {
     read: usize,
+    write: usize,
     data: Vec<f32>,
 }
 
@@ -12,30 +13,53 @@ impl Buf {
     pub fn new() -> Self {
         Self {
             read: 0,
+            write: 0,
             data: vec![],
         }
     }
     pub fn write(&mut self, value: f32) {
-        self.data.push(value);
+        assert!(self.write <= self.data.len());
+        if self.write == self.data.len() {
+            self.data.push(value);
+        } else {
+            self.data[self.write] = value;
+        }
+        self.write += 1;
     }
-    pub fn read(&mut self) -> f32 {
+    pub fn read(&mut self, reverse: bool) -> f32 {
         if self.data.is_empty() {
             0.0
         } else {
             let i = self.read % self.data.len();
-            self.read += 1;
+            self.read = if reverse {
+                if self.read == 0 {
+                    self.data.len()
+                } else {
+                    self.read - 1
+                }
+            } else {
+                self.read + 1
+            };
             self.data[i]
         }
+    }
+    pub fn rewind_write(&mut self) {
+        self.write = 0;
     }
     pub fn clear(&mut self) {
         self.data.clear();
         self.read = 0;
+        self.write = 0;
     }
-    pub fn rewind(&mut self) {
+    pub fn rewind_read(&mut self) {
         self.read = 0;
     }
     pub fn seek(&mut self, pos: f32) {
-        assert!(pos >= 0.0 && pos <= 1.0);
+        assert!(
+            pos >= 0.0 && pos <= 1.0,
+            "pos is not in range 0.0 1.0: {}",
+            pos
+        );
         self.read = ((self.data.len() as f32) * pos) as usize;
     }
 }
@@ -49,8 +73,11 @@ impl Bufs {
     pub fn clear(&mut self) {
         self.v.iter_mut().for_each(|b| b.clear());
     }
-    pub fn rewind(&mut self) {
-        self.v.iter_mut().for_each(|b| b.rewind());
+    pub fn rewind_read(&mut self) {
+        self.v.iter_mut().for_each(|b| b.rewind_read());
+    }
+    pub fn rewind_write(&mut self) {
+        self.v.iter_mut().for_each(|b| b.rewind_write());
     }
     pub fn seek(&mut self, pos: f32) {
         self.v.iter_mut().for_each(|b| b.seek(pos));
@@ -63,15 +90,19 @@ impl Bufs {
     pub fn write(&mut self, channel: usize, value: f32) {
         self.v[channel].write(value);
     }
-    pub fn read(&mut self, channel: usize) -> f32 {
-        self.v[channel].read()
+    pub fn read(&mut self, channel: usize, reverse: bool) -> f32 {
+        self.v[channel].read(reverse)
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Playing {
+    reverse: bool,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum State {
     Idle,
-    Playing,
+    Playing(Playing),
     Recording,
 }
 
@@ -190,7 +221,7 @@ impl Plugin for LiveSampler {
             let gain = self.params.gain.smoothed.next();
 
             while let Some(event) = next_event {
-                if (event.timing() != sample_id as u32) {
+                if event.timing() != sample_id as u32 {
                     //nih_warn!("discard sample_id={} event={:?}", sample_id, event);
                     break;
                 }
@@ -198,8 +229,8 @@ impl Plugin for LiveSampler {
                 match event {
                     NoteEvent::NoteOn { note, .. } => match note {
                         48 => match self.state {
-                            State::Idle | State::Playing => {
-                                self.buf.clear();
+                            State::Idle | State::Playing { .. } => {
+                                self.buf.rewind_write();
                                 self.state = State::Recording;
                                 nih_warn!("start recording");
                             }
@@ -210,11 +241,22 @@ impl Plugin for LiveSampler {
                         60..=75 => match self.state {
                             State::Idle | State::Recording => {
                                 nih_warn!("start playing");
-                                self.state = State::Playing;
+                                self.state = State::Playing(Playing { reverse: false });
                                 let pos = (note - 60) as f32 / 16.0;
                                 self.buf.seek(pos);
                             }
-                            State::Playing => {
+                            State::Playing { .. } => {
+                                nih_warn!("already playing");
+                            }
+                        },
+                        84..=91 => match self.state {
+                            State::Idle | State::Recording => {
+                                nih_warn!("start playing");
+                                self.state = State::Playing(Playing { reverse: true });
+                                let pos = (note - 84) as f32 / 16.0;
+                                self.buf.seek(pos);
+                            }
+                            State::Playing { .. } => {
                                 nih_warn!("already playing");
                             }
                         },
@@ -226,12 +268,12 @@ impl Plugin for LiveSampler {
                                 self.state = State::Idle;
                             }
                             State::Idle => (),
-                            State::Playing => (),
+                            State::Playing { .. } => (),
                         },
                         60..=75 => match self.state {
                             State::Recording => (),
                             State::Idle => (),
-                            State::Playing => {
+                            State::Playing { .. } => {
                                 self.state = State::Idle;
                             }
                         },
@@ -245,9 +287,9 @@ impl Plugin for LiveSampler {
             }
 
             match self.state {
-                State::Playing => {
+                State::Playing(Playing { reverse }) => {
                     for (channel, sample) in channel_samples.iter_mut().enumerate() {
-                        *sample = self.buf.read(channel);
+                        *sample = self.buf.read(channel, reverse);
                     }
                 }
                 State::Recording => {
