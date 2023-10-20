@@ -110,6 +110,7 @@ struct Playing {
 struct State {
     recording: bool,
     playing: Option<Playing>,
+    pass_thru: bool,
 }
 pub struct LiveSampler {
     params: Arc<LiveSamplerParams>,
@@ -158,13 +159,33 @@ impl Default for LiveSampler {
 }
 
 impl LiveSampler {
-    fn toggle_reverse(&mut self) {
-        if let Some(Playing { reverse }) = &mut self.state.playing {
-            let new_reverse = !*reverse;
-            nih_warn!("toggle_reverse(): {} -> {}", *reverse, new_reverse);
-            *reverse = new_reverse;
+    fn toggle_pass_thru(&mut self, new_pass_thru: bool) {
+        if new_pass_thru != self.state.pass_thru {
+            let mut pass_thru = &mut self.state.pass_thru;
+            nih_warn!(
+                "toggle_pass_thru({new_pass_thru}): {} -> {}",
+                *pass_thru,
+                new_pass_thru
+            );
+            *pass_thru = new_pass_thru;
         } else {
-            nih_warn!("toggle_reverse(): not playing")
+            nih_warn!("toggle_pass_thru({new_pass_thru}): already {new_pass_thru}");
+        }
+    }
+    fn toggle_reverse(&mut self, new_reverse: bool) {
+        if let Some(Playing { reverse }) = &mut self.state.playing {
+            if new_reverse != *reverse {
+                nih_warn!(
+                    "toggle_reverse({new_reverse}): {} -> {}",
+                    *reverse,
+                    new_reverse
+                );
+                *reverse = new_reverse;
+            } else {
+                nih_warn!("toggle_reverse({new_reverse}): already {new_reverse}");
+            }
+        } else {
+            nih_warn!("toggle_reverse({new_reverse}): not playing");
         }
     }
     fn start_playing(&mut self, pos: f32, reverse: bool) {
@@ -255,8 +276,7 @@ impl Plugin for LiveSampler {
 
     fn reset(&mut self) {
         self.buf.clear();
-        self.state.playing = None;
-        self.state.recording = false;
+        self.state = State::default();
         nih_warn!("reset: sample_rate: {}", self.sample_rate);
     }
 
@@ -284,11 +304,14 @@ impl Plugin for LiveSampler {
                 nih_warn!("sample_id={} event={:?}", sample_id, event);
                 match event {
                     NoteEvent::NoteOn { note, .. } => match note {
+                        47 => {
+                            self.toggle_pass_thru(true);
+                        }
                         48 => {
                             self.start_recording();
                         }
                         49 => {
-                            self.toggle_reverse();
+                            self.toggle_reverse(true);
                         }
                         60..=75 => {
                             let pos = (note - 60) as f32 / 16.0;
@@ -297,10 +320,15 @@ impl Plugin for LiveSampler {
                         _ => (),
                     },
                     NoteEvent::NoteOff { note, .. } => match note {
+                        47 => {
+                            self.toggle_pass_thru(false);
+                        }
                         48 => {
                             self.stop_recording();
                         }
-                        49 => self.toggle_reverse(),
+                        49 => {
+                            self.toggle_reverse(false);
+                        }
                         60..=75 => {
                             self.stop_playing();
                         }
@@ -314,13 +342,18 @@ impl Plugin for LiveSampler {
             }
 
             for (channel, sample) in channel_samples.iter_mut().enumerate() {
+                let value = *sample;
                 if self.state.recording {
-                    self.buf.write(channel, *sample);
+                    self.buf.write(channel, value);
                 }
                 *sample = if let Some(Playing { reverse }) = self.state.playing {
                     self.buf.read(channel, reverse)
                 } else {
-                    0.0
+                    if self.state.pass_thru {
+                        value
+                    } else {
+                        0.0
+                    }
                 };
             }
         }
