@@ -158,6 +158,15 @@ impl Default for LiveSampler {
 }
 
 impl LiveSampler {
+    fn toggle_reverse(&mut self) {
+        if let Some(Playing { reverse }) = &mut self.state.playing {
+            let new_reverse = !*reverse;
+            nih_warn!("toggle_reverse(): {} -> {}", *reverse, new_reverse);
+            *reverse = new_reverse;
+        } else {
+            nih_warn!("toggle_reverse(): not playing")
+        }
+    }
     fn start_playing(&mut self, pos: f32, reverse: bool) {
         if self.state.playing.is_none() {
             self.buf.seek(pos);
@@ -272,16 +281,18 @@ impl Plugin for LiveSampler {
                     break;
                 }
                 //nih_warn!("USE sample_id={} event={:?}", sample_id, event);
+                nih_warn!("sample_id={} event={:?}", sample_id, event);
                 match event {
                     NoteEvent::NoteOn { note, .. } => match note {
-                        48 => self.start_recording(),
+                        48 => {
+                            self.start_recording();
+                        }
+                        49 => {
+                            self.toggle_reverse();
+                        }
                         60..=75 => {
                             let pos = (note - 60) as f32 / 16.0;
                             self.start_playing(pos, false);
-                        }
-                        84..=91 => {
-                            let pos = (note - 84) as f32 / 16.0;
-                            self.start_playing(1.0 - pos, true);
                         }
                         _ => (),
                     },
@@ -289,10 +300,8 @@ impl Plugin for LiveSampler {
                         48 => {
                             self.stop_recording();
                         }
+                        49 => self.toggle_reverse(),
                         60..=75 => {
-                            self.stop_playing();
-                        }
-                        84..=91 => {
                             self.stop_playing();
                         }
                         _ => (),
