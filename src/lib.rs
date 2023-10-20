@@ -99,13 +99,12 @@ impl Bufs {
 struct Playing {
     reverse: bool,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum State {
-    Idle,
-    Playing(Playing),
-    Recording,
-}
 
+#[derive(Clone, Default, Debug, Eq, PartialEq)]
+struct State {
+    recording: bool,
+    playing: Option<Playing>,
+}
 pub struct LiveSampler {
     params: Arc<LiveSamplerParams>,
     sample_rate: f32,
@@ -147,7 +146,47 @@ impl Default for LiveSampler {
             sample_rate: -1.0,
             count: 0,
             buf: Bufs::default(),
-            state: State::Idle,
+            state: State::default(),
+        }
+    }
+}
+
+impl LiveSampler {
+    fn start_playing(&mut self, pos: f32, reverse: bool) {
+        if self.state.playing.is_none() {
+            self.buf.seek(pos);
+            self.state.playing = Some(Playing { reverse });
+            nih_warn!("start_playing({pos}): ok")
+        } else {
+            nih_warn!("start_playing({pos}): already playing")
+        }
+    }
+
+    fn start_recording(&mut self) {
+        if !self.state.recording {
+            self.buf.rewind_write();
+            self.state.recording = true;
+            nih_warn!("start_recording(): ok");
+        } else {
+            nih_warn!("start_recording(): already recording");
+        }
+    }
+
+    fn stop_recording(&mut self) {
+        if self.state.recording {
+            self.state.recording = false;
+            nih_warn!("stop_recording(): ok");
+        } else {
+            nih_warn!("start_recording(): recording has not been started");
+        }
+    }
+
+    fn stop_playing(&mut self) {
+        if self.state.playing.is_some() {
+            self.state.playing = None;
+            nih_warn!("stop_playing(): ok");
+        } else {
+            nih_warn!("stop_playing(): playing has not been started");
         }
     }
 }
@@ -179,10 +218,10 @@ impl Plugin for LiveSampler {
             ..AudioIOLayout::const_default()
         },
     ];
-    type SysExMessage = ();
-    type BackgroundTask = ();
-
     const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
+    type SysExMessage = ();
+
+    type BackgroundTask = ();
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
@@ -201,7 +240,8 @@ impl Plugin for LiveSampler {
 
     fn reset(&mut self) {
         self.buf.clear();
-        self.state = State::Idle;
+        self.state.playing = None;
+        self.state.recording = false;
         nih_warn!("reset: sample_rate: {}", self.sample_rate);
     }
 
@@ -214,7 +254,7 @@ impl Plugin for LiveSampler {
         let channels = buffer.channels();
         self.buf.ensure_channel_count(channels);
         let mut next_event = context.next_event();
-        let prev_state = self.state;
+        let prev_state = self.state.clone();
         self.count += 1;
         for (sample_id, mut channel_samples) in buffer.iter_samples().enumerate() {
             // Smoothing is optionally built into the parameters themselves
@@ -228,55 +268,27 @@ impl Plugin for LiveSampler {
                 //nih_warn!("USE sample_id={} event={:?}", sample_id, event);
                 match event {
                     NoteEvent::NoteOn { note, .. } => match note {
-                        48 => match self.state {
-                            State::Idle | State::Playing { .. } => {
-                                self.buf.rewind_write();
-                                self.state = State::Recording;
-                                nih_warn!("start recording");
-                            }
-                            State::Recording => {
-                                nih_warn!("already recording");
-                            }
-                        },
-                        60..=75 => match self.state {
-                            State::Idle | State::Recording => {
-                                nih_warn!("start playing");
-                                self.state = State::Playing(Playing { reverse: false });
-                                let pos = (note - 60) as f32 / 16.0;
-                                self.buf.seek(pos);
-                            }
-                            State::Playing { .. } => {
-                                nih_warn!("already playing");
-                            }
-                        },
-                        84..=91 => match self.state {
-                            State::Idle | State::Recording => {
-                                nih_warn!("start playing");
-                                self.state = State::Playing(Playing { reverse: true });
-                                let pos = (note - 84) as f32 / 16.0;
-                                self.buf.seek(pos);
-                            }
-                            State::Playing { .. } => {
-                                nih_warn!("already playing");
-                            }
-                        },
+                        48 => self.start_recording(),
+                        60..=75 => {
+                            let pos = (note - 60) as f32 / 16.0;
+                            self.start_playing(pos, false);
+                        }
+                        84..=91 => {
+                            let pos = (note - 84) as f32 / 16.0;
+                            self.start_playing(pos, true);
+                        }
                         _ => (),
                     },
                     NoteEvent::NoteOff { note, .. } => match note {
-                        48 => match self.state {
-                            State::Recording => {
-                                self.state = State::Idle;
-                            }
-                            State::Idle => (),
-                            State::Playing { .. } => (),
-                        },
-                        60..=75 => match self.state {
-                            State::Recording => (),
-                            State::Idle => (),
-                            State::Playing { .. } => {
-                                self.state = State::Idle;
-                            }
-                        },
+                        48 => {
+                            self.stop_recording();
+                        }
+                        60..=75 => {
+                            self.stop_playing();
+                        }
+                        84..=91 => {
+                            self.stop_playing();
+                        }
                         _ => (),
                     },
                     _ => {
@@ -286,23 +298,15 @@ impl Plugin for LiveSampler {
                 next_event = context.next_event();
             }
 
-            match self.state {
-                State::Playing(Playing { reverse }) => {
-                    for (channel, sample) in channel_samples.iter_mut().enumerate() {
-                        *sample = self.buf.read(channel, reverse);
-                    }
+            for (channel, sample) in channel_samples.iter_mut().enumerate() {
+                if self.state.recording {
+                    self.buf.write(channel, *sample);
                 }
-                State::Recording => {
-                    for (channel, sample) in channel_samples.iter_mut().enumerate() {
-                        self.buf.write(channel, *sample);
-                        *sample = 0.0;
-                    }
-                }
-                State::Idle => {
-                    for (channel, sample) in channel_samples.iter_mut().enumerate() {
-                        *sample = 0.0;
-                    }
-                }
+                *sample = if let Some(Playing { reverse }) = self.state.playing {
+                    self.buf.read(channel, reverse)
+                } else {
+                    0.0
+                };
             }
         }
 
