@@ -61,6 +61,12 @@ impl Buf {
             pos
         );
         self.read = ((self.data.len() as f32) * pos) as usize;
+        nih_warn!(
+            "seek: pos={} self.read={} self.data.len()={}",
+            pos,
+            self.read,
+            self.data.len()
+        );
     }
 }
 
@@ -275,7 +281,7 @@ impl Plugin for LiveSampler {
                         }
                         84..=91 => {
                             let pos = (note - 84) as f32 / 16.0;
-                            self.start_playing(pos, true);
+                            self.start_playing(1.0 - pos, true);
                         }
                         _ => (),
                     },
