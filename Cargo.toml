@@ -19,8 +19,15 @@ path = "src/main.rs"
 path = "../nih-plug"
 features = ["standalone", "vst3"]
 
+[dependencies.crossbeam-channel]
+version = "0.5.8"
+
+[dependencies.crossbeam-queue]
+version = "0.3.8"
+
 [dependencies.dasp]
 version = "0.11.0"
+features = ["signal", "signal-bus", "interpolate-sinc",  "interpolate", "ring_buffer"]
 
 [dependencies.parking_lot]
 version = "0.12.1"

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 #[derive(Clone, Default)]
 struct Buf {
-    read: usize,
+    read: f32,
     write: usize,
     data: Vec<f32>,
 }
@@ -12,7 +12,7 @@ struct Buf {
 impl Buf {
     pub fn new() -> Self {
         Self {
-            read: 0,
+            read: 0.0,
             write: 0,
             data: vec![],
         }
@@ -26,33 +26,36 @@ impl Buf {
         }
         self.write += 1;
     }
-    pub fn read(&mut self, reverse: bool) -> f32 {
+
+    pub fn calc_sample_pos(&self) -> usize {
+        let lenf = (self.data.len() as f32);
+        let i = self.read % lenf;
+        let i = if i < 0.0 { i + lenf } else { i };
+        let i = i as usize;
+        i
+    }
+
+    pub fn read(&mut self, speed: f32) -> f32 {
         if self.data.is_empty() {
             0.0
         } else {
-            let i = self.read % self.data.len();
-            self.read = if reverse {
-                if self.read == 0 {
-                    self.data.len()
-                } else {
-                    self.read - 1
-                }
-            } else {
-                self.read + 1
-            };
+            let i = self.calc_sample_pos();
+            self.read += speed;
             self.data[i]
         }
     }
+
     pub fn rewind_write(&mut self) {
         self.write = 0;
     }
+
     pub fn clear(&mut self) {
         self.data.clear();
-        self.read = 0;
+        self.read = 0.0;
         self.write = 0;
     }
     pub fn rewind_read(&mut self) {
-        self.read = 0;
+        self.read = 0.0;
     }
     pub fn seek(&mut self, pos: f32) {
         assert!(
@@ -60,7 +63,7 @@ impl Buf {
             "pos is not in range 0.0 1.0: {}",
             pos
         );
-        self.read = ((self.data.len() as f32) * pos) as usize;
+        self.read = ((self.data.len() as f32) * pos);
         nih_warn!(
             "seek: pos={} self.read={} self.data.len()={}",
             pos,
@@ -85,6 +88,9 @@ impl Bufs {
     pub fn rewind_write(&mut self) {
         self.v.iter_mut().for_each(|b| b.rewind_write());
     }
+    pub fn calc_sample_pos(&self) -> usize {
+        self.v[0].calc_sample_pos()
+    }
     pub fn seek(&mut self, pos: f32) {
         self.v.iter_mut().for_each(|b| b.seek(pos));
     }
@@ -96,17 +102,17 @@ impl Bufs {
     pub fn write(&mut self, channel: usize, value: f32) {
         self.v[channel].write(value);
     }
-    pub fn read(&mut self, channel: usize, reverse: bool) -> f32 {
-        self.v[channel].read(reverse)
+    pub fn read(&mut self, channel: usize, speed: f32) -> f32 {
+        self.v[channel].read(speed)
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct Playing {
-    reverse: bool,
+    speed: f32,
 }
 
-#[derive(Clone, Default, Debug, Eq, PartialEq)]
+#[derive(Clone, Default, Debug, PartialEq)]
 struct State {
     recording: bool,
     playing: Option<Playing>,
@@ -173,14 +179,15 @@ impl LiveSampler {
         }
     }
     fn toggle_reverse(&mut self, new_reverse: bool) {
-        if let Some(Playing { reverse }) = &mut self.state.playing {
-            if new_reverse != *reverse {
+        if let Some(Playing { speed, .. }) = &mut self.state.playing {
+            let old_reverse = *speed < 0.0;
+            if new_reverse != old_reverse {
                 nih_warn!(
                     "toggle_reverse({new_reverse}): {} -> {}",
-                    *reverse,
+                    old_reverse,
                     new_reverse
                 );
-                *reverse = new_reverse;
+                *speed = -1.0 * *speed;
             } else {
                 nih_warn!("toggle_reverse({new_reverse}): already {new_reverse}");
             }
@@ -188,10 +195,10 @@ impl LiveSampler {
             nih_warn!("toggle_reverse({new_reverse}): not playing");
         }
     }
-    fn start_playing(&mut self, pos: f32, reverse: bool) {
+    fn start_playing(&mut self, pos: f32, speed: f32) {
         if self.state.playing.is_none() {
             self.buf.seek(pos);
-            self.state.playing = Some(Playing { reverse });
+            self.state.playing = Some(Playing { speed });
             nih_warn!("start_playing({pos}): ok")
         } else {
             nih_warn!("start_playing({pos}): already playing")
@@ -219,8 +226,8 @@ impl LiveSampler {
 
     fn stop_playing(&mut self) {
         if self.state.playing.is_some() {
-            self.state.playing = None;
             nih_warn!("stop_playing(): ok");
+            self.state.playing = None;
         } else {
             nih_warn!("stop_playing(): playing has not been started");
         }
@@ -315,7 +322,7 @@ impl Plugin for LiveSampler {
                         }
                         60..=75 => {
                             let pos = (note - 60) as f32 / 16.0;
-                            self.start_playing(pos, false);
+                            self.start_playing(pos, 1.0);
                         }
                         _ => (),
                     },
@@ -346,8 +353,9 @@ impl Plugin for LiveSampler {
                 if self.state.recording {
                     self.buf.write(channel, value);
                 }
-                *sample = if let Some(Playing { reverse }) = self.state.playing {
-                    self.buf.read(channel, reverse)
+                *sample = if let Some(Playing { speed }) = &mut self.state.playing {
+                    let value = self.buf.read(channel, *speed);
+                    value
                 } else {
                     if self.state.pass_thru {
                         value
