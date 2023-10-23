@@ -28,9 +28,9 @@ impl Buf {
     }
 
     pub fn calc_sample_pos(&self) -> usize {
-        let lenf = (self.data.len() as f32);
-        let i = self.read % lenf;
-        let i = if i < 0.0 { i + lenf } else { i };
+        let len_f32 = (self.data.len() as f32);
+        let i = self.read % len_f32;
+        let i = if i < 0.0 { i + len_f32 } else { i };
         let i = i as usize;
         i
     }
@@ -130,13 +130,26 @@ pub struct LiveSampler {
 struct LiveSamplerParams {
     #[id = "gain"]
     pub gain: FloatParam,
+    #[id = "speed"]
+    pub speed: FloatParam,
 }
 
 impl Default for LiveSamplerParams {
     fn default() -> Self {
         Self {
+            speed: FloatParam::new(
+                "Speed",
+                1.0,
+                FloatRange::Linear {
+                    min: 0.125,
+                    max: 1.0,
+                },
+            ),
+            //with_smoother(SmoothingStyle::Logarithmic(50.0))
+            //.with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            //.with_string_to_value(formatters::s2v_f32_gain_to_db()),
             gain: FloatParam::new(
-                "Gain 2",
+                "Gain",
                 util::db_to_gain(0.0),
                 FloatRange::Skewed {
                     min: util::db_to_gain(-30.0),
@@ -298,6 +311,9 @@ impl Plugin for LiveSampler {
         let mut next_event = context.next_event();
         let prev_state = self.state.clone();
         self.count += 1;
+
+        let params_speed = self.params.speed.smoothed.next();
+        let params_gain = self.params.gain.smoothed.next();
         for (sample_id, mut channel_samples) in buffer.iter_samples().enumerate() {
             // Smoothing is optionally built into the parameters themselves
             let gain = self.params.gain.smoothed.next();
@@ -353,8 +369,8 @@ impl Plugin for LiveSampler {
                 if self.state.recording {
                     self.buf.write(channel, value);
                 }
-                *sample = if let Some(Playing { speed }) = &mut self.state.playing {
-                    let value = self.buf.read(channel, *speed);
+                let new_sample = if let Some(Playing { speed }) = &mut self.state.playing {
+                    let value = self.buf.read(channel, *speed * params_speed);
                     value
                 } else {
                     if self.state.pass_thru {
@@ -363,10 +379,12 @@ impl Plugin for LiveSampler {
                         0.0
                     }
                 };
+                *sample = new_sample * gain;
             }
         }
 
         if self.state != prev_state {
+            nih_warn!("params.speed = {}", params_speed);
             nih_warn!("state {:?} <- {:?}", self.state, prev_state);
         }
 
