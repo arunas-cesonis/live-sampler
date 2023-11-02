@@ -27,7 +27,7 @@ version = "0.3.8"
 
 [dependencies.dasp]
 version = "0.11.0"
-features = ["signal", "signal-bus", "interpolate-sinc",  "interpolate", "ring_buffer"]
+features = ["signal", "signal-bus", "interpolate-sinc",  "interpolate", "ring_buffer", "interpolate-linear", "interpolate-floor"]
 
 [dependencies.parking_lot]
 version = "0.12.1"
