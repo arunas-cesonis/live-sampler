@@ -54,14 +54,21 @@ impl Buf {
         self.write = 0;
     }
 
+    pub fn truncate_written(&mut self) {
+        self.data.truncate(self.write);
+        self.write = 0;
+    }
+
     pub fn clear(&mut self) {
         self.data.clear();
         self.read = 0.0;
         self.write = 0;
     }
+
     pub fn rewind_read(&mut self) {
         self.read = 0.0;
     }
+
     pub fn seek(&mut self, pos: f32) {
         assert!(
             pos >= 0.0 && pos <= 1.0,
@@ -97,6 +104,13 @@ impl Bufs {
     }
     pub fn rewind_write(&mut self) {
         self.v.iter_mut().for_each(|b| b.rewind_write());
+    }
+    #[cfg(debug_assertions)]
+    pub fn check_write_positiosn_at_zero(&self) {
+        assert!(self.v.iter().all(|b| b.write == 0))
+    }
+    pub fn truncate_written(&mut self) {
+        self.v.iter_mut().for_each(|b| b.truncate_written());
     }
     pub fn calc_sample_pos(&self) -> usize {
         self.v[0].calc_sample_pos()
@@ -235,7 +249,9 @@ impl LiveSampler {
 
     fn start_recording(&mut self) {
         if !self.state.recording {
-            self.buf.rewind_write();
+            // self.buf.rewind_write();
+            #[cfg(debug_assertions)]
+            self.buf.check_write_positiosn_at_zero();
             self.state.recording = true;
             //nih_warn!("start_recording(): ok");
         } else {
@@ -245,7 +261,10 @@ impl LiveSampler {
 
     fn stop_recording(&mut self) {
         if self.state.recording {
+            // Vec::drain
+            self.buf.truncate_written();
             self.state.recording = false;
+
             //nih_warn!("stop_recording(): ok");
         } else {
             //nih_warn!("start_recording(): recording has not been started");
@@ -261,6 +280,7 @@ impl LiveSampler {
         }
     }
 
+    #[cfg(debug_assertions)]
     fn dump_state(&self) {
         nih_warn!("now      : {:?}", self.now);
         nih_warn!("playing  : {:?}", &self.state.playing.is_some());
@@ -326,6 +346,7 @@ impl Plugin for LiveSampler {
         self.buf = Bufs::new(channel_count);
         self.now = vec![0; channel_count];
         nih_warn!("initialize");
+        #[cfg(debug_assertions)]
         self.dump_state();
         true
     }
@@ -334,6 +355,7 @@ impl Plugin for LiveSampler {
         self.buf.clear();
         self.state = State::default();
         nih_warn!("reset");
+        #[cfg(debug_assertions)]
         self.dump_state();
     }
 
@@ -419,6 +441,7 @@ impl Plugin for LiveSampler {
             }
         }
 
+        #[cfg(debug_assertions)]
         if self.state != prev_state {
             self.dump_state();
         }
