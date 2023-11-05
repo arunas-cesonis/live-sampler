@@ -1,5 +1,4 @@
 #![allow(unused)]
-
 mod volume_env;
 
 use crate::volume_env::VolumeEnv;
@@ -96,6 +95,9 @@ impl Bufs {
             v: vec![Buf::new(); channel_count],
         }
     }
+    pub fn len(&self) -> usize {
+        self.v.len()
+    }
     pub fn clear(&mut self) {
         self.v.iter_mut().for_each(|b| b.clear());
     }
@@ -106,7 +108,7 @@ impl Bufs {
         self.v.iter_mut().for_each(|b| b.rewind_write());
     }
     #[cfg(debug_assertions)]
-    pub fn check_write_positiosn_at_zero(&self) {
+    pub fn check_write_positions_at_zero(&self) {
         assert!(self.v.iter().all(|b| b.write == 0))
     }
     pub fn truncate_written(&mut self) {
@@ -140,13 +142,14 @@ struct Playing {
 struct State {
     recording: bool,
     playing: Option<Playing>,
-    pass_thru: bool,
+    passthru: bool,
 }
 pub struct LiveSampler {
     params: Arc<LiveSamplerParams>,
     sample_rate: f32,
     buf: Bufs,
     volume: Vec<VolumeEnv>,
+    passthru_volume: Vec<VolumeEnv>,
     now: Vec<usize>,
     state: State,
 }
@@ -155,16 +158,18 @@ pub struct LiveSampler {
 struct LiveSamplerParams {
     #[id = "gain"]
     pub gain: FloatParam,
-    #[id = "pass_thru"]
-    pub pass_thru: BoolParam,
+    #[id = "passthru"]
+    pub passthru: BoolParam,
     #[id = "speed"]
     pub speed: FloatParam,
+    #[id = "fade time"]
+    pub fade_time: FloatParam,
 }
 
 impl Default for LiveSamplerParams {
     fn default() -> Self {
         Self {
-            pass_thru: BoolParam::new("Pass through", true),
+            passthru: BoolParam::new("Pass through", true),
             gain: FloatParam::new(
                 "Gain",
                 util::db_to_gain(0.0),
@@ -186,9 +191,17 @@ impl Default for LiveSamplerParams {
                     max: 1.0,
                 },
             ),
-            //with_smoother(SmoothingStyle::Logarithmic(50.0))
-            //.with_value_to_string(formatters::v2s_f32_gain_to_db(2))
-            //.with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            fade_time: FloatParam::new(
+                "Fade time",
+                100.0,
+                FloatRange::Linear {
+                    min: 0.0,
+                    max: 1000.0,
+                },
+            )
+            .with_unit(" samples"), //with_smoother(SmoothingStyle::Logarithmic(50.0))
+                                    //.with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+                                    //.with_string_to_value(formatters::s2v_f32_gain_to_db()),
         }
     }
 }
@@ -200,6 +213,7 @@ impl Default for LiveSampler {
             sample_rate: -1.0,
             buf: Bufs::default(),
             volume: Vec::new(),
+            passthru_volume: Vec::new(),
             state: State::default(),
             now: Vec::new(),
         }
@@ -207,17 +221,17 @@ impl Default for LiveSampler {
 }
 
 impl LiveSampler {
-    fn toggle_pass_thru(&mut self, new_pass_thru: bool) {
-        if new_pass_thru != self.state.pass_thru {
-            let mut pass_thru = &mut self.state.pass_thru;
+    fn toggle_passthru(&mut self, new_passthru: bool) {
+        if new_passthru != self.state.passthru {
+            let mut passthru = &mut self.state.passthru;
             //nih_warn!(
-            //    "toggle_pass_thru({new_pass_thru}): {} -> {}",
-            //    *pass_thru,
-            //    new_pass_thru
+            //    "toggle_passthru({new_passthru}): {} -> {}",
+            //    *passthru,
+            //    new_passthru
             //);
-            *pass_thru = new_pass_thru;
+            *passthru = new_passthru;
         } else {
-            //nih_warn!("toggle_pass_thru({new_pass_thru}): already {new_pass_thru}");
+            //nih_warn!("toggle_passthru({new_passthru}): already {new_passthru}");
         }
     }
     fn toggle_reverse(&mut self, new_reverse: bool) {
@@ -239,19 +253,44 @@ impl LiveSampler {
     }
     fn start_playing(&mut self, pos: f32, speed: f32) {
         if self.state.playing.is_none() {
+            nih_warn!("*********** START **************");
+            nih_warn!(
+                "volume: {:?}",
+                self.volume
+                    .iter()
+                    .enumerate()
+                    .map(|(ch, v)| v.value(self.now[ch]))
+                    .collect::<Vec<_>>()
+            );
+            nih_warn!(
+                "volume passthru: {:?}",
+                self.passthru_volume
+                    .iter()
+                    .enumerate()
+                    .map(|(ch, v)| v.value(self.now[ch]))
+                    .collect::<Vec<_>>()
+            );
             self.buf.seek(pos);
             self.state.playing = Some(Playing { speed });
+
+            self.fade(1.0);
+            self.fade_passthru(0.0);
+
             //nih_warn!("start_playing({pos}): ok")
         } else {
             //nih_warn!("start_playing({pos}): already playing")
         }
     }
 
+    fn passthru_active(&self) -> bool {
+        self.state.passthru || self.params.passthru.value()
+    }
+
     fn start_recording(&mut self) {
         if !self.state.recording {
             // self.buf.rewind_write();
             #[cfg(debug_assertions)]
-            self.buf.check_write_positiosn_at_zero();
+            self.buf.check_write_positions_at_zero();
             self.state.recording = true;
             //nih_warn!("start_recording(): ok");
         } else {
@@ -271,10 +310,51 @@ impl LiveSampler {
         }
     }
 
+    fn fade(&mut self, target: f32) {
+        for (channel, env) in self.volume.iter_mut().enumerate() {
+            env.retrigger(
+                self.now[channel],
+                self.now[channel],
+                self.params.fade_time.value() as usize,
+                target,
+            );
+        }
+    }
+
+    fn fade_passthru(&mut self, target: f32) {
+        for (channel, env) in self.passthru_volume.iter_mut().enumerate() {
+            env.retrigger(
+                self.now[channel],
+                self.now[channel],
+                self.params.fade_time.value() as usize,
+                target,
+            );
+        }
+    }
+
     fn stop_playing(&mut self) {
         if self.state.playing.is_some() {
             //nih_warn!("stop_playing(): ok");
+            nih_warn!("*********** STOP **************");
+            nih_warn!(
+                "volume: {:?}",
+                self.volume
+                    .iter()
+                    .enumerate()
+                    .map(|(ch, v)| v.value(self.now[ch]))
+                    .collect::<Vec<_>>()
+            );
+            nih_warn!(
+                "volume passthru: {:?}",
+                self.passthru_volume
+                    .iter()
+                    .enumerate()
+                    .map(|(ch, v)| v.value(self.now[ch]))
+                    .collect::<Vec<_>>()
+            );
             self.state.playing = None;
+            self.fade(0.0);
+            self.fade_passthru(1.0);
         } else {
             //nih_warn!("stop_playing(): playing has not been started");
         }
@@ -289,7 +369,7 @@ impl LiveSampler {
             self.state.playing.as_ref().map(|p| p.speed)
         );
         nih_warn!("recording: {:?}", self.state.recording);
-        nih_warn!("pass_thru: {:?}", self.state.pass_thru);
+        nih_warn!("passthru: {:?}", self.state.passthru);
     }
 }
 
@@ -342,7 +422,8 @@ impl Plugin for LiveSampler {
             .get()
             .try_into()
             .unwrap();
-        self.volume = vec![VolumeEnv::new(1.0); channel_count];
+        self.volume = vec![VolumeEnv::new(0.0); channel_count];
+        self.passthru_volume = vec![VolumeEnv::new(1.0); channel_count];
         self.buf = Bufs::new(channel_count);
         self.now = vec![0; channel_count];
         nih_warn!("initialize");
@@ -374,7 +455,6 @@ impl Plugin for LiveSampler {
         for (sample_id, mut channel_samples) in buffer.iter_samples().enumerate() {
             // Smoothing is optionally built into the parameters themselves
             let gain = self.params.gain.smoothed.next();
-
             while let Some(event) = next_event {
                 if event.timing() != sample_id as u32 {
                     //nih_warn!("discard sample_id={} event={:?}", sample_id, event);
@@ -385,7 +465,7 @@ impl Plugin for LiveSampler {
                 match event {
                     NoteEvent::NoteOn { note, .. } => match note {
                         47 => {
-                            self.toggle_pass_thru(true);
+                            self.toggle_passthru(true);
                         }
                         48 => {
                             self.start_recording();
@@ -401,7 +481,7 @@ impl Plugin for LiveSampler {
                     },
                     NoteEvent::NoteOff { note, .. } => match note {
                         47 => {
-                            self.toggle_pass_thru(false);
+                            self.toggle_passthru(false);
                         }
                         48 => {
                             self.stop_recording();
@@ -428,10 +508,13 @@ impl Plugin for LiveSampler {
                 }
                 let new_sample = if let Some(Playing { speed }) = &mut self.state.playing {
                     let value = self.buf.read(channel, *speed * params_speed);
+                    let volume = self.volume[channel].value(self.now[channel]);
+                    let value = value * volume;
                     value
                 } else {
-                    if self.state.pass_thru || self.params.pass_thru.value() {
-                        value
+                    if self.passthru_active() {
+                        let volume = self.passthru_volume[channel].value(self.now[channel]);
+                        value * volume
                     } else {
                         0.0
                     }
