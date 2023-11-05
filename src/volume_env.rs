@@ -30,9 +30,9 @@ impl VolumeEnv {
             self.initial
         } else {
             let t = ((now - self.start) as f32 / self.duration as f32).clamp(0.0, 1.0);
-            eprintln!("t={}", t);
-            eprintln!("d={}", self.target - self.initial);
-            eprintln!("d={}", self.initial);
+            //eprintln!("t={}", t);
+            //eprintln!("d={}", self.target - self.initial);
+            //eprintln!("d={}", self.initial);
             let y = self.initial + (self.target - self.initial) * t;
             y
         }
