@@ -1,7 +1,7 @@
 #![allow(unused)]
 mod volume_env;
 
-use crate::volume_env::VolumeEnv;
+use crate::volume_env::{PolyVolumeEnv, VolumeEnv};
 use nih_plug::prelude::*;
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -75,12 +75,6 @@ impl Buf {
             pos
         );
         self.read = ((self.data.len() as f32) * pos);
-        // nih_warn!(
-        //     "seek: pos={} self.read={} self.data.len()={}",
-        //     pos,
-        //     self.read,
-        //     self.data.len()
-        // );
     }
 }
 
@@ -145,11 +139,12 @@ struct State {
     passthru: bool,
 }
 pub struct LiveSampler {
+    audio_io_layout: AudioIOLayout,
     params: Arc<LiveSamplerParams>,
     sample_rate: f32,
     buf: Bufs,
-    volume: Vec<VolumeEnv>,
-    passthru_volume: Vec<VolumeEnv>,
+    volume: PolyVolumeEnv,
+    passthru_volume: PolyVolumeEnv,
     now: Vec<usize>,
     state: State,
 }
@@ -209,11 +204,12 @@ impl Default for LiveSamplerParams {
 impl Default for LiveSampler {
     fn default() -> Self {
         Self {
+            audio_io_layout: AudioIOLayout::default(),
             params: Arc::new(LiveSamplerParams::default()),
             sample_rate: -1.0,
             buf: Bufs::default(),
-            volume: Vec::new(),
-            passthru_volume: Vec::new(),
+            volume: PolyVolumeEnv::new(Vec::new()),
+            passthru_volume: PolyVolumeEnv::new(Vec::new()),
             state: State::default(),
             now: Vec::new(),
         }
@@ -221,64 +217,36 @@ impl Default for LiveSampler {
 }
 
 impl LiveSampler {
+    fn channel_count(&self) -> usize {
+        let channel_count: usize = self
+            .audio_io_layout
+            .main_output_channels
+            .unwrap()
+            .get()
+            .try_into()
+            .unwrap();
+        channel_count
+    }
     fn toggle_passthru(&mut self, new_passthru: bool) {
         if new_passthru != self.state.passthru {
             let mut passthru = &mut self.state.passthru;
-            //nih_warn!(
-            //    "toggle_passthru({new_passthru}): {} -> {}",
-            //    *passthru,
-            //    new_passthru
-            //);
             *passthru = new_passthru;
-        } else {
-            //nih_warn!("toggle_passthru({new_passthru}): already {new_passthru}");
         }
     }
     fn toggle_reverse(&mut self, new_reverse: bool) {
         if let Some(Playing { speed, .. }) = &mut self.state.playing {
             let old_reverse = *speed < 0.0;
             if new_reverse != old_reverse {
-                //nih_warn!(
-                //    "toggle_reverse({new_reverse}): {} -> {}",
-                //    old_reverse,
-                //    new_reverse
-                //);
                 *speed = -1.0 * *speed;
-            } else {
-                //nih_warn!("toggle_reverse({new_reverse}): already {new_reverse}");
             }
-        } else {
-            //nih_warn!("toggle_reverse({new_reverse}): not playing");
         }
     }
     fn start_playing(&mut self, pos: f32, speed: f32) {
         if self.state.playing.is_none() {
-            nih_warn!("*********** START **************");
-            nih_warn!(
-                "volume: {:?}",
-                self.volume
-                    .iter()
-                    .enumerate()
-                    .map(|(ch, v)| v.value(self.now[ch]))
-                    .collect::<Vec<_>>()
-            );
-            nih_warn!(
-                "volume passthru: {:?}",
-                self.passthru_volume
-                    .iter()
-                    .enumerate()
-                    .map(|(ch, v)| v.value(self.now[ch]))
-                    .collect::<Vec<_>>()
-            );
             self.buf.seek(pos);
             self.state.playing = Some(Playing { speed });
-
-            self.fade(1.0);
-            self.fade_passthru(0.0);
-
-            //nih_warn!("start_playing({pos}): ok")
-        } else {
-            //nih_warn!("start_playing({pos}): already playing")
+            self.fade(1.0, None);
+            self.fade_passthru(0.0, None);
         }
     }
 
@@ -288,13 +256,9 @@ impl LiveSampler {
 
     fn start_recording(&mut self) {
         if !self.state.recording {
-            // self.buf.rewind_write();
             #[cfg(debug_assertions)]
             self.buf.check_write_positions_at_zero();
             self.state.recording = true;
-            //nih_warn!("start_recording(): ok");
-        } else {
-            //nih_warn!("start_recording(): already recording");
         }
     }
 
@@ -303,73 +267,34 @@ impl LiveSampler {
             // Vec::drain
             self.buf.truncate_written();
             self.state.recording = false;
-
-            //nih_warn!("stop_recording(): ok");
-        } else {
-            //nih_warn!("start_recording(): recording has not been started");
         }
     }
 
-    fn fade(&mut self, target: f32) {
-        for (channel, env) in self.volume.iter_mut().enumerate() {
-            env.retrigger(
-                self.now[channel],
-                self.now[channel],
-                self.params.fade_time.value() as usize,
-                target,
-            );
-        }
+    fn fade_passthru(&mut self, target: f32, time: Option<usize>) {
+        self.passthru_volume.retrigger(
+            &self.now,
+            &self.now,
+            time.unwrap_or_else(|| self.params.fade_time.value() as usize),
+            target,
+        );
     }
 
-    fn fade_passthru(&mut self, target: f32) {
-        for (channel, env) in self.passthru_volume.iter_mut().enumerate() {
-            env.retrigger(
-                self.now[channel],
-                self.now[channel],
-                self.params.fade_time.value() as usize,
-                target,
-            );
-        }
+    fn fade(&mut self, target: f32, time: Option<usize>) {
+        self.volume.retrigger(
+            &self.now,
+            &self.now,
+            time.unwrap_or_else(|| self.params.fade_time.value() as usize),
+            target,
+        );
     }
 
     fn stop_playing(&mut self) {
         if self.state.playing.is_some() {
-            //nih_warn!("stop_playing(): ok");
-            nih_warn!("*********** STOP **************");
-            nih_warn!(
-                "volume: {:?}",
-                self.volume
-                    .iter()
-                    .enumerate()
-                    .map(|(ch, v)| v.value(self.now[ch]))
-                    .collect::<Vec<_>>()
-            );
-            nih_warn!(
-                "volume passthru: {:?}",
-                self.passthru_volume
-                    .iter()
-                    .enumerate()
-                    .map(|(ch, v)| v.value(self.now[ch]))
-                    .collect::<Vec<_>>()
-            );
             self.state.playing = None;
-            self.fade(0.0);
-            self.fade_passthru(1.0);
-        } else {
-            //nih_warn!("stop_playing(): playing has not been started");
+            // FIXME: Clicks. Cut at zero crossing. Try lookahead within buffer with better logging again. Try half-note mode then.
+            self.fade(0.0, None);
+            self.fade_passthru(1.0, None);
         }
-    }
-
-    #[cfg(debug_assertions)]
-    fn dump_state(&self) {
-        nih_warn!("now      : {:?}", self.now);
-        nih_warn!("playing  : {:?}", &self.state.playing.is_some());
-        nih_warn!(
-            "speed    : {:?}",
-            self.state.playing.as_ref().map(|p| p.speed)
-        );
-        nih_warn!("recording: {:?}", self.state.recording);
-        nih_warn!("passthru: {:?}", self.state.passthru);
     }
 }
 
@@ -379,6 +304,7 @@ impl Plugin for LiveSampler {
     const URL: &'static str = "https://github.com/arunas-cesonis/";
     const EMAIL: &'static str = "";
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+    const SAMPLE_ACCURATE_AUTOMATION: bool = true;
     // The first audio IO layout is used as the default. The other layouts may be selected either
     // explicitly or automatically by the host or the user depending on the plugin API/backend.
     const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[
@@ -415,29 +341,22 @@ impl Plugin for LiveSampler {
         buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
+        self.audio_io_layout = audio_io_layout.clone();
         self.sample_rate = buffer_config.sample_rate;
-        let channel_count: usize = audio_io_layout
-            .main_output_channels
-            .unwrap()
-            .get()
-            .try_into()
-            .unwrap();
-        self.volume = vec![VolumeEnv::new(0.0); channel_count];
-        self.passthru_volume = vec![VolumeEnv::new(1.0); channel_count];
+        let channel_count: usize = self.channel_count();
+        self.volume = PolyVolumeEnv::new(vec![0.0; channel_count]);
+        self.passthru_volume = PolyVolumeEnv::new(vec![1.0; channel_count]);
         self.buf = Bufs::new(channel_count);
         self.now = vec![0; channel_count];
-        nih_warn!("initialize");
-        #[cfg(debug_assertions)]
-        self.dump_state();
         true
     }
 
     fn reset(&mut self) {
+        let channel_count: usize = self.channel_count();
         self.buf.clear();
         self.state = State::default();
-        nih_warn!("reset");
-        #[cfg(debug_assertions)]
-        self.dump_state();
+        self.volume = PolyVolumeEnv::new(vec![0.0; channel_count]);
+        self.passthru_volume = PolyVolumeEnv::new(vec![1.0; channel_count]);
     }
 
     fn process(
@@ -452,9 +371,12 @@ impl Plugin for LiveSampler {
 
         let params_speed = self.params.speed.smoothed.next();
         let params_gain = self.params.gain.smoothed.next();
+        let params_fade_time = self.params.fade_time.smoothed.next() as usize;
+        let num_samples = buffer.samples();
         for (sample_id, mut channel_samples) in buffer.iter_samples().enumerate() {
             // Smoothing is optionally built into the parameters themselves
             let gain = self.params.gain.smoothed.next();
+
             while let Some(event) = next_event {
                 if event.timing() != sample_id as u32 {
                     //nih_warn!("discard sample_id={} event={:?}", sample_id, event);
@@ -508,12 +430,13 @@ impl Plugin for LiveSampler {
                 }
                 let new_sample = if let Some(Playing { speed }) = &mut self.state.playing {
                     let value = self.buf.read(channel, *speed * params_speed);
-                    let volume = self.volume[channel].value(self.now[channel]);
+                    let volume = self.volume.value(channel, self.now[channel]);
+                    // Maybe
                     let value = value * volume;
                     value
                 } else {
                     if self.passthru_active() {
-                        let volume = self.passthru_volume[channel].value(self.now[channel]);
+                        let volume = self.passthru_volume.value(channel, self.now[channel]);
                         value * volume
                     } else {
                         0.0
@@ -522,11 +445,6 @@ impl Plugin for LiveSampler {
                 *sample = new_sample * gain;
                 self.now[channel] += 1;
             }
-        }
-
-        #[cfg(debug_assertions)]
-        if self.state != prev_state {
-            self.dump_state();
         }
 
         ProcessStatus::Normal

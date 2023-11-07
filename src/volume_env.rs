@@ -6,6 +6,27 @@ pub struct VolumeEnv {
     target: f32,
 }
 
+#[derive(Clone, Default, Debug, PartialEq)]
+pub struct PolyVolumeEnv {
+    channels: Vec<VolumeEnv>,
+}
+impl PolyVolumeEnv {
+    pub fn new(initial: Vec<f32>) -> Self {
+        Self {
+            channels: initial.into_iter().map(VolumeEnv::new).collect(),
+        }
+    }
+    pub fn retrigger(&mut self, now: &[usize], start: &[usize], duration: usize, target: f32) {
+        self.channels
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, env)| env.retrigger(now[i], start[i], duration, target))
+    }
+    pub fn value(&self, channel: usize, now: usize) -> f32 {
+        self.channels[channel].value(now)
+    }
+}
+
 impl VolumeEnv {
     pub fn new(initial: f32) -> Self {
         Self {
