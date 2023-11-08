@@ -3,8 +3,61 @@ mod volume_env;
 
 use crate::volume_env::{PolyVolumeEnv, VolumeEnv};
 use nih_plug::prelude::*;
-use std::ops::DerefMut;
+use std::ops::{DerefMut, Range};
 use std::sync::Arc;
+
+#[derive(Clone, Debug)]
+enum Volume {
+    Static(f32),
+    Linear {
+        time: Range<usize>,
+        value: Range<f32>,
+    },
+}
+
+impl Volume {
+    fn new(value: f32) -> Self {
+        Volume::Static(value)
+    }
+    fn is_static(&self) -> bool {
+        match self {
+            Volume::Static(_) => true,
+            Volume::Linear { .. } => false,
+        }
+    }
+    fn value(&self, now: usize) -> f32 {
+        match self {
+            Volume::Linear { time, value } => {
+                let t = (now - time.start) as f32 / (time.end - time.start) as f32;
+                assert!(t >= 0.0);
+                assert!(t <= 1.0);
+                value.start + (value.end - value.start) * t
+            }
+            Volume::Static(value) => *value,
+        }
+    }
+    fn set(&mut self, value: f32) {
+        *self = Volume::Static(value)
+    }
+    fn to(&mut self, now: usize, duration: usize, target: f32) {
+        let initial = self.value(now);
+        *self = Volume::Linear {
+            time: now..(now + duration),
+            value: initial..target,
+        }
+    }
+    fn step(&mut self, now: usize) {
+        match self {
+            Volume::Linear { time, value } => {
+                assert!(now >= time.start);
+                if now >= time.end {
+                    *self = Volume::Static(value.end)
+                }
+            }
+            Volume::Static(_) => (),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 struct Channel {
@@ -13,9 +66,10 @@ struct Channel {
     read: f32,
     recording: bool,
     reverse_playback: bool,
-    playback_volume: f32,
-    passthru_volume: f32,
+    playback_volume: Volume,
+    passthru_volume: Volume,
 }
+
 impl Channel {
     pub fn calc_sample_pos(&self) -> usize {
         let len_f32 = (self.data.len() as f32);
@@ -33,8 +87,8 @@ impl Default for Channel {
             read: 0.0,
             recording: false,
             reverse_playback: false,
-            playback_volume: 0.0,
-            passthru_volume: 1.0,
+            playback_volume: Volume::new(0.0),
+            passthru_volume: Volume::new(1.0),
         }
     }
 }
@@ -62,6 +116,7 @@ pub struct LiveSampler {
     audio_io_layout: AudioIOLayout,
     params: Arc<LiveSamplerParams>,
     sample_rate: f32,
+    now: usize,
 }
 
 #[derive(Params)]
@@ -72,8 +127,8 @@ struct LiveSamplerParams {
     pub passthru: BoolParam,
     #[id = "speed"]
     pub speed: FloatParam,
-    //#[id = "fade time"]
-    //pub fade_time: FloatParam,
+    #[id = "fade time"]
+    pub fade_time: FloatParam,
 }
 
 impl Default for LiveSamplerParams {
@@ -101,17 +156,17 @@ impl Default for LiveSamplerParams {
                     max: 1.0,
                 },
             ),
-            //fade_time: FloatParam::new(
-            //    "Fade time",
-            //    100.0,
-            //    FloatRange::Linear {
-            //        min: 0.0,
-            //        max: 1000.0,
-            //    },
-            //)
-            //.with_unit(" samples"), //with_smoother(SmoothingStyle::Logarithmic(50.0))
-            //.with_value_to_string(formatters::v2s_f32_gain_to_db(2))
-            //.with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            fade_time: FloatParam::new(
+                "Fade time",
+                2.0,
+                FloatRange::Linear {
+                    min: 0.0,
+                    max: 1000.0,
+                },
+            )
+            .with_unit(" ms"), //with_smoother(SmoothingStyle::Logarithmic(50.0))
+                               // .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+                               //.with_string_to_value(formatters::s2v_f32_gain_to_db()),
         }
     }
 }
@@ -123,6 +178,7 @@ impl Default for LiveSampler {
             audio_io_layout: AudioIOLayout::default(),
             params: Arc::new(LiveSamplerParams::default()),
             sample_rate: -1.0,
+            now: 0,
         }
     }
 }
@@ -207,6 +263,15 @@ impl Plugin for LiveSampler {
         for (sample_id, mut channel_samples) in buffer.iter_samples().enumerate() {
             // Smoothing is optionally built into the parameters themselves
             let gain = self.params.gain.smoothed.next();
+            let params_speed = self.params.speed.smoothed.next();
+            let params_gain = self.params.gain.smoothed.next();
+            let params_passthru = if self.params.passthru.value() {
+                1.0
+            } else {
+                0.0
+            };
+            let params_fade_time = self.params.fade_time.smoothed.next();
+            let params_fade_samples = (params_fade_time * self.sample_rate / 1000.0) as usize;
 
             while let Some(event) = next_event {
                 if event.timing() != sample_id as u32 {
@@ -216,7 +281,7 @@ impl Plugin for LiveSampler {
                 //nih_warn!("USE sample_id={} event={:?}", sample_id, event);
                 nih_warn!("sample_id={} event={:?}", sample_id, event);
                 nih_warn!(
-                    "stuff r={} w={} p={} rev={} pass={} play={}",
+                    "stuff r={} w={} p={} rev={} pass={:?} play={:?}",
                     read = self.channels.channels[0].read,
                     write = self.channels.channels[0].write,
                     sample_pos = self.channels.channels[0].calc_sample_pos(),
@@ -227,7 +292,7 @@ impl Plugin for LiveSampler {
                 match event {
                     NoteEvent::NoteOn { note, .. } => match note {
                         47 => {
-                            self.channels.each(|ch| ch.passthru_volume = 1.0);
+                            self.channels.each(|ch| ch.passthru_volume.set(1.0));
                         }
                         48 => {
                             self.channels.each(|ch| {
@@ -244,16 +309,14 @@ impl Plugin for LiveSampler {
                             let pos = (note - 60) as f32 / 16.0;
                             self.channels.each(|ch| {
                                 ch.read = ((ch.data.len() as f32) * pos);
-                                ch.playback_volume = 1.0;
-                                ch.passthru_volume = 0.0;
+                                ch.playback_volume.to(self.now, params_fade_samples, 1.0);
+                                ch.passthru_volume.to(self.now, params_fade_samples, 0.0);
                             });
                         }
                         _ => (),
                     },
                     NoteEvent::NoteOff { note, .. } => match note {
-                        47 => {
-                            self.channels.each(|ch| ch.passthru_volume = 0.0);
-                        }
+                        47 => self.channels.each(|ch| ch.passthru_volume.set(0.0)),
                         48 => {
                             self.channels.each(|ch| {
                                 ch.recording = false;
@@ -266,8 +329,8 @@ impl Plugin for LiveSampler {
                         }
                         60..=75 => {
                             self.channels.each(|ch| {
-                                ch.playback_volume = 0.0;
-                                ch.passthru_volume = 1.0;
+                                ch.playback_volume.to(self.now, params_fade_samples, 0.0);
+                                ch.passthru_volume.to(self.now, params_fade_samples, 1.0);
                             });
                         }
                         _ => (),
@@ -277,13 +340,6 @@ impl Plugin for LiveSampler {
                 next_event = context.next_event();
             }
 
-            let params_speed = self.params.speed.smoothed.next();
-            let params_gain = self.params.gain.smoothed.next();
-            let params_passthru = if self.params.passthru.value() {
-                1.0
-            } else {
-                0.0
-            };
             for (channel, sample) in channel_samples.iter_mut().enumerate() {
                 let value = *sample;
                 let mut ch = &mut self.channels.channels[channel];
@@ -298,9 +354,9 @@ impl Plugin for LiveSampler {
                 }
 
                 let mut output = 0.0;
-                output += value * ch.passthru_volume * params_passthru;
+                output += value * ch.passthru_volume.value(self.now) * params_passthru;
                 output += if !ch.data.is_empty() {
-                    ch.playback_volume * ch.data[ch.calc_sample_pos()]
+                    ch.playback_volume.value(self.now) * ch.data[ch.calc_sample_pos()]
                 } else {
                     0.0
                 };
@@ -309,8 +365,20 @@ impl Plugin for LiveSampler {
                 ch.read += params_speed * direction;
                 output *= params_gain;
 
+                ch.passthru_volume.step(self.now);
+                ch.playback_volume.step(self.now);
+                if !ch.playback_volume.is_static() || !ch.passthru_volume.is_static() {
+                    nih_warn!(
+                        "{}: playing={:?} passthru={:?}",
+                        channel,
+                        ch.playback_volume.value(self.now),
+                        ch.passthru_volume.value(self.now),
+                    );
+                }
+
                 *sample = output;
             }
+            self.now += 1;
         }
 
         ProcessStatus::Normal
