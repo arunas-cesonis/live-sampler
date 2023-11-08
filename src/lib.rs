@@ -1,6 +1,9 @@
 #![allow(unused)]
 
+mod editor;
+
 use nih_plug::prelude::*;
+use nih_plug_vizia::ViziaState;
 use std::ops::{DerefMut, Range};
 use std::sync::Arc;
 
@@ -127,6 +130,8 @@ struct LiveSamplerParams {
     pub speed: FloatParam,
     #[id = "fade time"]
     pub fade_time: FloatParam,
+    #[persist = "editor-state"]
+    editor_state: Arc<ViziaState>,
 }
 
 impl Default for LiveSamplerParams {
@@ -163,8 +168,9 @@ impl Default for LiveSamplerParams {
                 },
             )
             .with_unit(" ms"), //with_smoother(SmoothingStyle::Logarithmic(50.0))
-                               // .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
-                               //.with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            // .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            //.with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            editor_state: editor::default_state(),
         }
     }
 }
@@ -226,6 +232,14 @@ impl Plugin for LiveSampler {
     type SysExMessage = ();
 
     type BackgroundTask = ();
+
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        editor::create(
+            self.params.clone(),
+            //self.peak_meter.clone(),
+            self.params.editor_state.clone(),
+        )
+    }
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
