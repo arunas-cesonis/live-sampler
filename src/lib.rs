@@ -241,6 +241,17 @@ impl LiveSampler {
             }
         }
     }
+
+    fn log_prefix(&self) -> String {
+        let seconds = format!("{:.3}s", (self.now[0] as f32) / self.sample_rate);
+        format!(
+            "{:>5} {:>5} {:>5}",
+            seconds,
+            self.now[0],
+            self.volume.value(0, self.now[0])
+        )
+    }
+
     fn start_playing(&mut self, pos: f32, speed: f32) {
         if self.state.playing.is_none() {
             self.buf.seek(pos);
@@ -256,6 +267,7 @@ impl LiveSampler {
 
     fn start_recording(&mut self) {
         if !self.state.recording {
+            nih_warn!("{} start playing", self.log_prefix());
             #[cfg(debug_assertions)]
             self.buf.check_write_positions_at_zero();
             self.state.recording = true;
@@ -290,6 +302,7 @@ impl LiveSampler {
 
     fn stop_playing(&mut self) {
         if self.state.playing.is_some() {
+            nih_warn!("{} stop playing", self.log_prefix());
             self.state.playing = None;
             // FIXME: Clicks. Cut at zero crossing. Try lookahead within buffer with better logging again. Try half-note mode then.
             self.fade(0.0, None);
@@ -348,6 +361,7 @@ impl Plugin for LiveSampler {
         self.passthru_volume = PolyVolumeEnv::new(vec![1.0; channel_count]);
         self.buf = Bufs::new(channel_count);
         self.now = vec![0; channel_count];
+        nih_warn!("{} initialize", self.log_prefix());
         true
     }
 
@@ -357,6 +371,7 @@ impl Plugin for LiveSampler {
         self.state = State::default();
         self.volume = PolyVolumeEnv::new(vec![0.0; channel_count]);
         self.passthru_volume = PolyVolumeEnv::new(vec![1.0; channel_count]);
+        nih_warn!("{} reset", self.log_prefix());
     }
 
     fn process(

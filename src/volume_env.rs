@@ -25,6 +25,16 @@ impl PolyVolumeEnv {
     pub fn value(&self, channel: usize, now: usize) -> f32 {
         self.channels[channel].value(now)
     }
+    pub fn channels(&self) -> &[VolumeEnv] {
+        &self.channels
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Status {
+    NotStarted,
+    InProgress,
+    Finished,
 }
 
 impl VolumeEnv {
@@ -43,19 +53,30 @@ impl VolumeEnv {
         self.duration = duration;
         self.target = target;
     }
-    pub fn value(&self, now: usize) -> f32 {
-        let end = self.start + self.duration;
-        if now > end {
-            self.target
+    pub fn end(&self) -> usize {
+        self.start + self.duration
+    }
+    pub fn status(&self, now: usize) -> Status {
+        if now >= self.end() {
+            Status::Finished
         } else if now <= self.start {
-            self.initial
+            Status::NotStarted
         } else {
-            let t = ((now - self.start) as f32 / self.duration as f32).clamp(0.0, 1.0);
-            //eprintln!("t={}", t);
-            //eprintln!("d={}", self.target - self.initial);
-            //eprintln!("d={}", self.initial);
-            let y = self.initial + (self.target - self.initial) * t;
-            y
+            Status::InProgress
+        }
+    }
+    pub fn value(&self, now: usize) -> f32 {
+        match self.status(now) {
+            Status::Finished => self.target,
+            Status::NotStarted => self.initial,
+            Status::InProgress => {
+                let t = ((now - self.start) as f32 / self.duration as f32).clamp(0.0, 1.0);
+                //eprintln!("t={}", t);
+                //eprintln!("d={}", self.target - self.initial);
+                //eprintln!("d={}", self.initial);
+                let y = self.initial + (self.target - self.initial) * t;
+                y
+            }
         }
     }
 }
