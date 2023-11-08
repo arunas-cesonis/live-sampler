@@ -1,7 +1,5 @@
 #![allow(unused)]
-mod volume_env;
 
-use crate::volume_env::{PolyVolumeEnv, VolumeEnv};
 use nih_plug::prelude::*;
 use std::ops::{DerefMut, Range};
 use std::sync::Arc;
