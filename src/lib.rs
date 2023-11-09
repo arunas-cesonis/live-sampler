@@ -294,12 +294,12 @@ impl Plugin for LiveSampler {
                 nih_warn!("sample_id={} event={:?}", sample_id, event);
                 nih_warn!(
                     "stuff r={} w={} p={} rev={} pass={:?} play={:?}",
-                    read = self.channels.channels[0].read,
-                    write = self.channels.channels[0].write,
-                    sample_pos = self.channels.channels[0].calc_sample_pos(),
-                    reverse = self.channels.channels[0].reverse_playback,
-                    passthru = self.channels.channels[0].passthru_volume,
-                    playback = self.channels.channels[0].playback_volume
+                    self.channels.channels[0].read,
+                    self.channels.channels[0].write,
+                    self.channels.channels[0].calc_sample_pos(),
+                    self.channels.channels[0].reverse_playback,
+                    self.channels.channels[0].passthru_volume,
+                    self.channels.channels[0].playback_volume
                 );
                 match event {
                     NoteEvent::NoteOn { note, .. } => match note {
