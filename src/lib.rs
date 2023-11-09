@@ -6,6 +6,7 @@ use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::ops::{DerefMut, Range};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 #[derive(Clone, Debug)]
 enum Volume {
@@ -118,6 +119,8 @@ pub struct LiveSampler {
     params: Arc<LiveSamplerParams>,
     sample_rate: f32,
     now: usize,
+    position: Arc<AtomicF32>,
+    write_position: Arc<AtomicF32>
 }
 
 #[derive(Params)]
@@ -183,6 +186,8 @@ impl Default for LiveSampler {
             params: Arc::new(LiveSamplerParams::default()),
             sample_rate: -1.0,
             now: 0,
+            position: Default::default(),
+            write_position: Default::default()
         }
     }
 }
@@ -202,7 +207,7 @@ impl LiveSampler {
 
 impl Plugin for LiveSampler {
     const NAME: &'static str = "Live Sampler";
-    const VENDOR: &'static str = "Arunas Cesonis";
+    const VENDOR: &'static str = "seunje";
     const URL: &'static str = "https://github.com/arunas-cesonis/";
     const EMAIL: &'static str = "";
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -236,6 +241,8 @@ impl Plugin for LiveSampler {
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         editor::create(
             self.params.clone(),
+            self.position.clone(),
+            self.write_position.clone(),
             //self.peak_meter.clone(),
             self.params.editor_state.clone(),
         )
@@ -379,18 +386,28 @@ impl Plugin for LiveSampler {
 
                 ch.passthru_volume.step(self.now);
                 ch.playback_volume.step(self.now);
-                if !ch.playback_volume.is_static() || !ch.passthru_volume.is_static() {
-                    nih_warn!(
-                        "{}: playing={:?} passthru={:?}",
-                        channel,
-                        ch.playback_volume.value(self.now),
-                        ch.passthru_volume.value(self.now),
-                    );
-                }
+                //if !ch.playback_volume.is_static() || !ch.passthru_volume.is_static() {
+                //    nih_warn!(
+                //        "{}: playing={:?} passthru={:?}",
+                //        channel,
+                //        ch.playback_volume.value(self.now),
+                //        ch.passthru_volume.value(self.now),
+                //    );
+                //}
 
                 *sample = output;
             }
             self.now += 1;
+            let position = match self.channels.channels[0].data.len() {
+                n if n > 0 => self.channels.channels[0].calc_sample_pos() as f32 / n as f32,
+                _ => 0.0
+            };
+            let write_position = match self.channels.channels[0].data.len() {
+                n if n > 0 => self.channels.channels[0].write as f32 / n as f32,
+                _ => 0.0
+            };
+            self.position.store(position, Ordering::Relaxed);
+            self.write_position.store(write_position, Ordering::Relaxed);
         }
 
         ProcessStatus::Normal
