@@ -42,11 +42,18 @@ impl Volume {
         *self = Volume::Static(value)
     }
     fn to(&mut self, now: usize, duration: usize, target: f32) {
-        let initial = self.value(now);
-        *self = Volume::Linear {
-            time: now..(now + duration),
-            value: initial..target,
+        if duration == 0 {
+            *self = Volume::Static(target);
+        } else if duration > 0 {
+            let initial = self.value(now);
+            *self = Volume::Linear {
+                time: now..(now + duration),
+                value: initial..target,
+            }
+        } else {
+            panic!("duration={duration}")
         }
+
     }
     fn step(&mut self, now: usize) {
         match self {
