@@ -1,72 +1,15 @@
 #![allow(unused)]
 
 mod editor;
+mod audio;
 
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::ops::{DerefMut, Range};
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+uTape, se std::sync::atomic::Ordering;
+use crate::audio::{Volume};
 
-#[derive(Clone, Debug)]
-enum Volume {
-    Static(f32),
-    Linear {
-        time: Range<usize>,
-        value: Range<f32>,
-    },
-}
-
-impl Volume {
-    fn new(value: f32) -> Self {
-        Volume::Static(value)
-    }
-    fn is_static(&self) -> bool {
-        match self {
-            Volume::Static(_) => true,
-            Volume::Linear { .. } => false,
-        }
-    }
-    fn value(&self, now: usize) -> f32 {
-        match self {
-            Volume::Linear { time, value } => {
-                let t = (now - time.start) as f32 / (time.end - time.start) as f32;
-                assert!(t >= 0.0);
-                assert!(t <= 1.0);
-                value.start + (value.end - value.start) * t
-            }
-            Volume::Static(value) => *value,
-        }
-    }
-    fn set(&mut self, value: f32) {
-        *self = Volume::Static(value)
-    }
-    fn to(&mut self, now: usize, duration: usize, target: f32) {
-        if duration == 0 {
-            *self = Volume::Static(target);
-        } else if duration > 0 {
-            let initial = self.value(now);
-            *self = Volume::Linear {
-                time: now..(now + duration),
-                value: initial..target,
-            }
-        } else {
-            panic!("duration={duration}")
-        }
-
-    }
-    fn step(&mut self, now: usize) {
-        match self {
-            Volume::Linear { time, value } => {
-                assert!(now >= time.start);
-                if now >= time.end {
-                    *self = Volume::Static(value.end)
-                }
-            }
-            Volume::Static(_) => (),
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 struct Channel {
@@ -120,6 +63,7 @@ impl Channels {
         self.channels.iter_mut().for_each(f)
     }
 }
+
 pub struct LiveSampler {
     channels: Channels,
     audio_io_layout: AudioIOLayout,
@@ -127,7 +71,7 @@ pub struct LiveSampler {
     sample_rate: f32,
     now: usize,
     position: Arc<AtomicF32>,
-    write_position: Arc<AtomicF32>
+    write_position: Arc<AtomicF32>,
 }
 
 #[derive(Params)]
@@ -194,7 +138,7 @@ impl Default for LiveSampler {
             sample_rate: -1.0,
             now: 0,
             position: Default::default(),
-            write_position: Default::default()
+            write_position: Default::default(),
         }
     }
 }
