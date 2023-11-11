@@ -92,8 +92,6 @@ pub struct LiveSampler {
     params: Arc<LiveSamplerParams>,
     sample_rate: f32,
     now: usize,
-    position: Arc<AtomicF32>,
-    write_position: Arc<AtomicF32>,
 }
 
 #[derive(Params)]
@@ -159,9 +157,6 @@ impl Default for LiveSampler {
             params: Arc::new(LiveSamplerParams::default()),
             sample_rate: -1.0,
             now: 0,
-            position: Default::default(),
-            write_position: Default::default(),
-            tape: Tape::default(),
         }
     }
 }
@@ -216,8 +211,6 @@ impl Plugin for LiveSampler {
         eprintln!("OK");
         editor::create(
             self.params.clone(),
-            self.position.clone(),
-            self.write_position.clone(),
             //self.peak_meter.clone(),
             self.params.editor_state.clone(),
         )
@@ -233,10 +226,10 @@ impl Plugin for LiveSampler {
         buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
+        self.now = 0;
         self.audio_io_layout = audio_io_layout.clone();
         self.channels = Channels::new(self.channel_count());
         self.sample_rate = buffer_config.sample_rate;
-        let channel_count: usize = self.channel_count();
         true
     }
 
@@ -387,16 +380,6 @@ impl Plugin for LiveSampler {
                 *sample = output;
             }
             self.now += 1;
-            let position = match self.channels.channels[0].data.len() {
-                n if n > 0 => self.channels.channels[0].calc_sample_pos() as f32 / n as f32,
-                _ => 0.0,
-            };
-            let write_position = match self.channels.channels[0].data.len() {
-                n if n > 0 => self.channels.channels[0].write as f32 / n as f32,
-                _ => 0.0,
-            };
-            self.position.store(position, Ordering::Relaxed);
-            self.write_position.store(write_position, Ordering::Relaxed);
         }
 
         ProcessStatus::Normal
