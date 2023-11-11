@@ -34,6 +34,9 @@ version = "0.3.8"
 [dependencies.crossbeam-utils]
 version = "0.8.16"
 
+[dependencies.triple_buffer]
+version = "7.0.0"
+
 [dependencies.dasp]
 version = "0.11.0"
 features = ["signal", "signal-bus", "interpolate-sinc",  "interpolate", "ring_buffer", "interpolate-linear", "interpolate-floor"]

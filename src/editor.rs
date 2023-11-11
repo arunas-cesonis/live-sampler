@@ -3,9 +3,11 @@ use nih_plug::prelude::{util, Editor};
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::{Arc};
+use parking_lot::Mutex;
 use std::time::Duration;
+use crossbeam_queue::ArrayQueue;
 use dasp::signal::interpolate::Converter;
 use nih_plug::nih_warn;
 use nih_plug_vizia::vizia::vg::{Paint, Path};
@@ -15,8 +17,7 @@ use crate::LiveSamplerParams;
 #[derive(Lens)]
 struct Data {
     pub(crate) params: Arc<LiveSamplerParams>,
-    pub(crate) position: Arc<AtomicF32>,
-    pub(crate) write_position: Arc<AtomicF32>,
+    pub(crate) stats: Arc<ArrayQueue<Stats>>,
     //peak_meter: Arc<AtomicF32>,
 }
 
@@ -26,65 +27,80 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
     ViziaState::new(|| (500, 400))
 }
 
+
+#[derive(Lens,  Clone, Default)]
+pub struct Stats {
+    pub(crate) write_position: f32,
+    pub(crate) read_position: f32,
+    pub(crate) length: usize,
+    pub(crate) sample_rate: usize,
+    pub(crate) now: usize
+}
 pub struct PositionThing {
-    position: Arc<AtomicF32>,
-    write_position: Arc<AtomicF32>,
 }
 impl PositionThing {
-    pub fn new<LPosition, RPosition>(cx: &mut Context, position: LPosition, write_position: RPosition) -> Handle<Self>
+    pub fn new<LStats>(cx: &mut Context, stats: LStats) -> Handle<Self>
     where
-        LPosition: Lens<Target = Arc<AtomicF32>>,
-        RPosition: Lens<Target = Arc<AtomicF32>>,
+        LStats: Lens<Target = Arc<ArrayQueue<Stats>>>
     {
-        let mut h = Self {
-            position: position.get(cx),
-            write_position: write_position.get(cx),
-        }
-        .build(cx, |cx| { eprintln!("PositionThing::new");
-            //Label::new(cx, position.map(|x|x.load(Ordering::Relaxed)));
-            //ParamSlider::new(cx, PositionThing::position, |position| position);
+        let mut h = Self {}
+        .build(cx, |cx| {
+            Label::new(cx, stats.map(|stats| {
+                let stats = stats.pop().unwrap_or_default();
+                format!("now={}\nread={}\nwrite={}\n",
+                        stats.now,
+                        stats.write_position,
+                        stats.read_position
+                )
+            }));
+
         });
         h
     }
 }
 
 impl View for PositionThing {
+    /*
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
-        let position = self.position.load(Ordering::Relaxed);
-        let write_position = self.write_position.load(Ordering::Relaxed);
+        //let now  = {
+        //    self.stats.lock().now
+        //};
+        //canvas.stroke_text(100.0, 100.0, now.to_string(), &Paint::color(Color::rgba(0, 0, 0, 255).into()));
+        canvas.stroke_text(100.0, 100.0, "HELLO WORLD", &Paint::color(Color::rgba(0, 0, 0, 255).into()));
+
+        //let position = self.stats.write_position;
+        //let write_position = self.write_position.load(Ordering::Relaxed);
         let mut p = Path::new();
         let bounds = cx.bounds();
-
-        //p.rect(0.0, 0.0, canvas.width() * position, 100.0);
-        let height = 30.0;
-        p.rect(bounds.x, bounds.y, bounds.w, height);
-
+        p.rect(100.0,100.0, canvas.width(), 100.0);
+        //let height = 30.0;
         canvas.stroke_path(&mut p, &Paint::color(Color::rgba(0, 0, 0, 255).into()));
-        canvas.fill_path(&mut p, &Paint::color(Color::rgba(255, 255, 255, 255).into()));
+        //p.rect(bounds.x, bounds.y, bounds.w, height);
 
-        let mut pointer = Path::new();
-        pointer.move_to(bounds.x + position * bounds.w, bounds.y);
-        pointer.line_to(bounds.x + position * bounds.w, bounds.y + height * 0.5);
-        let paint = Paint::color(Color::rgba(0, 0, 255, 255).into()).with_line_width(4.0);
-        canvas.stroke_path(&mut pointer, &paint);
+        //canvas.fill_path(&mut p, &Paint::color(Color::rgba(255, 255, 255, 255).into()));
 
-        let mut pointer = Path::new();
-        pointer.move_to(bounds.x + write_position * bounds.w, bounds.y + height * 0.5);
-        pointer.line_to(bounds.x + write_position * bounds.w, bounds.y + height);
-        let paint = Paint::color(Color::rgba(255, 0, 0, 255).into()).with_line_width(4.0);
-        canvas.stroke_path(&mut pointer, &paint);
+        //let mut pointer = Path::new();
+        //pointer.move_to(bounds.x + position * bounds.w, bounds.y);
+        //pointer.line_to(bounds.x + position * bounds.w, bounds.y + height * 0.5);
+        //let paint = Paint::color(Color::rgba(0, 0, 255, 255).into()).with_line_width(4.0);
+        //canvas.stroke_path(&mut pointer, &paint);
+
+        //let mut pointer = Path::new();
+        //pointer.move_to(bounds.x + write_position * bounds.w, bounds.y + height * 0.5);
+        //pointer.line_to(bounds.x + write_position * bounds.w, bounds.y + height);
+        //let paint = Paint::color(Color::rgba(255, 0, 0, 255).into()).with_line_width(4.0);
+        //canvas.stroke_path(&mut pointer, &paint);
         //.with_color(
-
-
         //    Paint::color(Color::rgba(255, 255, 255, 255).into()))
         //);
     }
+
+     */
 }
 
 pub(crate) fn create(
     params: Arc<LiveSamplerParams>,
-    position: Arc<AtomicF32>,
-    write_position: Arc<AtomicF32>,
+    stats: Arc<ArrayQueue<Stats>>,
     //peak_meter: Arc<AtomicF32>,
     editor_state: Arc<ViziaState>,
 ) -> Option<Box<dyn Editor>> {
@@ -94,8 +110,7 @@ pub(crate) fn create(
 
         Data {
             params: params.clone(),
-            position: position.clone(),
-            write_position: write_position.clone(),
+            stats: stats.clone()
             //peak_meter: peak_meter.clone(),
         }
         .build(cx);
@@ -110,10 +125,10 @@ pub(crate) fn create(
             Label::new(cx, "Fade time");
             ParamSlider::new(cx, Data::params, |params| &params.fade_time);
             ParamButton::new(cx, Data::params, |params| &params.passthru);
-            PositionThing::new(cx, Data::position, Data::write_position);
-        })
-        .row_between(Pixels(10.0))
-        .child_left(Stretch(1.0))
-        .child_right(Stretch(1.0));
+            PositionThing::new(cx, Data::stats);
+        });
+        //.row_between(Pixels(10.0))
+        //.child_left(Stretch(1.0))
+        //.child_right(Stretch(1.0));
     })
 }

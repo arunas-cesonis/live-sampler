@@ -2,11 +2,17 @@
 
 mod editor;
 
+use std::collections::VecDeque;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::ops::{DerefMut, Range};
+use std::os::macos::raw::stat;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use crossbeam_queue::ArrayQueue;
+use dasp::signal::from_interleaved_samples_iter;
+use crate::editor::Stats;
+use crate::editor::stats_derived_lenses::read_position;
 
 #[derive(Clone, Debug)]
 enum Volume {
@@ -42,10 +48,16 @@ impl Volume {
         *self = Volume::Static(value)
     }
     fn to(&mut self, now: usize, duration: usize, target: f32) {
-        let initial = self.value(now);
-        *self = Volume::Linear {
-            time: now..(now + duration),
-            value: initial..target,
+        if duration == 0 {
+            *self = Volume::Static(target);
+        } else if duration > 0 {
+            let initial = self.value(now);
+            *self = Volume::Linear {
+                time: now..(now + duration),
+                value: initial..target,
+            };
+        } else {
+            panic!("duration = {duration}");
         }
     }
     fn step(&mut self, now: usize) {
@@ -62,20 +74,27 @@ impl Volume {
 }
 
 #[derive(Clone, Debug)]
+struct Playhead {
+    position: f32,
+    volume: Volume,
+    note: u8,
+    finished: bool
+}
+
+const MAX_PLAYHEADS: usize = 1;
+
+#[derive(Clone, Debug)]
 struct Channel {
-    data: Vec<f32>,
-    write: usize,
-    read: f32,
-    recording: bool,
+    playheads: VecDeque<Playhead>,
     reverse_playback: bool,
     playback_volume: Volume,
     passthru_volume: Volume,
 }
 
-impl Channel {
-    pub fn calc_sample_pos(&self) -> usize {
+impl ChannelData {
+    pub fn calc_sample_pos(&self, playhead_pos: f32) -> usize {
         let len_f32 = (self.data.len() as f32);
-        let i = self.read % len_f32;
+        let i = playhead_pos % len_f32;
         let i = if i < 0.0 { i + len_f32 } else { i };
         let i = i as usize;
         i
@@ -84,10 +103,7 @@ impl Channel {
 impl Default for Channel {
     fn default() -> Self {
         Channel {
-            data: Vec::new(),
-            write: 0,
-            read: 0.0,
-            recording: false,
+            playheads: VecDeque::new(),
             reverse_playback: false,
             playback_volume: Volume::new(0.0),
             passthru_volume: Volume::new(1.0),
@@ -113,14 +129,30 @@ impl Channels {
         self.channels.iter_mut().for_each(f)
     }
 }
+
+
+#[derive(Default, Clone)]
+struct ChannelData {
+    data: Vec<f32>,
+    write: usize,
+    recording: bool
+
+}
+impl ChannelData {
+    pub fn each<F>(&mut self, f: F)
+        where
+            F: FnMut(&mut Channel),
+    {
+        self.channels.iter_mut().for_each(f)
+}
 pub struct LiveSampler {
     channels: Channels,
+    channel_datas: Vec<ChannelData>,
     audio_io_layout: AudioIOLayout,
     params: Arc<LiveSamplerParams>,
     sample_rate: f32,
     now: usize,
-    position: Arc<AtomicF32>,
-    write_position: Arc<AtomicF32>
+    stats: Arc<ArrayQueue<Stats>>
 }
 
 #[derive(Params)]
@@ -182,12 +214,12 @@ impl Default for LiveSampler {
     fn default() -> Self {
         Self {
             channels: Channels::new(0),
+            channel_datas: Vec::new(),
             audio_io_layout: AudioIOLayout::default(),
             params: Arc::new(LiveSamplerParams::default()),
             sample_rate: -1.0,
             now: 0,
-            position: Default::default(),
-            write_position: Default::default()
+            stats: Arc::new(ArrayQueue::new(2))
         }
     }
 }
@@ -241,8 +273,8 @@ impl Plugin for LiveSampler {
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         editor::create(
             self.params.clone(),
-            self.position.clone(),
-            self.write_position.clone(),
+            self.stats.clone(),
+            //self.write_position.clone(),
             //self.peak_meter.clone(),
             self.params.editor_state.clone(),
         )
@@ -267,7 +299,8 @@ impl Plugin for LiveSampler {
 
     fn reset(&mut self) {
         let channel_count: usize = self.channel_count();
-        self.channels = Channels::new(self.channel_count());
+        self.channels = Channels::new(channel_count);
+        self.channel_datas = vec![ChannelData::default(); channel_count];
     }
 
     fn process(
@@ -300,10 +333,9 @@ impl Plugin for LiveSampler {
                 //nih_warn!("USE sample_id={} event={:?}", sample_id, event);
                 nih_warn!("sample_id={} event={:?}", sample_id, event);
                 nih_warn!(
-                    "stuff r={} w={} p={} rev={} pass={:?} play={:?}",
-                    self.channels.channels[0].read,
-                    self.channels.channels[0].write,
-                    self.channels.channels[0].calc_sample_pos(),
+                    "stuff r={:?} p={:?} rev={} pass={:?} play={:?}",
+                    self.channels.channels[0].playheads,
+                    self.channels.channels[0].playheads.iter().map(|ph| self.channel_datas[0].calc_sample_pos(ph.position)).collect::<Vec<_>>(),
                     self.channels.channels[0].reverse_playback,
                     self.channels.channels[0].passthru_volume,
                     self.channels.channels[0].playback_volume
@@ -311,10 +343,12 @@ impl Plugin for LiveSampler {
                 match event {
                     NoteEvent::NoteOn { note, .. } => match note {
                         47 => {
-                            self.channels.each(|ch| ch.passthru_volume.set(1.0));
+                            self.channel_datas.each(|ch| {
+                                // PASS THROUGH PLAY
+                            });
                         }
                         48 => {
-                            self.channels.each(|ch| {
+                            self.channel_datas.each(|ch| {
                                 if !ch.recording {
                                     ch.write = 0;
                                     ch.recording = true;
@@ -322,20 +356,36 @@ impl Plugin for LiveSampler {
                             });
                         }
                         49 => {
-                            self.channels.each(|ch| ch.reverse_playback = true);
+                           // REVERSE ONLY LAST PLAYHEAD
+                           // self.channels.each(|ch| ch.reverse_playback = true);
                         }
                         60..=75 => {
                             let pos = (note - 60) as f32 / 16.0;
                             self.channels.each(|ch| {
-                                ch.read = ((ch.data.len() as f32) * pos);
-                                ch.playback_volume.to(self.now, params_fade_samples, 1.0);
-                                ch.passthru_volume.to(self.now, params_fade_samples, 0.0);
+                                assert!(ch.playheads.len() < MAX_PLAYHEADS);
+                                if ch.playheads.len() == MAX_PLAYHEADS {
+                                    ch.playheads.pop_front();
+                                }
+                                let mut ph = Playhead {
+                                    position: pos,
+                                    volume: Volume::new(0.0),
+                                    note,
+                                    finished: false
+                                };
+                                ph.volume.to(self.now, params_fade_samples, 1.0);
+                                ch.playheads.push_back(ph);
+                                //ch.passthru_volume.to(self.now, params_fade_samples, 0.0);
                             });
                         }
                         _ => (),
                     },
                     NoteEvent::NoteOff { note, .. } => match note {
-                        47 => self.channels.each(|ch| ch.passthru_volume.set(0.0)),
+                        47 => {
+                            self.channels.each(|ch| {
+                                // PASS THROUGH STOP
+                                // ch.passthru_volume.to(self.now, params_fade_samples, 0.0);
+                            });
+                        },
                         48 => {
                             self.channels.each(|ch| {
                                 ch.recording = false;
@@ -344,12 +394,16 @@ impl Plugin for LiveSampler {
                             });
                         }
                         49 => {
-                            self.channels.each(|ch| ch.reverse_playback = false);
+                            //DISABLE REVERSE FOR LAST PLAYHEAD ENABLED?
+                            //self.channels.each(|ch| ch.reverse_playback = false);
                         }
                         60..=75 => {
                             self.channels.each(|ch| {
-                                ch.playback_volume.to(self.now, params_fade_samples, 0.0);
-                                ch.passthru_volume.to(self.now, params_fade_samples, 1.0);
+                                let index = ch.playheads.iter().position(|ph|ph.note == note).unwrap_or_else(||panic!("failed to find playhead for note={:?}", note));
+                                ch.playheads[index].volume.to(self.now, params_fade_samples, 0.0);
+                                ch.playheads[index].finished = true;
+                                //ch.playback_volume.to(self.now, params_fade_samples, 0.0);
+                                //ch.passthru_volume.to(self.now, params_fade_samples, 1.0);
                             });
                         }
                         _ => (),
@@ -373,19 +427,39 @@ impl Plugin for LiveSampler {
                 }
 
                 let mut output = 0.0;
-                output += value * ch.passthru_volume.value(self.now) * params_passthru;
+                //ch.playheads = ch.playheads.into_iter().filter(|ph|ph.finished && ph.volume.value(self.now) == 0.0).collect::<VecDeque<_>>();
+
+                //output += value * ch.passthru_volume.value(self.now) * params_passthru;
+                let mut removed = vec![];
                 output += if !ch.data.is_empty() {
-                    ch.playback_volume.value(self.now) * ch.data[ch.calc_sample_pos()]
+                    let mut z = 0.0;
+                    for (i, ph) in ch.playheads.iter_mut().enumerate() {
+                        let volume = ph.volume.value(self.now);
+                        if ph.finished && volume == 0.0 {
+                            removed.push(i);
+                        } else {
+                            z += ph.volume.value(self.now) * ch.data[ch.calc_sample_pos(ph.position)];
+                            ph.volume.step(self.now);
+                            ph.position += params_speed;
+                        }
+                    }
+                    z
                 } else {
                     0.0
                 };
 
-                let direction = if ch.reverse_playback { -1.0f32 } else { 1.0f32 };
-                ch.read += params_speed * direction;
+                let mut j = removed.len();
+                while j - 1 >= 0 {
+                    ch.playheads.remove(removed[j]);
+                    j -= 1;
+                }
+
+                //let direction = if ch.reverse_playback { -1.0f32 } else { 1.0f32 };
+                //ch.read += params_speed * direction;
                 output *= params_gain;
 
-                ch.passthru_volume.step(self.now);
-                ch.playback_volume.step(self.now);
+                //ch.passthru_volume.step(self.now);
+                //ch.playback_volume.step(self.now);
                 //if !ch.playback_volume.is_static() || !ch.passthru_volume.is_static() {
                 //    nih_warn!(
                 //        "{}: playing={:?} passthru={:?}",
@@ -398,16 +472,18 @@ impl Plugin for LiveSampler {
                 *sample = output;
             }
             self.now += 1;
-            let position = match self.channels.channels[0].data.len() {
-                n if n > 0 => self.channels.channels[0].calc_sample_pos() as f32 / n as f32,
-                _ => 0.0
-            };
-            let write_position = match self.channels.channels[0].data.len() {
-                n if n > 0 => self.channels.channels[0].write as f32 / n as f32,
-                _ => 0.0
-            };
-            self.position.store(position, Ordering::Relaxed);
-            self.write_position.store(write_position, Ordering::Relaxed);
+            let mut stats = Stats::default();
+            stats.now = self.now;
+            stats.write_position = 0.0;
+            stats.read_position = 0.0;
+            self.stats.force_push(stats);
+            //{
+            //    let mut s = self.stats.lock();
+            //    let ss: &mut Stats = s.deref_mut();
+            //    ss.now = self.now;
+            //}
+            //self.position.store(position, Ordering::Relaxed);
+            //self.write_position.store(write_position, Ordering::Relaxed);
         }
 
         ProcessStatus::Normal
