@@ -1,21 +1,42 @@
 #![allow(unused)]
 
-mod editor;
 mod audio;
+mod editor;
 
+use crate::audio::Volume;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::ops::{DerefMut, Range};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
-uTape, se std::sync::atomic::Ordering;
-use crate::audio::{Volume};
 
+#[derive(Clone, Debug)]
+struct Voice {
+    read: f32,
+    speed: f32,
+    volume: Volume,
+    finished: bool,
+    note: u8,
+}
+
+impl Voice {
+    fn new(read: f32, speed: f32, note: u8) -> Self {
+        Self {
+            read,
+            speed,
+            volume: Volume::new(0.0),
+            finished: false,
+            note,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 struct Channel {
     data: Vec<f32>,
     write: usize,
     read: f32,
+    voices: Vec<Voice>,
     recording: bool,
     reverse_playback: bool,
     playback_volume: Volume,
@@ -37,6 +58,7 @@ impl Default for Channel {
             data: Vec::new(),
             write: 0,
             read: 0.0,
+            voices: Vec::new(),
             recording: false,
             reverse_playback: false,
             playback_volume: Volume::new(0.0),
@@ -139,6 +161,7 @@ impl Default for LiveSampler {
             now: 0,
             position: Default::default(),
             write_position: Default::default(),
+            tape: Tape::default(),
         }
     }
 }
@@ -190,6 +213,7 @@ impl Plugin for LiveSampler {
     type BackgroundTask = ();
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        eprintln!("OK");
         editor::create(
             self.params.clone(),
             self.position.clone(),
@@ -262,7 +286,13 @@ impl Plugin for LiveSampler {
                 match event {
                     NoteEvent::NoteOn { note, .. } => match note {
                         47 => {
-                            self.channels.each(|ch| ch.passthru_volume.set(1.0));
+                            self.channels.each(|ch| {
+                                ch.passthru_volume.to(
+                                    self.now,
+                                    params_fade_samples,
+                                    1.0 - params_passthru,
+                                )
+                            });
                         }
                         48 => {
                             self.channels.each(|ch| {
@@ -286,7 +316,15 @@ impl Plugin for LiveSampler {
                         _ => (),
                     },
                     NoteEvent::NoteOff { note, .. } => match note {
-                        47 => self.channels.each(|ch| ch.passthru_volume.set(0.0)),
+                        47 => {
+                            self.channels.each(|ch| {
+                                ch.passthru_volume.to(
+                                    self.now,
+                                    params_fade_samples,
+                                    params_passthru,
+                                )
+                            });
+                        }
                         48 => {
                             self.channels.each(|ch| {
                                 ch.recording = false;
@@ -351,11 +389,11 @@ impl Plugin for LiveSampler {
             self.now += 1;
             let position = match self.channels.channels[0].data.len() {
                 n if n > 0 => self.channels.channels[0].calc_sample_pos() as f32 / n as f32,
-                _ => 0.0
+                _ => 0.0,
             };
             let write_position = match self.channels.channels[0].data.len() {
                 n if n > 0 => self.channels.channels[0].write as f32 / n as f32,
-                _ => 0.0
+                _ => 0.0,
             };
             self.position.store(position, Ordering::Relaxed);
             self.write_position.store(write_position, Ordering::Relaxed);
