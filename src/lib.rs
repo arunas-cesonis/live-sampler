@@ -6,94 +6,19 @@ mod sampler;
 
 use crate::audio::Volume;
 use crate::sampler::Sampler;
+use dasp::Signal;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
+use std::iter::Rev;
+use std::num::IntErrorKind::PosOverflow;
 use std::ops::{DerefMut, Range};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-#[derive(Clone, Debug)]
-struct Voice {
-    read: f32,
-    speed: f32,
-    volume: Volume,
-    finished: bool,
-    note: u8,
-}
-
-impl Voice {
-    fn new(read: f32, speed: f32, note: u8) -> Self {
-        Self {
-            read,
-            speed,
-            volume: Volume::new(0.0),
-            finished: false,
-            note,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-struct Channel {
-    data: Vec<f32>,
-    write: usize,
-    read: f32,
-    voices: Vec<Voice>,
-    recording: bool,
-    reverse_playback: bool,
-    playback_volume: Volume,
-    passthru_volume: Volume,
-}
-
-impl Channel {
-    pub fn calc_sample_pos(&self) -> usize {
-        let len_f32 = (self.data.len() as f32);
-        let i = self.read % len_f32;
-        let i = if i < 0.0 { i + len_f32 } else { i };
-        let i = i as usize;
-        i
-    }
-}
-impl Default for Channel {
-    fn default() -> Self {
-        Channel {
-            data: Vec::new(),
-            write: 0,
-            read: 0.0,
-            voices: Vec::new(),
-            recording: false,
-            reverse_playback: false,
-            playback_volume: Volume::new(0.0),
-            passthru_volume: Volume::new(1.0),
-        }
-    }
-}
-
-#[derive(Clone, Default, Debug)]
-struct Channels {
-    channels: Vec<Channel>,
-}
-
-impl Channels {
-    pub fn new(count: usize) -> Self {
-        Self {
-            channels: vec![Channel::default(); count],
-        }
-    }
-    pub fn each<F>(&mut self, f: F)
-    where
-        F: FnMut(&mut Channel),
-    {
-        self.channels.iter_mut().for_each(f)
-    }
-}
-
 pub struct LiveSampler {
-    channels: Channels,
     audio_io_layout: AudioIOLayout,
     params: Arc<LiveSamplerParams>,
     sample_rate: f32,
-    now: usize,
     sampler: sampler::Sampler,
 }
 
@@ -155,11 +80,9 @@ impl Default for LiveSamplerParams {
 impl Default for LiveSampler {
     fn default() -> Self {
         Self {
-            channels: Channels::new(0),
             audio_io_layout: AudioIOLayout::default(),
             params: Arc::new(LiveSamplerParams::default()),
             sample_rate: -1.0,
-            now: 0,
             sampler: Sampler::new(0),
         }
     }
@@ -176,6 +99,35 @@ impl LiveSampler {
             .unwrap();
         channel_count
     }
+}
+
+enum Action {
+    StartRecording,
+    StopRecording,
+    StartPlaying,
+    StopPlaying,
+    ReversePlayback,
+    UnreversePlayback,
+}
+
+enum NoteRange {
+    Single(usize),
+    Range(std::ops::Range<usize>),
+}
+const POSITION_SPLIT: usize = 16;
+
+fn note_to_action_mapping() -> Vec<(NoteRange, Action, Action)> {
+    use Action::*;
+    use NoteRange::*;
+    vec![
+        (Range((0..POSITION_SPLIT)), StartPlaying, StopPlaying),
+        (Single(POSITION_SPLIT), StartRecording, StopRecording),
+        (
+            Single(POSITION_SPLIT - 1),
+            ReversePlayback,
+            UnreversePlayback,
+        ),
+    ]
 }
 
 impl Plugin for LiveSampler {
@@ -206,7 +158,7 @@ impl Plugin for LiveSampler {
             ..AudioIOLayout::const_default()
         },
     ];
-    const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
+    const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
     type SysExMessage = ();
 
     type BackgroundTask = ();
@@ -230,9 +182,7 @@ impl Plugin for LiveSampler {
         buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
-        self.now = 0;
         self.audio_io_layout = audio_io_layout.clone();
-        self.channels = Channels::new(self.channel_count());
         self.sample_rate = buffer_config.sample_rate;
         self.sampler = Sampler::new(self.channel_count());
         true
@@ -240,7 +190,6 @@ impl Plugin for LiveSampler {
 
     fn reset(&mut self) {
         let channel_count: usize = self.channel_count();
-        self.channels = Channels::new(self.channel_count());
         self.sampler = Sampler::new(self.channel_count());
     }
 
@@ -271,13 +220,6 @@ impl Plugin for LiveSampler {
                     //nih_warn!("discard sample_id={} event={:?}", sample_id, event);
                     break;
                 }
-                //nih_warn!("USE sample_id={} event={:?}", sample_id, event);
-                nih_warn!(
-                    "{} sample_id={} event={:?}",
-                    self.now as f32 / 44100.0,
-                    sample_id,
-                    event
-                );
                 match event {
                     NoteEvent::NoteOn { velocity, note, .. } => match note {
                         47 => {}
@@ -308,7 +250,6 @@ impl Plugin for LiveSampler {
             }
 
             self.sampler.process_sample(channel_samples);
-            self.now += 1;
         }
 
         ProcessStatus::Normal
