@@ -1,11 +1,11 @@
 #![allow(unused)]
 
-mod audio;
 mod editor;
 mod sampler;
+mod volume;
 
-use crate::audio::Volume;
 use crate::sampler::Sampler;
+use crate::volume::Volume;
 use dasp::Signal;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
