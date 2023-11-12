@@ -2,8 +2,10 @@
 
 mod audio;
 mod editor;
+mod sampler;
 
 use crate::audio::Volume;
+use crate::sampler::Sampler;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::ops::{DerefMut, Range};
@@ -92,6 +94,7 @@ pub struct LiveSampler {
     params: Arc<LiveSamplerParams>,
     sample_rate: f32,
     now: usize,
+    sampler: sampler::Sampler,
 }
 
 #[derive(Params)]
@@ -157,6 +160,7 @@ impl Default for LiveSampler {
             params: Arc::new(LiveSamplerParams::default()),
             sample_rate: -1.0,
             now: 0,
+            sampler: Sampler::new(0),
         }
     }
 }
@@ -230,12 +234,14 @@ impl Plugin for LiveSampler {
         self.audio_io_layout = audio_io_layout.clone();
         self.channels = Channels::new(self.channel_count());
         self.sample_rate = buffer_config.sample_rate;
+        self.sampler = Sampler::new(self.channel_count());
         true
     }
 
     fn reset(&mut self) {
         let channel_count: usize = self.channel_count();
         self.channels = Channels::new(self.channel_count());
+        self.sampler = Sampler::new(self.channel_count());
     }
 
     fn process(
@@ -266,73 +272,33 @@ impl Plugin for LiveSampler {
                     break;
                 }
                 //nih_warn!("USE sample_id={} event={:?}", sample_id, event);
-                nih_warn!("sample_id={} event={:?}", sample_id, event);
                 nih_warn!(
-                    "stuff r={} w={} p={} rev={} pass={:?} play={:?}",
-                    self.channels.channels[0].read,
-                    self.channels.channels[0].write,
-                    self.channels.channels[0].calc_sample_pos(),
-                    self.channels.channels[0].reverse_playback,
-                    self.channels.channels[0].passthru_volume,
-                    self.channels.channels[0].playback_volume
+                    "{} sample_id={} event={:?}",
+                    self.now as f32 / 44100.0,
+                    sample_id,
+                    event
                 );
                 match event {
                     NoteEvent::NoteOn { note, .. } => match note {
-                        47 => {
-                            self.channels.each(|ch| {
-                                ch.passthru_volume.to(
-                                    self.now,
-                                    params_fade_samples,
-                                    1.0 - params_passthru,
-                                )
-                            });
-                        }
+                        47 => {}
                         48 => {
-                            self.channels.each(|ch| {
-                                if !ch.recording {
-                                    ch.write = 0;
-                                    ch.recording = true;
-                                }
-                            });
+                            self.sampler.start_recording();
                         }
-                        49 => {
-                            self.channels.each(|ch| ch.reverse_playback = true);
-                        }
+                        49 => {}
                         60..=75 => {
                             let pos = (note - 60) as f32 / 16.0;
-                            self.channels.each(|ch| {
-                                ch.read = ((ch.data.len() as f32) * pos);
-                                ch.playback_volume.to(self.now, params_fade_samples, 1.0);
-                                ch.passthru_volume.to(self.now, params_fade_samples, 0.0);
-                            });
+                            self.sampler.start_playing(pos);
                         }
                         _ => (),
                     },
                     NoteEvent::NoteOff { note, .. } => match note {
-                        47 => {
-                            self.channels.each(|ch| {
-                                ch.passthru_volume.to(
-                                    self.now,
-                                    params_fade_samples,
-                                    params_passthru,
-                                )
-                            });
-                        }
+                        47 => {}
                         48 => {
-                            self.channels.each(|ch| {
-                                ch.recording = false;
-                                ch.data.truncate(ch.write);
-                                ch.write = 0;
-                            });
+                            self.sampler.stop_recording();
                         }
-                        49 => {
-                            self.channels.each(|ch| ch.reverse_playback = false);
-                        }
+                        49 => {}
                         60..=75 => {
-                            self.channels.each(|ch| {
-                                ch.playback_volume.to(self.now, params_fade_samples, 0.0);
-                                ch.passthru_volume.to(self.now, params_fade_samples, 1.0);
-                            });
+                            self.sampler.stop_playing();
                         }
                         _ => (),
                     },
@@ -341,44 +307,7 @@ impl Plugin for LiveSampler {
                 next_event = context.next_event();
             }
 
-            for (channel, sample) in channel_samples.iter_mut().enumerate() {
-                let value = *sample;
-                let mut ch = &mut self.channels.channels[channel];
-
-                if ch.recording {
-                    if ch.write >= ch.data.len() {
-                        ch.data.push(value);
-                    } else {
-                        ch.data[ch.write] = value;
-                    }
-                    ch.write += 1;
-                }
-
-                let mut output = 0.0;
-                output += value * ch.passthru_volume.value(self.now) * params_passthru;
-                output += if !ch.data.is_empty() {
-                    ch.playback_volume.value(self.now) * ch.data[ch.calc_sample_pos()]
-                } else {
-                    0.0
-                };
-
-                let direction = if ch.reverse_playback { -1.0f32 } else { 1.0f32 };
-                ch.read += params_speed * direction;
-                output *= params_gain;
-
-                ch.passthru_volume.step(self.now);
-                ch.playback_volume.step(self.now);
-                //if !ch.playback_volume.is_static() || !ch.passthru_volume.is_static() {
-                //    nih_warn!(
-                //        "{}: playing={:?} passthru={:?}",
-                //        channel,
-                //        ch.playback_volume.value(self.now),
-                //        ch.passthru_volume.value(self.now),
-                //    );
-                //}
-
-                *sample = output;
-            }
+            self.sampler.process_sample(channel_samples);
             self.now += 1;
         }
 
