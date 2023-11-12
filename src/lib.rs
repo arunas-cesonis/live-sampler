@@ -279,7 +279,7 @@ impl Plugin for LiveSampler {
                     event
                 );
                 match event {
-                    NoteEvent::NoteOn { note, .. } => match note {
+                    NoteEvent::NoteOn { velocity, note, .. } => match note {
                         47 => {}
                         48 => {
                             self.sampler.start_recording();
@@ -287,7 +287,7 @@ impl Plugin for LiveSampler {
                         49 => {}
                         60..=75 => {
                             let pos = (note - 60) as f32 / 16.0;
-                            self.sampler.start_playing(pos);
+                            self.sampler.start_playing(pos, note, velocity);
                         }
                         _ => (),
                     },
@@ -298,7 +298,7 @@ impl Plugin for LiveSampler {
                         }
                         49 => {}
                         60..=75 => {
-                            self.sampler.stop_playing();
+                            self.sampler.stop_playing(note);
                         }
                         _ => (),
                     },
