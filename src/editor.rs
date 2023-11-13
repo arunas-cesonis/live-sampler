@@ -24,6 +24,11 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
     ViziaState::new(|| (500, 400))
 }
 
+#[derive(Lens)]
+struct Tmp {
+    value: Arc<Option<LiveSamplerParams>>,
+}
+
 pub(crate) fn create(
     params: Arc<LiveSamplerParams>,
     //peak_meter: Arc<AtomicF32>,
@@ -42,13 +47,13 @@ pub(crate) fn create(
         ResizeHandle::new(cx);
 
         VStack::new(cx, |cx| {
-            Label::new(cx, "Gain");
-            ParamSlider::new(cx, Data::params, |params| &params.gain);
-            Label::new(cx, "Speed");
-            ParamSlider::new(cx, Data::params, |params| &params.speed);
-            Label::new(cx, "Fade time");
-            ParamSlider::new(cx, Data::params, |params| &params.fade_time);
-            ParamButton::new(cx, Data::params, |params| &params.passthru);
+            //Label::new(cx, "Gain");
+            //ParamSlider::new(cx, Data::params, |params| &params.gain);
+            //Label::new(cx, "Speed");
+            //ParamSlider::new(cx, Data::params, |params| &params.speed);
+            //Label::new(cx, "Fade time");
+            //ParamSlider::new(cx, Data::params, |params| &params.fade_time);
+            //ParamButton::new(cx, Data::params, |params| &params.passthru);
         })
         .row_between(Pixels(10.0))
         .child_left(Stretch(1.0))

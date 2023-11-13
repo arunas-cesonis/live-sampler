@@ -14,6 +14,7 @@ fn calc_sample_pos(data_len: usize, read: f32) -> usize {
 struct Voice {
     read: f32,
     volume: f32,
+    speed: f32,
     note_on_count: usize,
 }
 
@@ -26,6 +27,20 @@ struct Channel {
     recording: bool,
     playing: bool,
     now: usize,
+    note_on_count: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct Params {
+    pub auto_passthru: bool,
+}
+
+impl Default for Params {
+    fn default() -> Self {
+        Self {
+            auto_passthru: true,
+        }
+    }
 }
 
 impl Channel {
@@ -34,27 +49,32 @@ impl Channel {
         // resets the current voice of that key.
         // It could be useful to spawn another voice instead for to allow delay-like effects,
         // but not sure if its even possible to enter such notation in piano-roll like editors.
-        let current_note_on_count = self.voices.get(&note).map(|v| v.note_on_count).unwrap_or(0);
+        let current_voice_note_on_count =
+            self.voices.get(&note).map(|v| v.note_on_count).unwrap_or(0);
         self.voices.insert(
             note,
             Voice {
                 read: (pos * self.data.len() as f32).round(),
                 volume: velocity,
+                speed: 1.0,
                 // note on count is used to detect if the note is still being played
                 // in stop_playing()
-                note_on_count: current_note_on_count + 1,
+                note_on_count: current_voice_note_on_count + 1,
             },
         );
         //self.read = (pos * self.data.len() as f32).round() as f32;
+        self.note_on_count += 1;
         nih_warn!(
             "** START PLAYING voice #{} for {}",
-            current_note_on_count + 1,
+            current_voice_note_on_count + 1,
             note
         );
     }
 
     pub fn stop_playing(&mut self, note: u8) {
-        assert!(self.voices.contains_key(&note));
+        // Can be done in some DAW's when opening a project and playhead was saved
+        // positioned within a note
+        // assert!(self.voices.contains_key(&note));
 
         let should_remove = if let Some(voice) = self.voices.get_mut(&note) {
             if voice.note_on_count == 1 {
@@ -71,6 +91,16 @@ impl Channel {
         if should_remove {
             self.voices.remove(&note);
         }
+        self.note_on_count -= 1;
+        let tmp = self
+            .voices
+            .iter()
+            .map(|v| format!("note={} n={}", v.0, v.1.note_on_count))
+            .collect::<Vec<_>>();
+        nih_warn!(
+            "** STOP PLAYING: voice {note}: voices remaining: {:?}",
+            tmp.join(", ")
+        );
         //if !voice.is_some() {
         //}
         //if self.playing {
@@ -93,14 +123,13 @@ impl Channel {
             self.recording = false;
             self.data.truncate(self.write);
             self.write = 0;
-            nih_warn!("** STOP RECORDING");
+            nih_warn!("** STOP RECORIDNG (wrote {} samples)", self.data.len());
         } else {
-            nih_warn!("** STOP RECORDING: ALREADY");
+            nih_warn!("** STOP RECORDING: ALREADY STOPPED");
         }
-        nih_warn!("** STOP RECORIDNG (got {} samples)", self.data.len());
     }
 
-    pub fn process_sample<'a>(&mut self, sample: &mut f32) {
+    pub fn process_sample<'a>(&mut self, sample: &mut f32, params: &Params) {
         let value = *sample;
 
         if self.recording {
@@ -119,11 +148,13 @@ impl Channel {
                 if !self.data.is_empty() {
                     let y = self.data[calc_sample_pos(self.data.len(), voice.read)];
                     output += y * voice.volume;
-                    voice.read += 1.0;
+                    voice.read += voice.speed;
                 };
             }
         } else {
-            output += value;
+            if params.auto_passthru {
+                output += value;
+            }
         }
         //if self.playing {
         //    let data_value = if self.data.is_empty() {
@@ -174,9 +205,13 @@ impl Sampler {
         self.each(Channel::stop_recording);
     }
 
-    pub fn process_sample<'a>(&mut self, iter: impl IntoIterator<Item = &'a mut f32>) {
+    pub fn process_sample<'a>(
+        &mut self,
+        iter: impl IntoIterator<Item = &'a mut f32>,
+        params: &Params,
+    ) {
         for (i, sample) in iter.into_iter().enumerate() {
-            self.channels[i].process_sample(sample);
+            self.channels[i].process_sample(sample, params);
         }
     }
 }

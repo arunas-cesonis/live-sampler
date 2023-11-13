@@ -28,6 +28,12 @@ version = "0.5.8"
 [dependencies.atomic_float]
 version = "0.1"
 
+[dependencies.lazy_static]
+version = "1.4.0"
+
+
+
+
 [dependencies.crossbeam-queue]
 version = "0.3.8"
 
