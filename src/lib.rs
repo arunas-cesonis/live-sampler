@@ -214,6 +214,10 @@ impl Plugin for LiveSampler {
             let params_passthru = self.params.passthru.value();
             let params_fade_time = self.params.fade_time.smoothed.next();
             let params_fade_samples = (params_fade_time * self.sample_rate / 1000.0) as usize;
+            let params = sampler::Params {
+                fade_samples: params_fade_samples,
+                auto_passthru: params_passthru,
+            };
             while let Some(event) = next_event {
                 if event.timing() != sample_id as u32 {
                     //nih_warn!("discard sample_id={} event={:?}", sample_id, event);
@@ -226,14 +230,14 @@ impl Plugin for LiveSampler {
                         1 => nih_error!("reverse not implemented"),
                         7..=23 => {
                             let pos = (note - 7) as f32 / 16.0;
-                            self.sampler.start_playing(pos, note, velocity);
+                            self.sampler.start_playing(pos, note, velocity, &params);
                         }
                         _ => (),
                     },
                     NoteEvent::NoteOff { velocity, note, .. } => match note {
                         0 => self.sampler.stop_recording(),
                         1 => nih_error!("un-reverse not implemented"),
-                        7..=23 => self.sampler.stop_playing(note),
+                        7..=23 => self.sampler.stop_playing(note, &params),
                         _ => (),
                     },
                     _ => (),
@@ -244,6 +248,7 @@ impl Plugin for LiveSampler {
             self.sampler.process_sample(
                 channel_samples,
                 &sampler::Params {
+                    fade_samples: params_fade_samples,
                     auto_passthru: params_passthru,
                 },
             );

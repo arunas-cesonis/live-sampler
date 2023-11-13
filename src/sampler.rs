@@ -1,3 +1,4 @@
+use crate::volume::Volume;
 use nih_plug::nih_warn;
 use nih_plug_vizia::vizia::image::flat::Error::ChannelCountMismatch;
 use std::collections::HashMap;
@@ -12,10 +13,10 @@ fn calc_sample_pos(data_len: usize, read: f32) -> usize {
 
 #[derive(Clone, Debug, Default)]
 struct Voice {
+    note: u8,
     read: f32,
     volume: f32,
     speed: f32,
-    note_on_count: usize,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -23,7 +24,7 @@ struct Channel {
     data: Vec<f32>,
     write: usize,
     read: f32,
-    voices: HashMap<u8, Voice>,
+    voices: Vec<Voice>,
     recording: bool,
     playing: bool,
     now: usize,
@@ -32,83 +33,42 @@ struct Channel {
 
 #[derive(Debug, Clone)]
 pub struct Params {
+    pub fade_samples: usize,
     pub auto_passthru: bool,
 }
 
 impl Default for Params {
     fn default() -> Self {
         Self {
+            fade_samples: 100,
             auto_passthru: true,
         }
     }
 }
 
 impl Channel {
-    pub fn start_playing(&mut self, pos: f32, note: u8, velocity: f32) {
-        // NoteOn for same key being sent twice or more before NoteOff
-        // resets the current voice of that key.
-        // It could be useful to spawn another voice instead for to allow delay-like effects,
-        // but not sure if its even possible to enter such notation in piano-roll like editors.
-        let current_voice_note_on_count =
-            self.voices.get(&note).map(|v| v.note_on_count).unwrap_or(0);
-        self.voices.insert(
+    pub fn start_playing(&mut self, pos: f32, note: u8, velocity: f32, params: &Params) {
+        let read = (pos * self.data.len() as f32).round();
+        let voice = Voice {
             note,
-            Voice {
-                read: (pos * self.data.len() as f32).round(),
-                volume: velocity,
-                speed: 1.0,
-                // note on count is used to detect if the note is still being played
-                // in stop_playing()
-                note_on_count: current_voice_note_on_count + 1,
-            },
-        );
-        //self.read = (pos * self.data.len() as f32).round() as f32;
+            read,
+            volume: velocity,
+            speed: 1.0,
+        };
+        self.voices.push(voice);
         self.note_on_count += 1;
-        nih_warn!(
-            "** START PLAYING voice #{} for {}",
-            current_voice_note_on_count + 1,
-            note
-        );
+        nih_warn!("** START PLAYING voice {}", note);
     }
 
-    pub fn stop_playing(&mut self, note: u8) {
-        // Can be done in some DAW's when opening a project and playhead was saved
-        // positioned within a note
-        // assert!(self.voices.contains_key(&note));
-
-        let should_remove = if let Some(voice) = self.voices.get_mut(&note) {
-            if voice.note_on_count == 1 {
-                true
-            } else {
-                assert!(voice.note_on_count > 1);
-                voice.note_on_count -= 1;
-                false
+    pub fn stop_playing(&mut self, note: u8, params: &Params) {
+        for i in 0..self.voices.len() {
+            if self.voices[i].note == note {
+                self.voices.remove(i);
+                break;
             }
-        } else {
-            nih_warn!("** STOP PLAYING: voice {note} not found");
-            false
-        };
-        if should_remove {
-            self.voices.remove(&note);
         }
         self.note_on_count -= 1;
-        let tmp = self
-            .voices
-            .iter()
-            .map(|v| format!("note={} n={}", v.0, v.1.note_on_count))
-            .collect::<Vec<_>>();
-        nih_warn!(
-            "** STOP PLAYING: voice {note}: voices remaining: {:?}",
-            tmp.join(", ")
-        );
-        //if !voice.is_some() {
-        //}
-        //if self.playing {
-        //    self.playing = false;
-        //    nih_warn!("** STOP PLAYING");
-        //} else {
-        //    nih_warn!("** STOP PLAYING: ALREADY");
-        //}
+        nih_warn!("** STOP PLAYING: voice {note}");
     }
 
     pub fn start_recording(&mut self) {
@@ -143,15 +103,16 @@ impl Channel {
         }
 
         let mut output = 0.0;
-        if !self.voices.is_empty() {
-            for (_, voice) in self.voices.iter_mut() {
-                if !self.data.is_empty() {
-                    let y = self.data[calc_sample_pos(self.data.len(), voice.read)];
-                    output += y * voice.volume;
-                    voice.read += voice.speed;
-                };
-            }
-        } else {
+
+        for voice in self.voices.iter_mut() {
+            if !self.data.is_empty() {
+                let y = self.data[calc_sample_pos(self.data.len(), voice.read)];
+                output += y * voice.volume;
+                voice.read += voice.speed;
+            };
+        }
+
+        if self.note_on_count == 0 {
             if params.auto_passthru {
                 output += value;
             }
@@ -189,12 +150,12 @@ impl Sampler {
     {
         self.channels.iter_mut().for_each(f)
     }
-    pub fn start_playing(&mut self, pos: f32, note: u8, velocity: f32) {
-        self.each(|ch| ch.start_playing(pos, note, velocity));
+    pub fn start_playing(&mut self, pos: f32, note: u8, velocity: f32, params: &Params) {
+        self.each(|ch| ch.start_playing(pos, note, velocity, params));
     }
 
-    pub fn stop_playing(&mut self, note: u8) {
-        self.each(|ch| ch.stop_playing(note));
+    pub fn stop_playing(&mut self, note: u8, params: &Params) {
+        self.each(|ch| ch.stop_playing(note, params));
     }
 
     pub fn start_recording(&mut self) {
