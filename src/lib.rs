@@ -7,6 +7,7 @@ mod volume;
 use crate::sampler::Sampler;
 use crate::volume::Volume;
 use dasp::Signal;
+use lazy_static::lazy_static;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::iter::Rev;
@@ -15,6 +16,15 @@ use std::ops::{DerefMut, Range};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+#[derive(Copy, Clone)]
+enum Action {
+    StartRecording,
+    StopRecording,
+    StartPlaying { position: f32 },
+    StopPlaying,
+    ReversePlayback,
+    UnreversePlayback,
+}
 pub struct LiveSampler {
     audio_io_layout: AudioIOLayout,
     params: Arc<LiveSamplerParams>,
@@ -76,6 +86,29 @@ impl Default for LiveSamplerParams {
         }
     }
 }
+struct NoteMappings {
+    on: [Option<Action>; 127],
+    off: [Option<Action>; 127],
+}
+
+fn note_on_mapping() -> NoteMappings {
+    let mut on = [None; 127];
+    let mut off = [None; 127];
+    on[0] = Some(Action::StartRecording);
+    off[0] = Some(Action::StopRecording);
+    on[1] = Some(Action::ReversePlayback);
+    off[1] = Some(Action::UnreversePlayback);
+    for i in 0..16 {
+        let t = (i as f32) * (1.0 / 16.0);
+        on[i] = Some((Action::StartPlaying { position: t }));
+        off[i] = Some((Action::StopPlaying));
+    }
+    NoteMappings { on, off }
+}
+
+lazy_static! {
+    static ref NOTE_MAPPINGS: NoteMappings = note_on_mapping();
+}
 
 impl Default for LiveSampler {
     fn default() -> Self {
@@ -99,35 +132,6 @@ impl LiveSampler {
             .unwrap();
         channel_count
     }
-}
-
-enum Action {
-    StartRecording,
-    StopRecording,
-    StartPlaying,
-    StopPlaying,
-    ReversePlayback,
-    UnreversePlayback,
-}
-
-enum NoteRange {
-    Single(usize),
-    Range(std::ops::Range<usize>),
-}
-const POSITION_SPLIT: usize = 16;
-
-fn note_to_action_mapping() -> Vec<(NoteRange, Action, Action)> {
-    use Action::*;
-    use NoteRange::*;
-    vec![
-        (Range((0..POSITION_SPLIT)), StartPlaying, StopPlaying),
-        (Single(POSITION_SPLIT), StartRecording, StopRecording),
-        (
-            Single(POSITION_SPLIT - 1),
-            ReversePlayback,
-            UnreversePlayback,
-        ),
-    ]
 }
 
 impl Plugin for LiveSampler {
@@ -164,7 +168,6 @@ impl Plugin for LiveSampler {
     type BackgroundTask = ();
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        eprintln!("OK");
         editor::create(
             self.params.clone(),
             //self.peak_meter.clone(),
@@ -201,47 +204,36 @@ impl Plugin for LiveSampler {
     ) -> ProcessStatus {
         let channels = buffer.channels();
         let mut next_event = context.next_event();
+        let m = &NOTE_MAPPINGS;
 
         for (sample_id, mut channel_samples) in buffer.iter_samples().enumerate() {
             // Smoothing is optionally built into the parameters themselves
             let gain = self.params.gain.smoothed.next();
             let params_speed = self.params.speed.smoothed.next();
             let params_gain = self.params.gain.smoothed.next();
-            let params_passthru = if self.params.passthru.value() {
-                1.0
-            } else {
-                0.0
-            };
+            let params_passthru = self.params.passthru.value();
             let params_fade_time = self.params.fade_time.smoothed.next();
             let params_fade_samples = (params_fade_time * self.sample_rate / 1000.0) as usize;
-
             while let Some(event) = next_event {
                 if event.timing() != sample_id as u32 {
                     //nih_warn!("discard sample_id={} event={:?}", sample_id, event);
                     break;
                 }
+                nih_warn!("event {:?}", event);
                 match event {
                     NoteEvent::NoteOn { velocity, note, .. } => match note {
-                        47 => {}
-                        48 => {
-                            self.sampler.start_recording();
-                        }
-                        49 => {}
-                        60..=75 => {
-                            let pos = (note - 60) as f32 / 16.0;
+                        0 => self.sampler.start_recording(),
+                        1 => nih_error!("reverse not implemented"),
+                        7..=23 => {
+                            let pos = (note - 7) as f32 / 16.0;
                             self.sampler.start_playing(pos, note, velocity);
                         }
                         _ => (),
                     },
-                    NoteEvent::NoteOff { note, .. } => match note {
-                        47 => {}
-                        48 => {
-                            self.sampler.stop_recording();
-                        }
-                        49 => {}
-                        60..=75 => {
-                            self.sampler.stop_playing(note);
-                        }
+                    NoteEvent::NoteOff { velocity, note, .. } => match note {
+                        0 => self.sampler.stop_recording(),
+                        1 => nih_error!("un-reverse not implemented"),
+                        7..=23 => self.sampler.stop_playing(note),
                         _ => (),
                     },
                     _ => (),
@@ -249,7 +241,12 @@ impl Plugin for LiveSampler {
                 next_event = context.next_event();
             }
 
-            self.sampler.process_sample(channel_samples);
+            self.sampler.process_sample(
+                channel_samples,
+                &sampler::Params {
+                    auto_passthru: params_passthru,
+                },
+            );
         }
 
         ProcessStatus::Normal
