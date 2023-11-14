@@ -19,6 +19,7 @@ struct Voice {
     read: f32,
     volume: Volume,
     speed: f32,
+    finished: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -26,6 +27,7 @@ struct Channel {
     data: Vec<f32>,
     write: usize,
     read: f32,
+    global_speed: f32,
     voices: Vec<Voice>,
     recording: bool,
     playing: bool,
@@ -56,6 +58,7 @@ impl Channel {
             data: vec![],
             write: 0,
             read: 0.0,
+            global_speed: 1.0,
             voices: vec![],
             recording: false,
             playing: false,
@@ -69,17 +72,18 @@ impl Channel {
         self.voices.len()
     }
 
-    fn dump_befpre_death(&mut self) -> String {
+    fn dump_before_death(&mut self) -> String {
         self.data.clear();
         format!("{:?}", self)
     }
 
     fn log(&self, params: &Params, s: String) {
         nih_warn!(
-            "voices={} note_on={} fade_time={} {}",
+            "voices={} note_on={} fade_time={} passthru_vol={:.2} {}",
             self.voices.len(),
             self.note_on_count,
             params.fade_samples,
+            self.passthru_volume.value(self.now),
             s
         );
     }
@@ -91,34 +95,39 @@ impl Channel {
             read,
             volume: Volume::new(0.0),
             speed: 1.0,
+            finished: false,
         };
         voice.volume.to(self.now, params.fade_samples, velocity);
         self.voices.push(voice);
         self.note_on_count += 1;
-        if params.auto_passthru {
-            if self.passthru_on {
-                self.passthru_on = false;
-                self.passthru_volume.to(self.now, params.fade_samples, 0.0);
-            }
-        }
+        self.handle_passthru(params);
         self.log(params, format!("START PLAYING note={}", note));
     }
 
     pub fn stop_playing(&mut self, note: u8, params: &Params) {
+        let found = false;
         for i in 0..self.voices.len() {
-            if self.voices[i].note == note {
-                self.voices[i].volume.to(self.now, params.fade_samples, 0.0);
-                break;
+            let voice = &mut self.voices[i];
+            if voice.note == note && !voice.finished {
+                voice.volume.to(self.now, params.fade_samples, 0.0);
+                voice.finished = true;
+
+                self.note_on_count -= 1;
+                self.handle_passthru(params);
+                self.log(params, format!("STOP PLAYING note={}", note));
+
+                return;
             }
         }
-        self.note_on_count -= 1;
-        if params.auto_passthru {
-            if !self.passthru_on {
-                self.passthru_on = true;
-                self.passthru_volume.to(self.now, params.fade_samples, 1.0);
-            }
-        }
-        self.log(params, format!("STOP PLAYING note={}", note));
+        panic!("could not find voice {note}")
+    }
+
+    pub fn reverse(&mut self, params: &Params) {
+        self.global_speed = -1.0;
+    }
+
+    pub fn unreverse(&mut self, params: &Params) {
+        self.global_speed = 1.0;
     }
 
     pub fn start_recording(&mut self, params: &Params) {
@@ -138,7 +147,28 @@ impl Channel {
         }
     }
 
-    pub fn process_sample<'a>(&mut self, sample: &mut f32, params: &Params) -> bool {
+    fn handle_passthru(&mut self, params: &Params) {
+        if params.auto_passthru {
+            if self.note_on_count == 0 {
+                if !self.passthru_on {
+                    self.passthru_on = true;
+                    self.passthru_volume.to(self.now, params.fade_samples, 1.0);
+                }
+            } else {
+                if self.passthru_on {
+                    self.passthru_on = false;
+                    self.passthru_volume.to(self.now, params.fade_samples, 0.0);
+                }
+            }
+        } else {
+            if self.passthru_on {
+                self.passthru_on = false;
+                self.passthru_volume.to(self.now, params.fade_samples, 0.0);
+            }
+        }
+    }
+
+    pub fn process_sample<'a>(&mut self, sample: &mut f32, params: &Params) {
         let value = *sample;
 
         if self.recording {
@@ -157,10 +187,10 @@ impl Channel {
             if !self.data.is_empty() {
                 let y = self.data[calc_sample_pos(self.data.len(), voice.read)];
                 output += y * voice.volume.value(self.now);
-                voice.read += voice.speed;
+                voice.read += voice.speed * self.global_speed;
             };
             voice.volume.step(self.now);
-            if voice.volume.is_static_and_mute() {
+            if voice.volume.is_static_and_mute() && voice.finished {
                 removed.push(i);
             }
         }
@@ -169,12 +199,14 @@ impl Channel {
             self.voices.remove(j);
         }
 
+        self.handle_passthru(params);
+
         if (params.auto_passthru
             && self.passthru_volume.is_static_and_mute()
             && self.note_on_count == 0)
         {
-            nih_error!("{}", self.dump_befpre_death());
-            return false;
+            nih_error!("{}", self.dump_before_death());
+            panic!("unexpected state");
         }
         output += value * self.passthru_volume.value(self.now);
         self.passthru_volume.step(self.now);
@@ -209,7 +241,6 @@ impl Channel {
         //}
         self.now += 1;
         *sample = output;
-        true
     }
 }
 
@@ -230,6 +261,7 @@ impl Sampler {
     {
         self.channels.iter_mut().for_each(f)
     }
+
     pub fn start_playing(&mut self, pos: f32, note: u8, velocity: f32, params: &Params) {
         self.each(|ch| ch.start_playing(pos, note, velocity, params));
     }
@@ -242,6 +274,14 @@ impl Sampler {
         self.each(|ch| Channel::start_recording(ch, params));
     }
 
+    pub fn reverse(&mut self, params: &Params) {
+        self.each(|ch| Channel::reverse(ch, params));
+    }
+
+    pub fn unreverse(&mut self, params: &Params) {
+        self.each(|ch| Channel::unreverse(ch, params));
+    }
+
     pub fn stop_recording(&mut self, params: &Params) {
         self.each(|ch| Channel::stop_recording(ch, params));
     }
@@ -252,9 +292,7 @@ impl Sampler {
         params: &Params,
     ) {
         for (i, sample) in iter.into_iter().enumerate() {
-            if !self.channels[i].process_sample(sample, params) {
-                panic!("doh");
-            }
+            self.channels[i].process_sample(sample, params);
         }
     }
 }

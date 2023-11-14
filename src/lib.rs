@@ -222,6 +222,7 @@ impl Plugin for LiveSampler {
         for (sample_id, mut channel_samples) in buffer.iter_samples().enumerate() {
             // Smoothing is optionally built into the parameters themselves
             let params = self.sampler_params();
+            let params = &params;
             while let Some(event) = next_event {
                 if event.timing() != sample_id as u32 {
                     //nih_warn!("discard sample_id={} event={:?}", sample_id, event);
@@ -230,18 +231,18 @@ impl Plugin for LiveSampler {
                 nih_warn!("event {:?}", event);
                 match event {
                     NoteEvent::NoteOn { velocity, note, .. } => match note {
-                        0 => self.sampler.start_recording(&params),
-                        1 => nih_error!("reverse not implemented"),
-                        7..=23 => {
-                            let pos = (note - 7) as f32 / 16.0;
-                            self.sampler.start_playing(pos, note, velocity, &params);
+                        0 => self.sampler.start_recording(params),
+                        1 => self.sampler.reverse(params),
+                        12..=35 => {
+                            let pos = (note - 12) as f32 / 16.0;
+                            self.sampler.start_playing(pos, note, velocity, params);
                         }
                         _ => (),
                     },
                     NoteEvent::NoteOff { velocity, note, .. } => match note {
-                        0 => self.sampler.stop_recording(&params),
-                        1 => nih_error!("un-reverse not implemented"),
-                        7..=23 => self.sampler.stop_playing(note, &params),
+                        0 => self.sampler.stop_recording(params),
+                        1 => self.sampler.unreverse(params),
+                        12..=35 => self.sampler.stop_playing(note, params),
                         _ => (),
                     },
                     _ => (),
@@ -249,7 +250,7 @@ impl Plugin for LiveSampler {
                 next_event = context.next_event();
             }
 
-            self.sampler.process_sample(channel_samples, &params);
+            self.sampler.process_sample(channel_samples, params);
         }
 
         ProcessStatus::Normal
