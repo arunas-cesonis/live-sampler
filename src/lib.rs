@@ -116,7 +116,7 @@ impl Default for LiveSampler {
             audio_io_layout: AudioIOLayout::default(),
             params: Arc::new(LiveSamplerParams::default()),
             sample_rate: -1.0,
-            sampler: Sampler::new(0),
+            sampler: Sampler::new(0, &sampler::Params::default()),
         }
     }
 }
@@ -131,6 +131,19 @@ impl LiveSampler {
             .try_into()
             .unwrap();
         channel_count
+    }
+    fn sampler_params(&self) -> sampler::Params {
+        let gain = self.params.gain.smoothed.next();
+        let params_speed = self.params.speed.smoothed.next();
+        let params_gain = self.params.gain.smoothed.next();
+        let params_passthru = self.params.passthru.value();
+        let params_fade_time = self.params.fade_time.smoothed.next();
+        let params_fade_samples = (params_fade_time * self.sample_rate / 1000.0) as usize;
+        let params = sampler::Params {
+            fade_samples: params_fade_samples,
+            auto_passthru: params_passthru,
+        };
+        params
     }
 }
 
@@ -187,13 +200,13 @@ impl Plugin for LiveSampler {
     ) -> bool {
         self.audio_io_layout = audio_io_layout.clone();
         self.sample_rate = buffer_config.sample_rate;
-        self.sampler = Sampler::new(self.channel_count());
+        self.sampler = Sampler::new(self.channel_count(), &self.sampler_params());
         true
     }
 
     fn reset(&mut self) {
         let channel_count: usize = self.channel_count();
-        self.sampler = Sampler::new(self.channel_count());
+        self.sampler = Sampler::new(self.channel_count(), &self.sampler_params());
     }
 
     fn process(
@@ -208,16 +221,7 @@ impl Plugin for LiveSampler {
 
         for (sample_id, mut channel_samples) in buffer.iter_samples().enumerate() {
             // Smoothing is optionally built into the parameters themselves
-            let gain = self.params.gain.smoothed.next();
-            let params_speed = self.params.speed.smoothed.next();
-            let params_gain = self.params.gain.smoothed.next();
-            let params_passthru = self.params.passthru.value();
-            let params_fade_time = self.params.fade_time.smoothed.next();
-            let params_fade_samples = (params_fade_time * self.sample_rate / 1000.0) as usize;
-            let params = sampler::Params {
-                fade_samples: params_fade_samples,
-                auto_passthru: params_passthru,
-            };
+            let params = self.sampler_params();
             while let Some(event) = next_event {
                 if event.timing() != sample_id as u32 {
                     //nih_warn!("discard sample_id={} event={:?}", sample_id, event);
@@ -226,7 +230,7 @@ impl Plugin for LiveSampler {
                 nih_warn!("event {:?}", event);
                 match event {
                     NoteEvent::NoteOn { velocity, note, .. } => match note {
-                        0 => self.sampler.start_recording(),
+                        0 => self.sampler.start_recording(&params),
                         1 => nih_error!("reverse not implemented"),
                         7..=23 => {
                             let pos = (note - 7) as f32 / 16.0;
@@ -235,7 +239,7 @@ impl Plugin for LiveSampler {
                         _ => (),
                     },
                     NoteEvent::NoteOff { velocity, note, .. } => match note {
-                        0 => self.sampler.stop_recording(),
+                        0 => self.sampler.stop_recording(&params),
                         1 => nih_error!("un-reverse not implemented"),
                         7..=23 => self.sampler.stop_playing(note, &params),
                         _ => (),
@@ -245,13 +249,7 @@ impl Plugin for LiveSampler {
                 next_event = context.next_event();
             }
 
-            self.sampler.process_sample(
-                channel_samples,
-                &sampler::Params {
-                    fade_samples: params_fade_samples,
-                    auto_passthru: params_passthru,
-                },
-            );
+            self.sampler.process_sample(channel_samples, &params);
         }
 
         ProcessStatus::Normal
