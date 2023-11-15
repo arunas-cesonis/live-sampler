@@ -1,9 +1,8 @@
+use std::fmt::Debug;
+
+use nih_plug::nih_warn;
+
 use crate::volume::Volume;
-use nih_plug::{nih_error, nih_warn};
-use nih_plug_vizia::vizia::image::flat::Error::ChannelCountMismatch;
-use nih_plug_vizia::vizia::prelude::Key::ChannelDown;
-use std::collections::{HashMap, LinkedList};
-use std::fmt::{Debug, Formatter};
 
 fn calc_sample_pos_f32(data_len: usize, read: f32) -> f32 {
     let len_f32 = (data_len as f32);
@@ -108,7 +107,6 @@ impl Channel {
 
     pub fn start_playing(&mut self, pos: f32, note: u8, velocity: f32, params: &Params) {
         let read = (pos * self.data.len() as f32).round();
-        //self.finish_voices_of_note(note, params);
         let mut voice = Voice {
             note,
             read,
@@ -151,7 +149,7 @@ impl Channel {
 
     pub fn start_recording(&mut self, params: &Params) {
         assert!(!self.recording);
-        assert!(self.write == 0);
+        assert_eq!(self.write, 0);
         self.recording = true;
     }
 
@@ -160,9 +158,6 @@ impl Channel {
             self.recording = false;
             self.data.truncate(self.write);
             self.write = 0;
-            //log!("STOP RECORIDNG (wrote {} samples)", self.data.len());
-        } else {
-            //log!("STOP RECORIDNG (already stopped)");
         }
     }
 
@@ -220,44 +215,16 @@ impl Channel {
 
         self.handle_passthru(params);
 
-        if (params.auto_passthru
-            && self.passthru_volume.is_static_and_mute()
-            && self.note_on_count == 0)
-        {
-            nih_error!("{}", self.dump_before_death());
-            panic!("unexpected state");
-        }
+        // if (params.auto_passthru
+        //     && self.passthru_volume.is_static_and_mute()
+        //     && self.note_on_count == 0)
+        // {
+        //     nih_error!("{}", self.dump_before_death());
+        //     panic!("unexpected state");
+        // }
         output += value * self.passthru_volume.value(self.now);
         self.passthru_volume.step(self.now);
 
-        //if !removed.is_empty() {
-        //    if removed.len() == 1 {
-        //        self.voices.remove(removed[0]);
-        //    } else {
-        //        let mut tmp = vec![];
-        //        std::mem::swap(&mut tmp, &mut self.voices);
-        //        let mut j = 0;
-        //        for (i, voice) in tmp.into_iter().enumerate() {
-        //            if j >= removed.len() || i != removed[j] {
-        //                self.voices.push(voice);
-        //            } else {
-        //                j += 1;
-        //            }
-        //        }
-        //    }
-        //}
-
-        //if self.playing {
-        //    let data_value = if self.data.is_empty() {
-        //        0.0
-        //    } else {
-        //        self.data[calc_sample_pos(self.data.len(), self.read)]
-        //    };
-        //    output += data_value;
-        //    self.read += 1.0;
-        //} else {
-        //    output += value;
-        //}
         self.now += 1;
         *sample = output;
     }
