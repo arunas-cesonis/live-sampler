@@ -1,37 +1,27 @@
 #![allow(unused)]
 
-mod editor;
-mod sampler;
-mod volume;
-
-use crate::editor::{DebugData, DebugView};
-use crate::sampler::Sampler;
-use crate::volume::Volume;
-use dasp::Signal;
-use lazy_static::lazy_static;
-use nih_plug::prelude::*;
-use nih_plug_vizia::ViziaState;
 use std::iter::Rev;
 use std::num::IntErrorKind::PosOverflow;
 use std::ops::{DerefMut, Range};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-#[derive(Copy, Clone)]
-enum Action {
-    StartRecording,
-    StopRecording,
-    StartPlaying { position: f32 },
-    StopPlaying,
-    ReversePlayback,
-    UnreversePlayback,
-}
+use dasp::Signal;
+use lazy_static::lazy_static;
+use nih_plug::prelude::*;
+use nih_plug_vizia::ViziaState;
+
+use crate::sampler::Sampler;
+use crate::volume::Volume;
+
+mod sampler;
+mod volume;
+
 pub struct LiveSampler {
     audio_io_layout: AudioIOLayout,
     params: Arc<LiveSamplerParams>,
     sample_rate: f32,
-    sampler: sampler::Sampler,
-    debug_data: Option<triple_buffer::Input<DebugData>>,
+    sampler: Sampler,
 }
 
 #[derive(Params)]
@@ -44,8 +34,6 @@ struct LiveSamplerParams {
     pub speed: FloatParam,
     #[id = "fade time"]
     pub fade_time: FloatParam,
-    #[persist = "editor-state"]
-    editor_state: Arc<ViziaState>,
 }
 
 impl Default for LiveSamplerParams {
@@ -82,34 +70,10 @@ impl Default for LiveSamplerParams {
                 },
             )
             .with_unit(" ms"), //with_smoother(SmoothingStyle::Logarithmic(50.0))
-            // .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
-            //.with_string_to_value(formatters::s2v_f32_gain_to_db()),
-            editor_state: editor::default_state(),
+                               // .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+                               //.with_string_to_value(formatters::s2v_f32_gain_to_db()),
         }
     }
-}
-struct NoteMappings {
-    on: [Option<Action>; 127],
-    off: [Option<Action>; 127],
-}
-
-fn note_on_mapping() -> NoteMappings {
-    let mut on = [None; 127];
-    let mut off = [None; 127];
-    on[0] = Some(Action::StartRecording);
-    off[0] = Some(Action::StopRecording);
-    on[1] = Some(Action::ReversePlayback);
-    off[1] = Some(Action::UnreversePlayback);
-    for i in 0..16 {
-        let t = (i as f32) * (1.0 / 16.0);
-        on[i] = Some((Action::StartPlaying { position: t }));
-        off[i] = Some((Action::StopPlaying));
-    }
-    NoteMappings { on, off }
-}
-
-lazy_static! {
-    static ref NOTE_MAPPINGS: NoteMappings = note_on_mapping();
 }
 
 impl Default for LiveSampler {
@@ -119,7 +83,6 @@ impl Default for LiveSampler {
             params: Arc::new(LiveSamplerParams::default()),
             sample_rate: -1.0,
             sampler: Sampler::new(0, &sampler::Params::default()),
-            debug_data: None,
         }
     }
 }
@@ -154,12 +117,9 @@ impl LiveSampler {
 impl Plugin for LiveSampler {
     const NAME: &'static str = "Live Sampler";
     const VENDOR: &'static str = "seunje";
-    const URL: &'static str = "https://github.com/arunas-cesonis/";
+    const URL: &'static str = "https://github.com/arunas-cesonis/live-sampler";
     const EMAIL: &'static str = "";
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-    const SAMPLE_ACCURATE_AUTOMATION: bool = true;
-    // The first audio IO layout is used as the default. The other layouts may be selected either
-    // explicitly or automatically by the host or the user depending on the plugin API/backend.
     const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[
         AudioIOLayout {
             main_input_channels: NonZeroU32::new(2),
@@ -167,10 +127,6 @@ impl Plugin for LiveSampler {
 
             aux_input_ports: &[],
             aux_output_ports: &[],
-
-            // Individual ports and the layout as a whole can be named here. By default these names
-            // are generated as needed. This layout will be called 'Stereo', while the other one is
-            // given the name 'Mono' based no the number of input and output channels.
             names: PortNames::const_default(),
         },
         AudioIOLayout {
@@ -180,21 +136,10 @@ impl Plugin for LiveSampler {
         },
     ];
     const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
+    const SAMPLE_ACCURATE_AUTOMATION: bool = true;
     type SysExMessage = ();
 
     type BackgroundTask = ();
-
-    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        let (mut input, mut output) =
-            triple_buffer::TripleBuffer::new(&DebugData::default()).split();
-        self.debug_data = Some(input);
-        editor::create(
-            self.params.clone(),
-            Arc::new(parking_lot::Mutex::new(output)),
-            //self.peak_meter.clone(),
-            self.params.editor_state.clone(),
-        )
-    }
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
@@ -225,18 +170,15 @@ impl Plugin for LiveSampler {
     ) -> ProcessStatus {
         let channels = buffer.channels();
         let mut next_event = context.next_event();
-        let m = &NOTE_MAPPINGS;
 
         for (sample_id, mut channel_samples) in buffer.iter_samples().enumerate() {
-            // Smoothing is optionally built into the parameters themselves
             let params = self.sampler_params();
             let params = &params;
             while let Some(event) = next_event {
                 if event.timing() != sample_id as u32 {
-                    //nih_warn!("discard sample_id={} event={:?}", sample_id, event);
                     break;
                 }
-                nih_warn!("event {:?}", event);
+                //nih_warn!("event {:?}", event);
                 // assert!(event.voice_id().is_none());
                 match event {
                     NoteEvent::NoteOn { velocity, note, .. } => match note {
