@@ -38,19 +38,6 @@ impl Default for LiveSamplerParams {
     fn default() -> Self {
         Self {
             auto_passthru: BoolParam::new("Pass through", true),
-            gain: FloatParam::new(
-                "Gain",
-                util::db_to_gain(0.0),
-                FloatRange::Skewed {
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
-                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
-                },
-            )
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
-            .with_unit(" dB")
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
             speed: FloatParam::new(
                 "Speed",
                 1.0,
@@ -96,7 +83,6 @@ impl LiveSampler {
     }
     fn sampler_params(&self) -> sampler::Params {
         let params_speed = self.params.speed.smoothed.next();
-        let params_gain = self.params.gain.smoothed.next();
         let params_passthru = self.params.auto_passthru.value();
         let params_fade_time = self.params.fade_time.smoothed.next();
         let params_fade_samples = (params_fade_time * self.sample_rate / 1000.0) as usize;
