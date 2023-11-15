@@ -1,18 +1,8 @@
-#![allow(unused)]
-
-use std::iter::Rev;
-use std::num::IntErrorKind::PosOverflow;
-use std::ops::{DerefMut, Range};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use dasp::Signal;
-use lazy_static::lazy_static;
 use nih_plug::prelude::*;
-use nih_plug_vizia::ViziaState;
 
 use crate::sampler::Sampler;
-use crate::volume::Volume;
 
 mod sampler;
 mod volume;
@@ -130,7 +120,7 @@ impl Plugin for LiveSampler {
         &mut self,
         audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
-        context: &mut impl InitContext<Self>,
+        _context: &mut impl InitContext<Self>,
     ) -> bool {
         self.audio_io_layout = audio_io_layout.clone();
         self.sample_rate = buffer_config.sample_rate;
@@ -139,7 +129,6 @@ impl Plugin for LiveSampler {
     }
 
     fn reset(&mut self) {
-        let channel_count: usize = self.channel_count();
         self.sampler = Sampler::new(self.channel_count(), &self.sampler_params());
     }
 
@@ -149,10 +138,9 @@ impl Plugin for LiveSampler {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        let channels = buffer.channels();
         let mut next_event = context.next_event();
 
-        for (sample_id, mut channel_samples) in buffer.iter_samples().enumerate() {
+        for (sample_id, channel_samples) in buffer.iter_samples().enumerate() {
             let params = self.sampler_params();
             let params = &params;
             while let Some(event) = next_event {
@@ -171,7 +159,7 @@ impl Plugin for LiveSampler {
                         }
                         _ => (),
                     },
-                    NoteEvent::NoteOff { velocity, note, .. } => match note {
+                    NoteEvent::NoteOff { note, .. } => match note {
                         0 => self.sampler.stop_recording(params),
                         1 => self.sampler.unreverse(params),
                         12..=27 => self.sampler.stop_playing(note, params),
