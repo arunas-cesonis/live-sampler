@@ -5,12 +5,15 @@ use nih_plug_vizia::vizia::prelude::Key::ChannelDown;
 use std::collections::{HashMap, LinkedList};
 use std::fmt::{Debug, Formatter};
 
-fn calc_sample_pos(data_len: usize, read: f32) -> usize {
+fn calc_sample_pos_f32(data_len: usize, read: f32) -> f32 {
     let len_f32 = (data_len as f32);
     let i = read % len_f32;
     let i = if i < 0.0 { i + len_f32 } else { i };
-    let i = i as usize;
     i
+}
+
+fn calc_sample_pos(data_len: usize, read: f32) -> usize {
+    calc_sample_pos_f32(data_len, read) as usize
 }
 
 #[derive(Clone, Debug, Default)]
@@ -41,6 +44,7 @@ struct Channel {
 pub struct Params {
     pub fade_samples: usize,
     pub auto_passthru: bool,
+    pub speed: f32,
 }
 
 impl Default for Params {
@@ -48,6 +52,7 @@ impl Default for Params {
         Self {
             fade_samples: 100,
             auto_passthru: true,
+            speed: 1.0,
         }
     }
 }
@@ -88,8 +93,22 @@ impl Channel {
         );
     }
 
+    fn finish_voice(now: usize, voice: &mut Voice, params: &Params) {
+        voice.volume.to(now, params.fade_samples, 0.0);
+        voice.finished = true;
+    }
+
+    fn finish_voices_of_note(&mut self, note: u8, params: &Params) {
+        for v in self.voices.iter_mut() {
+            if v.note == note && !v.finished {
+                Self::finish_voice(self.now, v, params);
+            }
+        }
+    }
+
     pub fn start_playing(&mut self, pos: f32, note: u8, velocity: f32, params: &Params) {
         let read = (pos * self.data.len() as f32).round();
+        //self.finish_voices_of_note(note, params);
         let mut voice = Voice {
             note,
             read,
@@ -105,12 +124,10 @@ impl Channel {
     }
 
     pub fn stop_playing(&mut self, note: u8, params: &Params) {
-        let found = false;
         for i in 0..self.voices.len() {
             let voice = &mut self.voices[i];
             if voice.note == note && !voice.finished {
-                voice.volume.to(self.now, params.fade_samples, 0.0);
-                voice.finished = true;
+                Self::finish_voice(self.now, voice, params);
 
                 self.note_on_count -= 1;
                 self.handle_passthru(params);
@@ -119,7 +136,9 @@ impl Channel {
                 return;
             }
         }
-        panic!("could not find voice {note}")
+        // This is not an error as some DAWs will send note off events for notes
+        // that were never played, e.g. REAPER
+        nih_warn!("could not find voice {note}")
     }
 
     pub fn reverse(&mut self, params: &Params) {
@@ -187,7 +206,7 @@ impl Channel {
             if !self.data.is_empty() {
                 let y = self.data[calc_sample_pos(self.data.len(), voice.read)];
                 output += y * voice.volume.value(self.now);
-                voice.read += voice.speed * self.global_speed;
+                voice.read += voice.speed * self.global_speed * params.speed;
             };
             voice.volume.step(self.now);
             if voice.volume.is_static_and_mute() && voice.finished {
@@ -283,7 +302,7 @@ impl Sampler {
     }
 
     pub fn stop_recording(&mut self, params: &Params) {
-        self.each(|ch| Channel::stop_recording(ch, params));
+        self.each(|ch| Channel::stop_recording(ch, params))
     }
 
     pub fn process_sample<'a>(
