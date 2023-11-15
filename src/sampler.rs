@@ -5,7 +5,7 @@ use nih_plug::nih_warn;
 use crate::volume::Volume;
 
 fn calc_sample_pos_f32(data_len: usize, read: f32) -> f32 {
-    let len_f32 = (data_len as f32);
+    let len_f32 = data_len as f32;
     let i = read % len_f32;
     let i = if i < 0.0 { i + len_f32 } else { i };
     i
@@ -28,11 +28,9 @@ struct Voice {
 struct Channel {
     data: Vec<f32>,
     write: usize,
-    read: f32,
     global_speed: f32,
     voices: Vec<Voice>,
     recording: bool,
-    playing: bool,
     now: usize,
     note_on_count: usize,
     passthru_on: bool,
@@ -61,24 +59,14 @@ impl Channel {
         Channel {
             data: vec![],
             write: 0,
-            read: 0.0,
             global_speed: 1.0,
             voices: vec![],
             recording: false,
-            playing: false,
             now: 0,
             note_on_count: 0,
             passthru_on: false,
             passthru_volume: Volume::new(if params.auto_passthru { 1.0 } else { 0.0 }),
         }
-    }
-    pub fn voice_count(&self) -> usize {
-        self.voices.len()
-    }
-
-    fn dump_before_death(&mut self) -> String {
-        self.data.clear();
-        format!("{:?}", self)
     }
 
     fn log(&self, params: &Params, s: String) {
@@ -95,14 +83,6 @@ impl Channel {
     fn finish_voice(now: usize, voice: &mut Voice, params: &Params) {
         voice.volume.to(now, params.fade_samples, 0.0);
         voice.finished = true;
-    }
-
-    fn finish_voices_of_note(&mut self, note: u8, params: &Params) {
-        for v in self.voices.iter_mut() {
-            if v.note == note && !v.finished {
-                Self::finish_voice(self.now, v, params);
-            }
-        }
     }
 
     pub fn start_playing(&mut self, pos: f32, note: u8, velocity: f32, params: &Params) {
@@ -139,21 +119,21 @@ impl Channel {
         nih_warn!("could not find voice {note}")
     }
 
-    pub fn reverse(&mut self, params: &Params) {
+    pub fn reverse(&mut self, _params: &Params) {
         self.global_speed = -1.0;
     }
 
-    pub fn unreverse(&mut self, params: &Params) {
+    pub fn unreverse(&mut self, _params: &Params) {
         self.global_speed = 1.0;
     }
 
-    pub fn start_recording(&mut self, params: &Params) {
+    pub fn start_recording(&mut self, _params: &Params) {
         assert!(!self.recording);
         assert_eq!(self.write, 0);
         self.recording = true;
     }
 
-    pub fn stop_recording(&mut self, params: &Params) {
+    pub fn stop_recording(&mut self, _params: &Params) {
         if self.recording {
             self.recording = false;
             self.data.truncate(self.write);

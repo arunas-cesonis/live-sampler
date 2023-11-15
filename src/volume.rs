@@ -18,12 +18,14 @@ impl Volume {
     pub fn new(value: f32) -> Self {
         Volume::Static(value)
     }
+    #[allow(unused)]
     pub fn is_static_and_mute(&self) -> bool {
         match self {
             Volume::Static(x) => *x == 0.0,
             _ => false,
         }
     }
+    #[allow(unused)]
     pub fn is_static(&self) -> bool {
         match self {
             Volume::Static(_) => true,
@@ -41,6 +43,7 @@ impl Volume {
             Volume::Static(value) => *value,
         }
     }
+    #[allow(unused)]
     pub fn set(&mut self, value: f32) {
         *self = Volume::Static(value)
     }

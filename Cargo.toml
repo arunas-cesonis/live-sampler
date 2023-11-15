@@ -18,39 +18,3 @@ path = "src/main.rs"
 [dependencies.nih_plug]
 path = "../nih-plug"
 features = ["standalone", "vst3"]
-
-[dependencies.anyhow]
-version = "1.0.75"
-
-[dependencies.nih_plug_vizia]
-path = "../nih-plug/nih_plug_vizia"
-
-[dependencies.crossbeam-channel]
-version = "0.5.8"
-
-[dependencies.atomic_float]
-version = "0.1"
-
-[dependencies.lazy_static]
-version = "1.4.0"
-
-[dependencies.triple_buffer]
-version = "7.0.0"
-
-
-
-
-[dependencies.crossbeam-queue]
-version = "0.3.8"
-
-[dependencies.crossbeam-utils]
-version = "0.8.16"
-
-[dependencies.dasp]
-version = "0.11.0"
-features = ["signal", "signal-bus", "interpolate-sinc",  "interpolate", "ring_buffer", "interpolate-linear", "interpolate-floor", "rms"]
-
-[dependencies.parking_lot]
-version = "0.12.1"
-[dependencies]
-serde = { version = "1.0.189", features = ["derive"] }
