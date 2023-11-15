@@ -4,6 +4,7 @@ mod editor;
 mod sampler;
 mod volume;
 
+use crate::editor::{DebugData, DebugView};
 use crate::sampler::Sampler;
 use crate::volume::Volume;
 use dasp::Signal;
@@ -30,14 +31,15 @@ pub struct LiveSampler {
     params: Arc<LiveSamplerParams>,
     sample_rate: f32,
     sampler: sampler::Sampler,
+    debug_data: Option<triple_buffer::Input<DebugData>>,
 }
 
 #[derive(Params)]
 struct LiveSamplerParams {
     #[id = "gain"]
     pub gain: FloatParam,
-    #[id = "passthru"]
-    pub passthru: BoolParam,
+    #[id = "auto_passthru"]
+    pub auto_passthru: BoolParam,
     #[id = "speed"]
     pub speed: FloatParam,
     #[id = "fade time"]
@@ -49,7 +51,7 @@ struct LiveSamplerParams {
 impl Default for LiveSamplerParams {
     fn default() -> Self {
         Self {
-            passthru: BoolParam::new("Pass through", true),
+            auto_passthru: BoolParam::new("Pass through", true),
             gain: FloatParam::new(
                 "Gain",
                 util::db_to_gain(0.0),
@@ -67,8 +69,8 @@ impl Default for LiveSamplerParams {
                 "Speed",
                 1.0,
                 FloatRange::Linear {
-                    min: 0.125,
-                    max: 1.0,
+                    min: -2.0,
+                    max: 2.0,
                 },
             ),
             fade_time: FloatParam::new(
@@ -117,6 +119,7 @@ impl Default for LiveSampler {
             params: Arc::new(LiveSamplerParams::default()),
             sample_rate: -1.0,
             sampler: Sampler::new(0, &sampler::Params::default()),
+            debug_data: None,
         }
     }
 }
@@ -136,12 +139,13 @@ impl LiveSampler {
         let gain = self.params.gain.smoothed.next();
         let params_speed = self.params.speed.smoothed.next();
         let params_gain = self.params.gain.smoothed.next();
-        let params_passthru = self.params.passthru.value();
+        let params_passthru = self.params.auto_passthru.value();
         let params_fade_time = self.params.fade_time.smoothed.next();
         let params_fade_samples = (params_fade_time * self.sample_rate / 1000.0) as usize;
         let params = sampler::Params {
             fade_samples: params_fade_samples,
             auto_passthru: params_passthru,
+            speed: params_speed,
         };
         params
     }
@@ -181,8 +185,12 @@ impl Plugin for LiveSampler {
     type BackgroundTask = ();
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        let (mut input, mut output) =
+            triple_buffer::TripleBuffer::new(&DebugData::default()).split();
+        self.debug_data = Some(input);
         editor::create(
             self.params.clone(),
+            Arc::new(parking_lot::Mutex::new(output)),
             //self.peak_meter.clone(),
             self.params.editor_state.clone(),
         )
@@ -229,11 +237,12 @@ impl Plugin for LiveSampler {
                     break;
                 }
                 nih_warn!("event {:?}", event);
+                // assert!(event.voice_id().is_none());
                 match event {
                     NoteEvent::NoteOn { velocity, note, .. } => match note {
                         0 => self.sampler.start_recording(params),
                         1 => self.sampler.reverse(params),
-                        12..=35 => {
+                        12..=27 => {
                             let pos = (note - 12) as f32 / 16.0;
                             self.sampler.start_playing(pos, note, velocity, params);
                         }
@@ -242,7 +251,7 @@ impl Plugin for LiveSampler {
                     NoteEvent::NoteOff { velocity, note, .. } => match note {
                         0 => self.sampler.stop_recording(params),
                         1 => self.sampler.unreverse(params),
-                        12..=35 => self.sampler.stop_playing(note, params),
+                        12..=27 => self.sampler.stop_playing(note, params),
                         _ => (),
                     },
                     _ => (),

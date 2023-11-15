@@ -1,1 +1,11 @@
 MIDI controlled audio buffer
+
+MIDI
+- Note 0 (C-2) records audio
+- Notes 12-27 (C#-1) start a new voice playing recorded audio back, each from next 16th offset of the buffer
+- While Note 1 (C#-2) is held, playback of any live voice is reversed
+
+Plugin parameters
+-  Pass through - disables/enables playing back incoming audio while no buffer playback voices are active
+-  Fade time - amount of time in seconds of cross-fading between voices or incoming audio
+
