@@ -26,8 +26,6 @@ pub struct LiveSampler {
 
 #[derive(Params)]
 struct LiveSamplerParams {
-    #[id = "gain"]
-    pub gain: FloatParam,
     #[id = "auto_passthru"]
     pub auto_passthru: BoolParam,
     #[id = "speed"]
@@ -69,9 +67,7 @@ impl Default for LiveSamplerParams {
                     max: 1000.0,
                 },
             )
-            .with_unit(" ms"), //with_smoother(SmoothingStyle::Logarithmic(50.0))
-                               // .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
-                               //.with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            .with_unit(" ms"),
         }
     }
 }
@@ -99,7 +95,6 @@ impl LiveSampler {
         channel_count
     }
     fn sampler_params(&self) -> sampler::Params {
-        let gain = self.params.gain.smoothed.next();
         let params_speed = self.params.speed.smoothed.next();
         let params_gain = self.params.gain.smoothed.next();
         let params_passthru = self.params.auto_passthru.value();
