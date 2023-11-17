@@ -1,15 +1,15 @@
 [package]
-name = "live-sampler"
+name = "midi-sampler"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "live_sampler"
+name = "midi_sampler"
 crate-type = ["cdylib", "lib"]
 path = "src/lib.rs"
 
 [[bin]]
-name = "live-sampler"
+name = "midi-sampler"
 path = "src/main.rs"
 
 [dependencies.nih_plug]
