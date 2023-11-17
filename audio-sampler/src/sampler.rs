@@ -128,12 +128,15 @@ impl Channel {
     }
 
     pub fn start_recording(&mut self, _params: &Params) {
-        assert!(!self.recording);
-        assert_eq!(self.write, 0);
-        self.recording = true;
+        if !self.recording {
+            assert_eq!(self.write, 0);
+            self.recording = true;
+        }
     }
 
     pub fn stop_recording(&mut self, _params: &Params) {
+        // This is not an error as some DAWs will send note off events for notes
+        // that were never played, e.g. REAPER
         if self.recording {
             self.recording = false;
             self.data.truncate(self.write);
