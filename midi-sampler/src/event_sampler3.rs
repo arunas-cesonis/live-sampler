@@ -1,4 +1,5 @@
 use nih_plug::midi::NoteEvent;
+use nih_plug::midi::NoteEvent::NoteOff;
 use nih_plug::{nih_log, nih_warn};
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -21,12 +22,16 @@ enum NoteState {
 enum Action {
     StartRecording,
     StopRecording,
+    Play,
+    Stop,
 }
 
 fn event_to_action<S>(event: &NoteEvent<S>) -> Option<Action> {
     Some(match event {
         NoteEvent::NoteOn { note, .. } if *note == 0 => Action::StartRecording,
         NoteEvent::NoteOff { note, .. } if *note == 0 => Action::StopRecording,
+        NoteEvent::NoteOn { note, .. } if *note == 1 => Action::Play,
+        NoteEvent::NoteOff { note, .. } if *note == 1 => Action::Stop,
         _ => return None,
     })
 }
@@ -139,20 +144,38 @@ fn debug_event<S: Debug>(e: &NoteEvent<S>) -> String {
 }
 
 #[derive(Debug, Clone)]
-struct RecordedEvent<S> {
+struct RecordedEvent<S>
+where
+    S: Clone,
+{
     event: NoteEvent<S>,
     time_from_start: usize,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum State {
+    Recording,
+    Playing,
+    Idle,
+}
+impl Default for State {
+    fn default() -> Self {
+        State::Idle
+    }
+}
+
 #[derive(Default, Debug)]
-pub struct EventSampler<S> {
-    recording: bool,
+pub struct EventSampler<S: Clone> {
+    state: State,
     recording_events: Vec<RecordedEvent<S>>,
     recording_since: usize,
+    playing_since: usize,
+    playing_i: usize,
     last_recording: Vec<RecordedEvent<S>>,
     last_recording_duration: usize,
     output: Vec<NoteEvent<S>>,
-    pressed: HashSet<Note>,
+    recording_pressed: HashSet<Note>,
+    playing_pressed: HashSet<Note>,
     time: usize,
 }
 
@@ -172,7 +195,17 @@ where
     (bs, cs)
 }
 
-impl<S: Debug> EventSampler<S> {
+fn partition_note_offs<S>(events: Vec<NoteEvent<S>>) -> (Vec<NoteEvent<S>>, Vec<NoteEvent<S>>) {
+    partition_map(
+        |x| match x {
+            NoteEvent::NoteOff { .. } => Ok(x),
+            _ => Err(x),
+        },
+        events,
+    )
+}
+
+impl<S: Debug + Clone> EventSampler<S> {
     pub fn handle_event(&mut self, event: NoteEvent<S>, params: &Params) {}
 
     fn split_actions(ev: Vec<NoteEvent<S>>) -> (Vec<NoteEvent<S>>, Vec<Action>) {
@@ -200,14 +233,8 @@ impl<S: Debug> EventSampler<S> {
         sample_id: usize,
         events: Vec<NoteEvent<S>>,
     ) -> Vec<NoteEvent<S>> {
-        let (_, rest) = partition_map(
-            |x| match x {
-                NoteEvent::NoteOff { .. } => Ok(x),
-                _ => Err(x),
-            },
-            events,
-        );
-        let pressed = std::mem::take(&mut self.pressed);
+        let (_, rest) = partition_note_offs(events);
+        let pressed = std::mem::take(&mut self.recording_pressed);
         for note in pressed {
             self.record_event(NoteEvent::NoteOff {
                 timing: sample_id as u32,
@@ -234,12 +261,14 @@ impl<S: Debug> EventSampler<S> {
         params: &Params,
     ) -> Vec<NoteEvent<S>> {
         let (mut events, actions) = Self::split_actions(events);
-        let has_stop = actions.iter().any(|a| *a == Action::StopRecording);
-        let has_start = actions.iter().any(|a| *a == Action::StartRecording);
-        if has_stop {
-            nih_log!("{} stop", self.time);
+        let has_stop_rec = actions.iter().any(|a| *a == Action::StopRecording);
+        let has_start_rec = actions.iter().any(|a| *a == Action::StartRecording);
+        let has_play = actions.iter().any(|a| *a == Action::Play);
+        let has_stop = actions.iter().any(|a| *a == Action::Stop);
+
+        if has_stop_rec && self.state == State::Recording {
+            nih_log!("{} stop rec", self.time);
             events = self.record_note_offs(sample_id, events);
-            self.recording = false;
             let mut data = vec![];
             std::mem::swap(&mut data, &mut self.recording_events);
             self.last_recording = data;
@@ -249,40 +278,106 @@ impl<S: Debug> EventSampler<S> {
                 self.last_recording.len(),
                 self.last_recording_duration as f32 / params.sample_rate
             );
+            self.state = State::Idle;
         }
 
-        if has_start {
+        if has_start_rec && self.state == State::Idle {
             nih_log!("{} start", self.time);
-            self.recording = true;
             self.recording_events = vec![];
             self.recording_since = self.time;
-            self.pressed.clear();
+            self.recording_pressed.clear();
+            self.state = State::Recording;
         }
+
+        if has_play && self.state == State::Idle && self.last_recording_duration > 0 {
+            nih_log!("{} play", self.time);
+            self.playing_since = self.time;
+            self.playing_i = 0;
+            self.playing_pressed.clear();
+            self.state = State::Playing;
+        }
+
+        let mut output = vec![];
+        if has_stop && self.state == State::Playing {
+            nih_log!("{} stop", self.time);
+            let play_pressed = std::mem::take(&mut self.playing_pressed);
+            for note in play_pressed {
+                nih_log!("{} stop note {:?}", self.time, note);
+                output.push(NoteEvent::NoteOff {
+                    timing: sample_id as u32,
+                    voice_id: None,
+                    channel: note.channel,
+                    note: note.note,
+                    velocity: 0.0,
+                });
+            }
+            self.state = State::Idle;
+        }
+
         let unhandled = events;
 
-        if self.recording {
-            for ev in unhandled {
-                if let Some((note, note_state)) = event_to_note(&ev) {
+        match self.state {
+            State::Recording => {
+                for ev in unhandled {
+                    if let Some((note, note_state)) = event_to_note(&ev) {
+                        match note_state {
+                            NoteState::On => {
+                                if !self.recording_pressed.insert(note) {
+                                    continue;
+                                }
+                            }
+                            NoteState::Off => {
+                                if !self.recording_pressed.remove(&note) {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+
+                    self.recording_events.push(RecordedEvent {
+                        event: ev,
+                        time_from_start: self.time - self.recording_since,
+                    });
+                }
+            }
+            State::Playing => loop {
+                if self.playing_i == self.last_recording.len() {
+                    if self.last_recording_duration + self.playing_since == self.time {
+                        self.playing_i = 0;
+                        self.playing_since = self.time;
+                    } else {
+                        break;
+                    }
+                }
+                let ev = &mut self.last_recording[self.playing_i];
+                if ev.time_from_start != self.time - self.playing_since {
+                    break;
+                }
+                let mut ev = ev.clone();
+                nih_log!("{} play event {:?}", self.time, ev);
+
+                if let Some((note, note_state)) = event_to_note(&ev.event) {
                     match note_state {
                         NoteState::On => {
-                            if !self.pressed.insert(note) {
+                            if !self.recording_pressed.insert(note) {
                                 continue;
                             }
                         }
                         NoteState::Off => {
-                            if !self.pressed.remove(&note) {
+                            if !self.recording_pressed.remove(&note) {
                                 continue;
                             }
                         }
                     }
                 }
-                self.recording_events.push(RecordedEvent {
-                    event: ev,
-                    time_from_start: self.time - self.recording_since,
-                });
-            }
+
+                set_event_timing(&mut ev.event, sample_id as u32);
+                output.push(ev.event);
+                self.playing_i += 1;
+            },
+            State::Idle => {}
         }
         self.time += 1;
-        vec![]
+        output
     }
 }
