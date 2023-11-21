@@ -92,7 +92,7 @@ fn event_to_note<S>(ev: &NoteEvent<S>) -> Option<(Note, NoteState)> {
             },
             NoteState::Off,
         ),
-        // TODO: check how important other events are
+        // TODO: check how important other events are and if they contain note information
         //NoteEvent::Choke { note, channel, .. } => Note {
         //    note: *note,
         //    channel: *channel,
@@ -117,7 +117,7 @@ where
             start: ctx.now,
         }
     }
-    fn process_sample(&mut self, events: &[&NoteEvent<S>], ctx: &Context) {
+    fn process_sample(&mut self, ctx: &Context, events: &[&NoteEvent<S>]) {
         for e in events {
             self.events.push(TimedEvent {
                 event: (*e).clone(),
@@ -131,14 +131,6 @@ where
             duration: ctx.now - self.start,
         }
     }
-}
-
-fn final_events<'a, S>(events: &'a [NoteEvent<S>]) -> impl Iterator<Item = &'a NoteEvent<S>> {
-    events.iter().filter(|e| match e {
-        NoteEvent::NoteOn { .. } => true,
-        //NoteEvent::Choke { .. } => true,
-        _ => false,
-    })
 }
 
 #[derive(Default)]
@@ -191,17 +183,9 @@ where
                 }
                 Action::StopRecording => {
                     if let Some(mut rec) = self.recorder.take() {
-                        // On this sample the note that controls recording is off
-                        // Few ambiguities arise what's correct thing to do:
-                        // 1. NoteOn - very unlikely useful to include into recording at this point
-                        // 2. NoteOff - makes sense to handle them here
-                        // 3. CCs - gray area as next recording could be starting at same point
-                        // thus two MIDI messages would be recorded where one happens
-                        // Note-on state could be useful here
-                        // For just removing the NoteOn
                         rec.process_sample(
-                            &without_note_on(&non_action_events).collect::<Vec<_>>(),
                             ctx,
+                            &without_note_on(&non_action_events).collect::<Vec<_>>(),
                         );
                         let rec = rec.finish(ctx);
                         for e in rec.events.iter().enumerate() {
@@ -216,11 +200,11 @@ where
         if let Some(mut rec) = self.recorder.as_mut() {
             if rec.start == self.now {
                 rec.process_sample(
-                    &without_note_off(&non_action_events).collect::<Vec<_>>(),
                     ctx,
+                    &without_note_off(&non_action_events).collect::<Vec<_>>(),
                 );
             } else {
-                rec.process_sample(&non_action_events, ctx);
+                rec.process_sample(ctx, &non_action_events);
             }
         }
         self.now += 1;
