@@ -1,12 +1,15 @@
-mod event_sampler2;
-mod event_sampler3;
+extern crate core;
+
+//mod event_sampler3;
+mod count_map;
+mod event_sampler5;
 
 use std::fmt;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
-use crate::event_sampler3::EventSampler;
+use crate::event_sampler5::EventSampler;
 use nih_plug::prelude::*;
 
 type SysEx = ();
@@ -44,8 +47,8 @@ impl Default for MIDISampler {
 }
 
 impl MIDISampler {
-    fn sampler_params(&self) -> event_sampler3::Params {
-        event_sampler3::Params {
+    fn sampler_params(&self) -> event_sampler5::Params {
+        event_sampler5::Params {
             sample_rate: self.sample_rate,
         }
     }
@@ -72,8 +75,8 @@ impl Plugin for MIDISampler {
             ..AudioIOLayout::const_default()
         },
     ];
-    const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
-    const MIDI_OUTPUT: MidiConfig = MidiConfig::MidiCCs;
+    const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
+    const MIDI_OUTPUT: MidiConfig = MidiConfig::Basic;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
     type SysExMessage = SysEx;
 
@@ -89,12 +92,14 @@ impl Plugin for MIDISampler {
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
+        eprintln!("*** INIT ***");
         self.sample_rate = buffer_config.sample_rate;
         self.sampler = EventSampler::default();
         true
     }
 
     fn reset(&mut self) {
+        eprintln!("*** RESET ***");
         self.sampler = EventSampler::default();
     }
 
