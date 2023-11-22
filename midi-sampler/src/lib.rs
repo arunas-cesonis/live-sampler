@@ -3,6 +3,7 @@ extern crate core;
 //mod event_sampler3;
 mod count_map;
 mod event_sampler5;
+mod utils;
 
 use std::fmt;
 use std::io::Write;

@@ -1,4 +1,5 @@
 use crate::count_map::CountMap;
+use crate::utils::set_event_timing_mut;
 use nih_plug::midi::PluginNoteEvent;
 use nih_plug::nih_warn;
 use nih_plug::prelude::NoteEvent;
@@ -133,10 +134,19 @@ where
     }
 }
 
-#[derive(Default)]
+#[derive(Copy, Clone, Debug)]
+struct Playhead {
+    clip: usize,
+    next_event: usize,
+    start_time: usize,
+}
+
+#[derive(Default, Debug)]
 pub struct EventSampler<S> {
     recorder: Option<Recorder<S>>,
-    idle: Vec<TimedEvents<S>>,
+    clips: Vec<TimedEvents<S>>,
+    playheads: Vec<Playhead>,
+    voices: CountMap<Note>,
     now: usize,
 }
 
@@ -155,6 +165,64 @@ fn without_note_off<'a, S>(
         NoteEvent::NoteOff { .. } => false,
         _ => true,
     })
+}
+
+#[cfg(test)]
+mod test {
+    use crate::event_sampler5::{EventSampler, Params};
+    use crate::utils::{set_event_timing, set_event_timing_mut};
+    use nih_plug::prelude::NoteEvent;
+
+    const fn mk_note_off(note: u8, channel: u8) -> NoteEvent<()> {
+        NoteEvent::NoteOff {
+            note,
+            channel,
+            velocity: 0.0,
+            timing: 0,
+            voice_id: None,
+        }
+    }
+    const fn mk_note_on(note: u8, channel: u8) -> NoteEvent<()> {
+        NoteEvent::NoteOn {
+            note,
+            channel,
+            velocity: 1.0,
+            timing: 0,
+            voice_id: None,
+        }
+    }
+    const START_RECORDING: NoteEvent<()> = mk_note_on(0, 0);
+    const STOP_RECORDING: NoteEvent<()> = mk_note_off(0, 0);
+    const START_PLAYING: NoteEvent<()> = mk_note_on(1, 0);
+    const STOP_PLAYING: NoteEvent<()> = mk_note_off(1, 0);
+    const C3: NoteEvent<()> = mk_note_on(0x30, 0);
+    const C3_OFF: NoteEvent<()> = mk_note_off(0x30, 0);
+    const F5: NoteEvent<()> = mk_note_on(0x4d, 0);
+    const F5_OFF: NoteEvent<()> = mk_note_off(0x4d, 0);
+    const PARAMS: Params = Params {
+        sample_rate: 44100.0,
+    };
+
+    #[test]
+    fn test_recoding() {
+        let mut m = EventSampler::default();
+        m.process_sample(0, vec![START_RECORDING.clone()], &PARAMS);
+        m.process_sample(1, vec![C3.clone()], &PARAMS);
+        m.process_sample(2, vec![C3_OFF.clone()], &PARAMS);
+        m.process_sample(3, vec![STOP_RECORDING.clone()], &PARAMS);
+        //
+        m.process_sample(4, vec![START_PLAYING.clone()], &PARAMS);
+        assert_eq!(
+            vec![set_event_timing(C3.clone(), 5)],
+            m.process_sample(5, vec![], &PARAMS)
+        );
+        assert_eq!(
+            vec![set_event_timing(C3_OFF.clone(), 6)],
+            m.process_sample(6, vec![], &PARAMS)
+        );
+        m.process_sample(7, vec![STOP_PLAYING.clone()], &PARAMS);
+        eprintln!("{:?}", m);
+    }
 }
 
 impl<S> EventSampler<S>
@@ -190,13 +258,30 @@ where
                         for e in rec.events.iter().enumerate() {
                             eprintln!("{:?}", e);
                         }
-                        self.idle.push(rec);
+                        self.clips.push(rec);
                     }
                 }
-                Action::Play => {}
-                Action::Stop => {}
+                Action::Play if !self.clips.is_empty() => {
+                    // for now safest logic
+                    let playhead = Playhead {
+                        clip: self.clips.len() - 1,
+                        next_event: 0,
+                        start_time: self.now,
+                    };
+                    self.playheads = vec![playhead];
+                }
+                Action::Play => {
+                    nih_warn!("attempted to play but nothing has been recorded")
+                }
+                Action::Stop => {
+                    // not cancelling active note-on's yet
+                    self.playheads = vec![];
+                }
             }
         }
+        //
+        // Process ongoing recording
+        //
         if let Some(mut rec) = self.recorder.as_mut() {
             if rec.start == self.now {
                 rec.process_sample(
@@ -207,7 +292,33 @@ where
                 rec.process_sample(ctx, &non_action_events);
             }
         }
+        //
+        // Process play
+        //
+        let mut output = vec![];
+        let mut removed = vec![];
+        for i in 0..self.playheads.len() {
+            loop {
+                let ph = self.playheads[i];
+                let mut next_ev = &self.clips[ph.clip].events[ph.next_event];
+                if self.now - ph.start_time != next_ev.time_from_start {
+                    assert!(self.now - ph.start_time < next_ev.time_from_start);
+                    break;
+                }
+                let mut ev = next_ev.event.clone();
+                set_event_timing_mut(&mut ev, sample_id as u32);
+                output.push(ev);
+                self.playheads[i].next_event += 1;
+                if self.playheads[i].next_event == self.clips[ph.clip].events.len() {
+                    removed.push(i);
+                    break;
+                }
+            }
+        }
+        while let Some(i) = removed.pop() {
+            self.playheads.remove(i);
+        }
         self.now += 1;
-        vec![]
+        output
     }
 }
