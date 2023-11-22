@@ -157,7 +157,6 @@ fn without_note_off<'a, S>(
     })
 }
 
-// TODO: statefully handle note-on-off
 impl<S> EventSampler<S>
 where
     S: Debug + Clone,
@@ -194,7 +193,8 @@ where
                         self.idle.push(rec);
                     }
                 }
-                _ => (),
+                Action::Play => {}
+                Action::Stop => {}
             }
         }
         if let Some(mut rec) = self.recorder.as_mut() {
