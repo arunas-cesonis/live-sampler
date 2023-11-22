@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::Hash;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CountMap<K: Hash + Eq> {
     m: HashMap<K, usize>,
 }

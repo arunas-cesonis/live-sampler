@@ -134,11 +134,35 @@ where
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 struct Playhead {
     clip: usize,
     next_event: usize,
     start_time: usize,
+    voices: CountMap<Note>,
+}
+
+impl Playhead {
+    fn start_voice(&mut self, note: Note) {
+        self.voices.inc(&note);
+    }
+    fn stop_voice(&mut self, note: Note) {
+        self.voices.dec(&note);
+    }
+    fn gen_events_to_stop_voices<'a, S>(
+        &'a self,
+        ctx: &'a Context,
+    ) -> impl Iterator<Item = NoteEvent<S>> + 'a {
+        self.voices
+            .iter_nonzero()
+            .map(|(note, _)| NoteEvent::NoteOff {
+                note: note.note,
+                channel: note.channel,
+                velocity: 0.0,
+                timing: ctx.sample_id as u32,
+                voice_id: None,
+            })
+    }
 }
 
 #[derive(Default, Debug)]
@@ -172,6 +196,7 @@ mod test {
     use crate::event_sampler5::{EventSampler, Params};
     use crate::utils::{set_event_timing, set_event_timing_mut};
     use nih_plug::prelude::NoteEvent;
+    use std::iter;
 
     const fn mk_note_off(note: u8, channel: u8) -> NoteEvent<()> {
         NoteEvent::NoteOff {
@@ -204,23 +229,79 @@ mod test {
     };
 
     #[test]
-    fn test_recoding() {
+    fn test_recoding_and_playing_1_note() {
         let mut m = EventSampler::default();
-        m.process_sample(0, vec![START_RECORDING.clone()], &PARAMS);
-        m.process_sample(1, vec![C3.clone()], &PARAMS);
-        m.process_sample(2, vec![C3_OFF.clone()], &PARAMS);
-        m.process_sample(3, vec![STOP_RECORDING.clone()], &PARAMS);
+        let mut id = 0;
+        let mut next = || {
+            id = id + 1;
+            id
+        };
+        m.process_sample(next(), vec![START_RECORDING.clone()], &PARAMS);
+        m.process_sample(next(), vec![C3.clone()], &PARAMS);
+        m.process_sample(next(), vec![C3_OFF.clone()], &PARAMS);
+        m.process_sample(next(), vec![STOP_RECORDING.clone()], &PARAMS);
         //
-        m.process_sample(4, vec![START_PLAYING.clone()], &PARAMS);
+        m.process_sample(next(), vec![START_PLAYING.clone()], &PARAMS);
+        let id = next();
         assert_eq!(
-            vec![set_event_timing(C3.clone(), 5)],
-            m.process_sample(5, vec![], &PARAMS)
+            vec![set_event_timing(C3.clone(), id as u32)],
+            m.process_sample(id, vec![], &PARAMS)
         );
+        let id = next();
         assert_eq!(
-            vec![set_event_timing(C3_OFF.clone(), 6)],
-            m.process_sample(6, vec![], &PARAMS)
+            vec![set_event_timing(C3_OFF.clone(), id as u32)],
+            m.process_sample(id, vec![], &PARAMS)
         );
-        m.process_sample(7, vec![STOP_PLAYING.clone()], &PARAMS);
+        m.process_sample(next(), vec![STOP_PLAYING.clone()], &PARAMS);
+        eprintln!("{:?}", m);
+    }
+
+    #[test]
+    fn test_recoding_and_playing_2_notes() {
+        let mut m = EventSampler::default();
+        let mut id = 0;
+        let mut next = || {
+            id = id + 1;
+            id
+        };
+        m.process_sample(next(), vec![START_RECORDING.clone()], &PARAMS);
+        m.process_sample(next(), vec![C3.clone()], &PARAMS);
+        m.process_sample(next(), vec![C3_OFF.clone()], &PARAMS);
+        std::iter::repeat_with(|| next()).take(10).for_each(|id| {
+            assert!(m.process_sample(id, vec![], &PARAMS).is_empty());
+        });
+        m.process_sample(next(), vec![F5.clone()], &PARAMS);
+        std::iter::repeat_with(|| next()).take(10).for_each(|id| {
+            assert!(m.process_sample(id, vec![], &PARAMS).is_empty());
+        });
+        m.process_sample(next(), vec![F5_OFF.clone()], &PARAMS);
+        m.process_sample(next(), vec![STOP_RECORDING.clone()], &PARAMS);
+        //
+        m.process_sample(next(), vec![START_PLAYING.clone()], &PARAMS);
+        let id = next();
+        assert_eq!(
+            vec![set_event_timing(C3.clone(), id as u32)],
+            m.process_sample(id, vec![], &PARAMS)
+        );
+        let id = next();
+        assert_eq!(
+            vec![set_event_timing(C3_OFF.clone(), id as u32)],
+            m.process_sample(id, vec![], &PARAMS)
+        );
+        std::iter::repeat_with(|| next()).take(10).for_each(|id| {
+            assert!(m.process_sample(id, vec![], &PARAMS).is_empty());
+        });
+        assert_eq!(
+            vec![set_event_timing(F5.clone(), id as u32)],
+            m.process_sample(id, vec![], &PARAMS)
+        );
+        std::iter::repeat_with(|| next()).take(10).for_each(|id| {
+            assert!(m.process_sample(id, vec![], &PARAMS).is_empty());
+        });
+        assert_eq!(
+            vec![set_event_timing(F5_OFF.clone(), id as u32)],
+            m.process_sample(id, vec![], &PARAMS)
+        );
         eprintln!("{:?}", m);
     }
 }
@@ -229,6 +310,13 @@ impl<S> EventSampler<S>
 where
     S: Debug + Clone,
 {
+    fn removed_playhead(&mut self, ctx: &Context, i: usize, output: &mut Vec<NoteEvent<S>>) {
+        let ph = self.playheads.remove(i);
+        eprintln!("removing {:?}", ph);
+        let mut ev = ph.gen_events_to_stop_voices(ctx).collect::<Vec<_>>();
+        eprintln!("generated note-off {:?}", ev);
+        output.append(&mut ev);
+    }
     pub fn process_sample(
         &mut self,
         sample_id: usize,
@@ -242,6 +330,7 @@ where
             params,
         };
         let ctx = &ctx;
+        let mut output = vec![];
         for a in actions {
             match a {
                 Action::StartRecording => {
@@ -267,6 +356,7 @@ where
                         clip: self.clips.len() - 1,
                         next_event: 0,
                         start_time: self.now,
+                        voices: Default::default(),
                     };
                     self.playheads = vec![playhead];
                 }
@@ -275,7 +365,9 @@ where
                 }
                 Action::Stop => {
                     // not cancelling active note-on's yet
-                    self.playheads = vec![];
+                    if !self.playheads.is_empty() {
+                        self.removed_playhead(ctx, 0, &mut output);
+                    }
                 }
             }
         }
@@ -295,28 +387,33 @@ where
         //
         // Process play
         //
-        let mut output = vec![];
         let mut removed = vec![];
         for i in 0..self.playheads.len() {
             loop {
-                let ph = self.playheads[i];
-                let mut next_ev = &self.clips[ph.clip].events[ph.next_event];
-                if self.now - ph.start_time != next_ev.time_from_start {
-                    assert!(self.now - ph.start_time < next_ev.time_from_start);
+                let ph_next_event = self.playheads[i].next_event;
+                let ph_start_time = self.playheads[i].start_time;
+                let mut next_ev = &self.clips[self.playheads[i].clip].events[ph_next_event];
+                if self.now - ph_start_time != next_ev.time_from_start {
+                    assert!(self.now - ph_start_time < next_ev.time_from_start);
                     break;
                 }
                 let mut ev = next_ev.event.clone();
                 set_event_timing_mut(&mut ev, sample_id as u32);
+                match event_to_note(&ev) {
+                    Some((note, NoteState::On)) => self.playheads[i].start_voice(note),
+                    Some((note, NoteState::Off)) => self.playheads[i].stop_voice(note),
+                    None => (),
+                };
                 output.push(ev);
                 self.playheads[i].next_event += 1;
-                if self.playheads[i].next_event == self.clips[ph.clip].events.len() {
+                if self.playheads[i].next_event == self.clips[self.playheads[i].clip].events.len() {
                     removed.push(i);
                     break;
                 }
             }
         }
         while let Some(i) = removed.pop() {
-            self.playheads.remove(i);
+            self.removed_playhead(ctx, i, &mut output);
         }
         self.now += 1;
         output
