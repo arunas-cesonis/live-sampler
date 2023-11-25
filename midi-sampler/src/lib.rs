@@ -2,7 +2,7 @@ extern crate core;
 
 //mod event_sampler3;
 mod count_map;
-mod event_sampler5;
+mod event_sampler6;
 mod utils;
 
 use std::fmt;
@@ -10,7 +10,8 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
-use crate::event_sampler5::EventSampler;
+use crate::event_sampler6::EventSampler;
+use crate::utils::set_event_timing;
 use nih_plug::prelude::*;
 
 type SysEx = ();
@@ -48,8 +49,8 @@ impl Default for MIDISampler {
 }
 
 impl MIDISampler {
-    fn sampler_params(&self) -> event_sampler5::Params {
-        event_sampler5::Params {
+    fn sampler_params(&self) -> event_sampler6::Params {
+        event_sampler6::Params {
             sample_rate: self.sample_rate,
         }
     }
@@ -125,9 +126,9 @@ impl Plugin for MIDISampler {
                 next_event = context.next_event();
             }
 
-            let events = self.sampler.process_sample(sample_id, events, params);
+            let events = self.sampler.process_sample(events, params);
             for e in events {
-                context.send_event(e);
+                context.send_event(set_event_timing(e, sample_id as u32));
             }
 
             //self.sampler.process_sample(channel_samples, params);

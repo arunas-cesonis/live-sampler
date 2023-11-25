@@ -1,5 +1,19 @@
 use nih_plug::prelude::NoteEvent;
 use nih_plug::wrapper::vst3::vst3_sys::vst::NoteOffEvent;
+use std::fmt::Debug;
+pub fn is_note_on<S>(event: &NoteEvent<S>) -> bool {
+    match event {
+        NoteEvent::NoteOn { .. } => true,
+        _ => false,
+    }
+}
+
+pub fn is_note_off<S>(event: &NoteEvent<S>) -> bool {
+    match event {
+        NoteEvent::NoteOff { .. } => true,
+        _ => false,
+    }
+}
 
 pub fn set_event_timing<S>(mut ev: NoteEvent<S>, value: u32) -> NoteEvent<S> {
     set_event_timing_mut(&mut ev, value);
@@ -28,4 +42,28 @@ pub fn set_event_timing_mut<S>(ev: &mut NoteEvent<S>, value: u32) {
         NoteEvent::MidiSysEx { timing, .. } => *timing = value,
         _ => (),
     }
+}
+
+pub fn get_event_timing<S: Debug>(ev: &NoteEvent<S>) -> u32 {
+    *(match ev {
+        NoteEvent::NoteOn { timing, .. } => timing,
+        NoteEvent::NoteOff { timing, .. } => timing,
+        NoteEvent::Choke { timing, .. } => timing,
+        NoteEvent::VoiceTerminated { timing, .. } => timing,
+        NoteEvent::PolyModulation { timing, .. } => timing,
+        NoteEvent::MonoAutomation { timing, .. } => timing,
+        NoteEvent::PolyPressure { timing, .. } => timing,
+        NoteEvent::PolyVolume { timing, .. } => timing,
+        NoteEvent::PolyPan { timing, .. } => timing,
+        NoteEvent::PolyTuning { timing, .. } => timing,
+        NoteEvent::PolyVibrato { timing, .. } => timing,
+        NoteEvent::PolyExpression { timing, .. } => timing,
+        NoteEvent::PolyBrightness { timing, .. } => timing,
+        NoteEvent::MidiChannelPressure { timing, .. } => timing,
+        NoteEvent::MidiPitchBend { timing, .. } => timing,
+        NoteEvent::MidiCC { timing, .. } => timing,
+        NoteEvent::MidiProgramChange { timing, .. } => timing,
+        NoteEvent::MidiSysEx { timing, .. } => timing,
+        _ => panic!("unmatched event {:?}", *ev),
+    })
 }
