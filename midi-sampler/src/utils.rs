@@ -1,6 +1,44 @@
 use nih_plug::prelude::NoteEvent;
 use nih_plug::wrapper::vst3::vst3_sys::vst::NoteOffEvent;
 use std::fmt::Debug;
+
+#[derive(Hash, Eq, PartialEq, Debug, Clone)]
+pub struct Note {
+    pub note: u8,
+    pub channel: u8,
+}
+
+#[derive(Hash, Eq, PartialEq, Debug, Clone)]
+pub enum NoteState {
+    On,
+    Off,
+}
+
+pub fn note_from_event<S>(ev: &NoteEvent<S>) -> Option<(Note, NoteState)> {
+    Some(match ev {
+        NoteEvent::NoteOn { note, channel, .. } => (
+            Note {
+                note: *note,
+                channel: *channel,
+            },
+            NoteState::On,
+        ),
+        NoteEvent::NoteOff { note, channel, .. } => (
+            Note {
+                note: *note,
+                channel: *channel,
+            },
+            NoteState::Off,
+        ),
+        // TODO: check how important other events are and if they contain note information
+        //NoteEvent::Choke { note, channel, .. } => Note {
+        //    note: *note,
+        //    channel: *channel,
+        //},
+        _ => return None,
+    })
+}
+
 pub fn is_note_on<S>(event: &NoteEvent<S>) -> bool {
     match event {
         NoteEvent::NoteOn { .. } => true,
