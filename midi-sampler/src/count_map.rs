@@ -26,6 +26,7 @@ where
     {
         self.m.get(key).copied().unwrap_or(0)
     }
+
     pub fn get_mut<O>(&mut self, key: &O) -> &mut usize
     where
         K: Borrow<O>,
@@ -33,6 +34,7 @@ where
     {
         self.m.entry(key.to_owned()).or_insert(0)
     }
+
     pub fn inc<O>(&mut self, key: &O)
     where
         K: Borrow<O>,
@@ -44,6 +46,7 @@ where
             self.m.insert(key.to_owned(), 1);
         }
     }
+
     pub fn dec<O>(&mut self, key: &O)
     where
         K: Borrow<O>,
@@ -55,6 +58,11 @@ where
             self.m.insert(key.to_owned(), 1);
         }
     }
+
+    pub fn count_nonzero(&self) -> usize {
+        self.m.values().filter(|c| **c > 0).count()
+    }
+
     pub fn iter_nonzero<O>(&self) -> impl Iterator<Item = (&O, &usize)>
     where
         K: Borrow<O>,
@@ -63,6 +71,10 @@ where
         self.m
             .iter()
             .filter_map(|(k, c)| if *c > 0 { Some((k.borrow(), c)) } else { None })
+    }
+
+    pub fn clear(&mut self) {
+        self.m.clear();
     }
 }
 

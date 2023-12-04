@@ -128,7 +128,9 @@ impl Plugin for MIDISampler {
 
             let events = self.sampler.process_sample(events, params);
             for e in events {
-                context.send_event(set_event_timing(e, sample_id as u32));
+                let e = set_event_timing(e, sample_id as u32);
+                //nih_warn!("OUTPUT: {:?}", e);
+                context.send_event(e);
             }
 
             //self.sampler.process_sample(channel_samples, params);
