@@ -2,10 +2,23 @@ use nih_plug::prelude::NoteEvent;
 use nih_plug::wrapper::vst3::vst3_sys::vst::NoteOffEvent;
 use std::fmt::Debug;
 
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
+#[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
 pub struct Note {
     pub note: u8,
     pub channel: u8,
+}
+impl From<u64> for Note {
+    fn from(note: u64) -> Self {
+        Self {
+            note: (note & 0x7F) as u8,
+            channel: ((note >> 8) & 0x0F) as u8,
+        }
+    }
+}
+impl Into<u64> for Note {
+    fn into(self) -> u64 {
+        (self.note as u64) | ((self.channel as u64) << 8)
+    }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]

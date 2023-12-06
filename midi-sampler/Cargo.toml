@@ -19,4 +19,9 @@ features = ["standalone", "vst3"]
 [dependencies.tikv-jemallocator]
 version = "0.5.4"
 
+[dependencies.intmap]
+version = "2.0.0"
+
+
+
 

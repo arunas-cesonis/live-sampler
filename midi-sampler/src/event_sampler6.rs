@@ -1,10 +1,11 @@
 use crate::count_map::CountMap;
 use crate::utils::{is_note_off, is_note_on, note_from_event, Note, NoteState};
+use intmap::IntMap;
 use nih_plug::log::Record;
 use nih_plug::midi::NoteEvent;
 use nih_plug::nih_warn;
 use nih_plug::prelude::ClapFeature::NoteEffect;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::process::Output;
 use std::slice::from_raw_parts;
@@ -14,6 +15,10 @@ use std::sync::Arc;
 
 pub struct Params {
     pub sample_rate: f32, // for better messaging / debugging purposes
+    pub pos_beats: Option<f64>,
+    pub pos_samples: Option<i64>,
+    pub pos_seconds: Option<f64>,
+    pub tempo: Option<f64>,
 }
 
 #[derive(Debug)]
@@ -133,38 +138,79 @@ where
 }
 
 #[derive(Debug, Default)]
+struct Voice {
+    start: usize,
+    count: usize,
+}
+
+#[derive(Debug, Default)]
 struct Voices {
-    m: CountMap<Note>,
+    //m: CountMap<Note>,
+    map: IntMap<Voice>,
 }
 
 impl Voices {
-    fn handle_event<S>(&mut self, e: &NoteEvent<S>) {
+    fn log(&self, time: usize, msg: &str) {
+        nih_warn!("time={} {}", time, msg);
+    }
+
+    fn voice_on(&mut self, time: usize, note: Note) {
+        if let Some(voice) = self.map.get_mut(note.into()) {
+            voice.count += 1;
+        } else {
+            self.map.insert(
+                note.into(),
+                Voice {
+                    start: time,
+                    count: 1,
+                },
+            );
+        }
+    }
+    fn voice_off(&mut self, time: usize, note: Note) {
+        if let Some(voice) = self.map.get_mut(note.into()) {
+            let debug_duration = time - voice.start;
+            log(
+                time,
+                format!("voice off: lasted {:?} samples", debug_duration).as_str(),
+            );
+            voice.count -= 1;
+            if voice.count == 0 {
+                self.map.remove(note.into());
+            }
+        }
+    }
+    fn handle_event<S>(&mut self, time: usize, e: &NoteEvent<S>) {
         match note_from_event(e) {
             Some((note, NoteState::On)) => {
-                self.m.inc(&note);
-                nih_warn!("VOICES[{}]: add {}", self.m.get(&note), note.note);
+                self.voice_on(time, note);
             }
             Some((note, NoteState::Off)) => {
-                self.m.dec(&note);
-                nih_warn!("VOICES[{}]: del {}", self.m.get(&note), note.note);
+                self.voice_off(time, note);
             }
             None => (),
         };
     }
-    fn gen_events_to_stop_voices<S>(&self, output: &mut Vec<NoteEvent<S>>) {
-        let mut count = self.m.count_nonzero();
-        output.extend(self.m.iter_nonzero().map(|(note, _)| {
-            nih_warn!("VOICES[{}]: del {}", count, note.note);
-            count -= 1;
-            NoteEvent::NoteOff {
+    fn gen_events_to_stop_voices<S>(&mut self, time: usize, output: &mut Vec<NoteEvent<S>>) {
+        let mut tmp = vec![];
+        for (key, voice) in self.map.iter() {
+            let note: Note = (*key).into();
+            assert!(voice.count > 0);
+            tmp.push(NoteEvent::NoteOff {
                 timing: 0, // this bit is set in the Plugin implementation
                 voice_id: None,
                 channel: note.channel,
                 note: note.note,
                 velocity: 0.0,
-            }
-        }))
+            });
+        }
+        tmp.iter().for_each(|e| self.handle_event(time, e));
+        output.append(&mut tmp);
     }
+}
+
+fn log(time: usize, msg: &str) {
+    nih_warn!("time={} {}", time, msg);
 }
 
 // To get this to work usefully:
@@ -177,25 +223,22 @@ where
     S: Clone + Debug,
 {
     fn stop_playing(&mut self, output: &mut Vec<NoteEvent<S>>) {
-        if let Some(playing) = self.playing.take() {
-            playing.voices.gen_events_to_stop_voices(output);
+        if let Some(mut playing) = self.playing.take() {
+            playing.voices.gen_events_to_stop_voices(self.time, output);
         }
     }
 
+    fn log(&self, msg: &str) {
+        log(self.time, msg);
+    }
+
     fn start_recording(&mut self) {
-        nih_warn!("time={} START RECORDING", self.time,);
         let mut clip = Clip::default();
         self.recording = Some(clip);
     }
 
     fn finish_recording(&mut self) -> bool {
         if let Some(clip) = self.recording.take() {
-            nih_warn!(
-                "time={} STOP RECORDING: events={} duration={}",
-                self.time,
-                clip.events.len(),
-                clip.duration
-            );
             dump_events(&clip.events);
             self.stored = Some(Arc::new(clip));
             true
@@ -213,8 +256,6 @@ where
         if frame_actions.start_recording && frame_actions.stop_recording {
             if self.finish_recording() {
                 self.start_recording();
-            } else {
-                nih_warn!("time={} RESET RECORDING: nothing to reset", self.time);
             }
         } else if frame_actions.start_recording {
             self.finish_recording();
@@ -229,9 +270,8 @@ where
     }
 
     fn finish_playing(&mut self, output: &mut Vec<NoteEvent<S>>) -> bool {
-        if let Some(playing) = self.playing.take() {
-            eprintln!("time={} STOP PLAYING", self.time);
-            playing.voices.gen_events_to_stop_voices(output);
+        if let Some(mut playing) = self.playing.take() {
+            playing.voices.gen_events_to_stop_voices(self.time, output);
             true
         } else {
             false
@@ -270,20 +310,30 @@ where
             {
                 let note_events = &playing.clip.events[index].note_events;
                 for e in note_events.iter() {
-                    playing.voices.handle_event(e);
+                    playing.voices.handle_event(self.time, e);
                     output.push(e.clone());
                 }
             }
             if normalized_time == playing.clip.duration - 1 {
                 let mut note_offs = vec![];
-                playing.voices.gen_events_to_stop_voices(&mut note_offs);
-                note_offs
-                    .iter()
-                    .for_each(|e| playing.voices.handle_event(e));
+                playing
+                    .voices
+                    .gen_events_to_stop_voices(self.time, &mut note_offs);
                 output.append(&mut note_offs);
             }
             playing.time += 1;
         }
+    }
+
+    fn print_times(&self, params: &Params) -> String {
+        format!(
+            "time={} bpm={} beats={} smp={} t={}",
+            self.time,
+            params.tempo.unwrap_or(0.0),
+            params.pos_beats.unwrap_or(0.0),
+            params.pos_samples.unwrap_or(0),
+            params.pos_seconds.unwrap_or(0.0)
+        )
     }
 
     pub fn process_sample(
@@ -292,10 +342,10 @@ where
         params: &Params,
     ) -> Vec<NoteEvent<S>> {
         let mut output = vec![];
+        for e in &events {
+            self.log(format!("{} EVENT {:?}", self.print_times(params), e).as_str());
+        }
         let (events, actions) = partition_actions(events);
-        events
-            .iter()
-            .for_each(|e| nih_warn!("time={} EVENT {:?}", self.time, e));
         self.process_recording(&actions, &events);
         self.process_playback(&actions, &mut output);
         output.iter().enumerate().for_each(|e| {});

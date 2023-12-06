@@ -49,9 +49,13 @@ impl Default for MIDISampler {
 }
 
 impl MIDISampler {
-    fn sampler_params(&self) -> event_sampler6::Params {
+    fn sampler_params(&self, context: &mut impl ProcessContext<Self>) -> event_sampler6::Params {
         event_sampler6::Params {
             sample_rate: self.sample_rate,
+            pos_beats: context.transport().pos_beats(),
+            pos_samples: context.transport().pos_samples(),
+            pos_seconds: context.transport().pos_seconds(),
+            tempo: context.transport().tempo,
         }
     }
 }
@@ -114,7 +118,7 @@ impl Plugin for MIDISampler {
         let mut next_event = context.next_event();
 
         for (sample_id, channel_samples) in buffer.iter_samples().enumerate() {
-            let params = self.sampler_params();
+            let params = self.sampler_params(context);
             let params = &params;
 
             let mut events = vec![];
