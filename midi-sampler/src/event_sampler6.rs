@@ -63,12 +63,6 @@ impl<S> Clip<S> {
             note_events,
             time: self.duration,
         });
-        nih_warn!(
-            "time={} PUSH EVENTS total={} events={:?}",
-            time,
-            self.count_events(),
-            tmp,
-        );
     }
 }
 
@@ -113,30 +107,6 @@ fn partition_actions<S>(ev: Vec<NoteEvent<S>>) -> (Vec<NoteEvent<S>>, FrameActio
     (out_events, frame_actions)
 }
 
-fn dump_events<'a, I, S>(events: I)
-where
-    I: IntoIterator<Item = &'a TimedEvents<S>>,
-    S: Debug + 'a,
-{
-    let events = events.into_iter().collect::<Vec<_>>();
-    if events.len() > 10 {
-        events[0..3]
-            .iter()
-            .enumerate()
-            .for_each(|(i, e)| nih_warn!("{}: {:?}", i, e));
-        nih_warn!("...");
-        events[events.len() - 3..events.len()]
-            .iter()
-            .enumerate()
-            .for_each(|(i, e)| nih_warn!("{}: {:?}", events.len() - 3 + i, e));
-    } else {
-        events
-            .iter()
-            .enumerate()
-            .for_each(|(i, e)| nih_warn!("{}: {:?}", i, e));
-    }
-}
-
 #[derive(Debug, Default)]
 struct Voice {
     start: usize,
@@ -150,10 +120,6 @@ struct Voices {
 }
 
 impl Voices {
-    fn log(&self, time: usize, msg: &str) {
-        nih_warn!("time={} {}", time, msg);
-    }
-
     fn voice_on(&mut self, time: usize, note: Note) {
         if let Some(voice) = self.map.get_mut(note.into()) {
             voice.count += 1;
@@ -170,10 +136,6 @@ impl Voices {
     fn voice_off(&mut self, time: usize, note: Note) {
         if let Some(voice) = self.map.get_mut(note.into()) {
             let debug_duration = time - voice.start;
-            log(
-                time,
-                format!("voice off: lasted {:?} samples", debug_duration).as_str(),
-            );
             voice.count -= 1;
             if voice.count == 0 {
                 self.map.remove(note.into());
@@ -209,10 +171,6 @@ impl Voices {
     }
 }
 
-fn log(time: usize, msg: &str) {
-    nih_warn!("time={} {}", time, msg);
-}
-
 // To get this to work usefully:
 // 1. Do not record events on finishing edge
 // 2. Insert note-offs when stopping playback
@@ -228,10 +186,6 @@ where
         }
     }
 
-    fn log(&self, msg: &str) {
-        log(self.time, msg);
-    }
-
     fn start_recording(&mut self) {
         let mut clip = Clip::default();
         self.recording = Some(clip);
@@ -239,7 +193,11 @@ where
 
     fn finish_recording(&mut self) -> bool {
         if let Some(clip) = self.recording.take() {
-            dump_events(&clip.events);
+            nih_warn!(
+                "{:<8} FINISHED RECORDING duration={}",
+                self.time,
+                clip.duration
+            );
             self.stored = Some(Arc::new(clip));
             true
         } else {
@@ -271,6 +229,7 @@ where
 
     fn finish_playing(&mut self, output: &mut Vec<NoteEvent<S>>) -> bool {
         if let Some(mut playing) = self.playing.take() {
+            nih_warn!("{:<8} FINISHED PLAYING time={}", self.time, playing.time);
             playing.voices.gen_events_to_stop_voices(self.time, output);
             true
         } else {
@@ -325,17 +284,6 @@ where
         }
     }
 
-    fn print_times(&self, params: &Params) -> String {
-        format!(
-            "time={} bpm={} beats={} smp={} t={}",
-            self.time,
-            params.tempo.unwrap_or(0.0),
-            params.pos_beats.unwrap_or(0.0),
-            params.pos_samples.unwrap_or(0),
-            params.pos_seconds.unwrap_or(0.0)
-        )
-    }
-
     pub fn process_sample(
         &mut self,
         events: Vec<NoteEvent<S>>,
@@ -343,12 +291,15 @@ where
     ) -> Vec<NoteEvent<S>> {
         let mut output = vec![];
         for e in &events {
-            self.log(format!("{} EVENT {:?}", self.print_times(params), e).as_str());
+            nih_warn!("{:<8} IN  EVENT {:?}", self.time, note_from_event(e));
         }
         let (events, actions) = partition_actions(events);
         self.process_recording(&actions, &events);
         self.process_playback(&actions, &mut output);
         output.iter().enumerate().for_each(|e| {});
+        for e in &output {
+            nih_warn!("{:<8} OUT EVENT {:?}", self.time, note_from_event(e));
+        }
         self.time += 1;
         output
     }
