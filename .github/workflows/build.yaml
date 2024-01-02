@@ -156,6 +156,8 @@ jobs:
       - id: get_version
         run: 'echo ::set-output "name=VERSION::$(cat ./version)"'
         shell: bash
+      - name: Install packages
+        run: sudo apt-get install -y libasound2-dev mesa-utils libglu1-mesa-dev libxcursor-dev
       - uses: actions/cache@v1
         with:
           path: ~/.cargo/registry
