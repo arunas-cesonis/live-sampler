@@ -16,5 +16,5 @@ name = "cli"
 path = "src/main.rs"
 
 [dependencies.nih_plug]
-path = "../nih-plug"
+git = "https://github.com/robbert-vdh/nih-plug"
 features = ["standalone", "vst3"]
