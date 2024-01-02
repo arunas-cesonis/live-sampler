@@ -130,9 +130,9 @@ jobs:
     strategy:
       matrix:
         include:
-#          - os: macos-latest
-#            target: x86_64-apple-darwin
-#            suffix: ''
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            suffix: ''
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             suffix: ''
@@ -158,6 +158,7 @@ jobs:
         shell: bash
       - name: Install packages
         run: sudo apt-get install -y libasound2-dev mesa-utils libglu1-mesa-dev libxcursor-dev libjack-dev libxcb-dri2-0-dev libxcb-icccm4-dev libx11-xcb-dev
+        if: "contains(matrix.os, 'ubuntu-latest')"
       - uses: actions/cache@v1
         with:
           path: ~/.cargo/registry
