@@ -150,7 +150,7 @@ jobs:
         with:
           name: version
       - id: get_version
-        run: 'echo ::set-output "name=VERSION::$(cat ./version/version)"'
+        run: 'echo ::set-output "name=VERSION::$(cat ./version)"'
         shell: bash
       - uses: actions/cache@v1
         with:
