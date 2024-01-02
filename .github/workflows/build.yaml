@@ -200,6 +200,13 @@ jobs:
         with:
           command: build
           args: '--release'
+      - uses: actions-rs/cargo@v1
+        env:
+          VERSION: '${{ steps.get_version.outputs.VERSION }}'
+          REPOSITORY_NAME: '${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}'
+        with:
+          command: nih-plug
+          args: 'bundle live-sampler --release'
       - uses: actions/upload-artifact@master
         with:
           name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-${{ matrix.target }}
