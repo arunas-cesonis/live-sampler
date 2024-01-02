@@ -1,5 +1,5 @@
 [workspace]
-members = ["audio-sampler", "midi-sampler", "lua-plugin"]
+members = ["audio-sampler", "midi-sampler"]
 
 [workspace.package]
 name = "live-sampler"
