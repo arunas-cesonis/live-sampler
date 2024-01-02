@@ -142,6 +142,10 @@ jobs:
     steps:
       - uses: actions/checkout@master
         with:
+          name: robbert-vdh/nih-plug
+          ref: refs/heads/master
+      - uses: actions/checkout@master
+        with:
           lfs: true
       - id: get_repository_name
         run: echo ::set-output name=REPOSITORY_NAME::$(echo "$GITHUB_REPOSITORY" | awk -F / '{print $2}' | sed -e "s/:refs//")
@@ -180,6 +184,13 @@ jobs:
           TEMP_FILE="$(mktemp)"
           toml set Cargo.toml package.version "${VERSION:1}" > "$TEMP_FILE"
           mv "$TEMP_FILE" Cargo.toml
+      - uses: actions-rs/cargo@v1
+        env:
+          VERSION: '${{ steps.get_version.outputs.VERSION }}'
+          REPOSITORY_NAME: '${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}'
+        with:
+          command: install
+          args: '--git https://github.com/robbert-vdh/nih-plug.git cargo-nih-plug'
       - uses: actions-rs/cargo@v1
         env:
           VERSION: '${{ steps.get_version.outputs.VERSION }}'
