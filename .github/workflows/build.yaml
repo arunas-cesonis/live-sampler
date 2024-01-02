@@ -123,77 +123,96 @@ jobs:
         with:
           name: version
           path: ./version/version
-#  build:
-#    needs:
-#      - version
-#      - lints
-#      - test
-#      - check
-#    runs-on: '${{ matrix.os }}'
-#    strategy:
-#      matrix:
-#        include:
-#          - os: macos-latest
-#            target: x86_64-apple-darwin
-#            suffix: ''
-#          - os: ubuntu-latest
-#            target: x86_64-unknown-linux-gnu
-#            suffix: ''
-#          - os: windows-latest
-#            target: x86_64-pc-windows-msvc
-#            suffix: .exe
-#    steps:
-#      - uses: actions/checkout@master
-#        with:
-#          lfs: true
-#      - id: get_repository_name
-#        run: echo ::set-output name=REPOSITORY_NAME::$(echo "$GITHUB_REPOSITORY" | awk -F / '{print $2}' | sed -e "s/:refs//")
-#        shell: bash
-#      - uses: actions/download-artifact@master
-#        with:
-#          name: version
-#      - id: get_version
-#        run: 'echo ::set-output "name=VERSION::$(cat ./version/version)"'
-#        shell: bash
-#      - uses: actions/cache@v1
-#        with:
-#          path: ~/.cargo/registry
-#          key: '${{ runner.os }}-cargo-registry-${{ hashFiles(''**/Cargo.lock'') }}'
-#      - uses: actions/cache@v1
-#        with:
-#          path: ~/.cargo/git
-#          key: '${{ runner.os }}-cargo-index-${{ hashFiles(''**/Cargo.lock'') }}'
-#      - uses: actions/cache@v1
-#        with:
-#          path: target
-#          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-#      - uses: actions-rs/toolchain@v1
-#        with:
-#          profile: minimal
-#          toolchain: stable
-#          override: true
-#      - uses: actions-rs/cargo@v1
-#        with:
-#          command: install
-#          args: 'toml-cli'
-#      - shell: bash
-#        env:
-#          VERSION: '${{ steps.get_version.outputs.VERSION }}'
-#        run: |
-#          TEMP_FILE="$(mktemp)"
-#          toml set Cargo.toml package.version "${VERSION:1}" > "$TEMP_FILE"
-#          mv "$TEMP_FILE" Cargo.toml
-#      - uses: actions-rs/cargo@v1
-#        env:
-#          VERSION: '${{ steps.get_version.outputs.VERSION }}'
-#          REPOSITORY_NAME: '${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}'
-#        with:
-#          command: build
-#          args: '--release'
-#      - uses: actions/upload-artifact@master
-#        with:
-#          name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-${{ matrix.target }}
-#          path: ./target/release/${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}${{ matrix.suffix }}
+  build:
+    runs-on: '${{ matrix.os }}'
+    needs:
+      - version
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            suffix: ''
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            suffix: ''
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            suffix: .exe
+    steps:
+      - uses: actions/checkout@master
+        with:
+          name: robbert-vdh/nih-plug
+          ref: refs/heads/master
+      - uses: actions/checkout@master
+        with:
+          lfs: true
+      - id: get_repository_name
+        run: echo ::set-output name=REPOSITORY_NAME::$(echo "$GITHUB_REPOSITORY" | awk -F / '{print $2}' | sed -e "s/:refs//")
+        shell: bash
+      - uses: actions/download-artifact@master
+        with:
+          name: version
+      - id: get_version
+        run: 'echo ::set-output "name=VERSION::$(cat ./version)"'
+        shell: bash
+      - name: Install packages
+        run: sudo apt-get install -y libasound2-dev mesa-utils libglu1-mesa-dev libxcursor-dev libjack-dev libxcb-dri2-0-dev libxcb-icccm4-dev libx11-xcb-dev
+        if: "contains(matrix.os, 'ubuntu-latest')"
+      - uses: actions/cache@v1
+        with:
+          path: ~/.cargo/registry
+          key: '${{ runner.os }}-cargo-registry-${{ hashFiles(''**/Cargo.lock'') }}'
+      - uses: actions/cache@v1
+        with:
+          path: ~/.cargo/git
+          key: '${{ runner.os }}-cargo-index-${{ hashFiles(''**/Cargo.lock'') }}'
+      - uses: actions/cache@v1
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: 'toml-cli'
+      - uses: actions-rs/cargo@v1
+        env:
+          VERSION: '${{ steps.get_version.outputs.VERSION }}'
+          REPOSITORY_NAME: '${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}'
+        with:
+          command: install
+          args: '--git https://github.com/robbert-vdh/nih-plug.git cargo-nih-plug'
+      - uses: actions/cache@v1
+        with:
+          path: ~/.cargo/bin
+          key: ${{ runner.os }}-cargo-bin-${{ hashFiles('**/Cargo.lock') }}
+      - shell: bash
+        env:
+          VERSION: '${{ steps.get_version.outputs.VERSION }}'
+        run: |
+          TEMP_FILE="$(mktemp)"
+          toml set Cargo.toml package.version "${VERSION:1}" > "$TEMP_FILE"
+          mv "$TEMP_FILE" Cargo.toml
+      - uses: actions-rs/cargo@v1
+        env:
+          VERSION: '${{ steps.get_version.outputs.VERSION }}'
+          REPOSITORY_NAME: '${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}'
+        with:
+          command: nih-plug
+          args: 'bundle live-sampler --release'
+      - uses: actions/upload-artifact@master
+        with:
+          name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-${{ matrix.target }}-vst3
+          path: ./target/bundled/${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}.vst3
+      - uses: actions/upload-artifact@master
+        with:
+          name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-${{ matrix.target }}-clap
+          path: ./target/bundled/${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}.clap
 #  release:
 #    if: github.ref == 'refs/heads/master'
 #    needs:
