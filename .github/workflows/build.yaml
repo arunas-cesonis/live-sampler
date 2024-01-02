@@ -124,8 +124,6 @@ jobs:
           name: version
           path: ./version/version
   build:
-    needs:
-      - version
     runs-on: '${{ matrix.os }}'
     strategy:
       matrix:
