@@ -130,9 +130,9 @@ jobs:
     strategy:
       matrix:
         include:
-#          - os: macos-latest
-#            target: x86_64-apple-darwin
-#            suffix: ''
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            suffix: ''
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             suffix: ''
@@ -179,6 +179,17 @@ jobs:
         with:
           command: install
           args: 'toml-cli'
+      - uses: actions-rs/cargo@v1
+        env:
+          VERSION: '${{ steps.get_version.outputs.VERSION }}'
+          REPOSITORY_NAME: '${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}'
+        with:
+          command: install
+          args: '--git https://github.com/robbert-vdh/nih-plug.git cargo-nih-plug'
+      - uses: actions/cache@v1
+        with:
+          path: ~/.cargo/bin
+          key: ${{ runner.os }}-cargo-bin-${{ hashFiles('**/Cargo.lock') }}
       - shell: bash
         env:
           VERSION: '${{ steps.get_version.outputs.VERSION }}'
@@ -191,26 +202,16 @@ jobs:
           VERSION: '${{ steps.get_version.outputs.VERSION }}'
           REPOSITORY_NAME: '${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}'
         with:
-          command: install
-          args: '--git https://github.com/robbert-vdh/nih-plug.git cargo-nih-plug'
-      - uses: actions-rs/cargo@v1
-        env:
-          VERSION: '${{ steps.get_version.outputs.VERSION }}'
-          REPOSITORY_NAME: '${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}'
-        with:
-          command: build
-          args: '--release'
-      - uses: actions-rs/cargo@v1
-        env:
-          VERSION: '${{ steps.get_version.outputs.VERSION }}'
-          REPOSITORY_NAME: '${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}'
-        with:
           command: nih-plug
           args: 'bundle live-sampler --release'
       - uses: actions/upload-artifact@master
         with:
-          name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-${{ matrix.target }}
-          path: ./target/release/${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}${{ matrix.suffix }}
+          name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-${{ matrix.target }}-vst3
+          path: ./target/bundled/${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}.vst3
+      - uses: actions/upload-artifact@master
+        with:
+          name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-${{ matrix.target }}-clap
+          path: ./target/bundled/${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}.clap
 #  release:
 #    if: github.ref == 'refs/heads/master'
 #    needs:
