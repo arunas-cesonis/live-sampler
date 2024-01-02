@@ -176,21 +176,25 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+      - uses: actions/cache@v1
+        with:
+          path: ~/target-toml-cli
+          key: ${{ runner.os }}-target-toml-cli-${{ hashFiles('**/Cargo.lock') }}
+      - uses: actions/cache@v1
+        with:
+          path: ~/target-cargo-nih-plug
+          key: ${{ runner.os }}-target-cargo-nih-plug-${{ hashFiles('**/Cargo.lock') }}
       - uses: actions-rs/cargo@v1
         with:
           command: install
-          args: 'toml-cli'
+          args: 'toml-cli --target-dir ~/target-toml-cli'
       - uses: actions-rs/cargo@v1
         env:
           VERSION: '${{ steps.get_version.outputs.VERSION }}'
           REPOSITORY_NAME: '${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}'
         with:
           command: install
-          args: '--git https://github.com/robbert-vdh/nih-plug.git cargo-nih-plug'
-      - uses: actions/cache@v1
-        with:
-          path: ~/.cargo/bin
-          key: ${{ runner.os }}-cargo-bin-${{ hashFiles('**/Cargo.lock') }}
+          args: '--git https://github.com/robbert-vdh/nih-plug.git cargo-nih-plug --target-dir ~/target-cargo-nih-plug'
       - shell: bash
         env:
           VERSION: '${{ steps.get_version.outputs.VERSION }}'
