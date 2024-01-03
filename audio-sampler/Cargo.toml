@@ -17,5 +17,4 @@ git = "https://github.com/robbert-vdh/nih-plug"
 features = ["standalone", "vst3"]
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-[dependencies.tikv-jemallocator]
-version = "0.5.4"
+tikv-jemallocator = "0.5.4"
