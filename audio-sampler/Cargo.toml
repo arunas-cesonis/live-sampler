@@ -13,8 +13,8 @@ name = "live-sampler"
 path = "src/main.rs"
 
 [dependencies.nih_plug]
-path = "../../nih-plug"
+git = "https://github.com/robbert-vdh/nih-plug"
 features = ["standalone", "vst3"]
 
-[dependencies.tikv-jemallocator]
-version = "0.5.4"
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.5.4"
