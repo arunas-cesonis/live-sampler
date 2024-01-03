@@ -200,8 +200,12 @@ jobs:
           VERSION: '${{ steps.get_version.outputs.VERSION }}'
         run: |
           TEMP_FILE="$(mktemp)"
-          toml set Cargo.toml package.version "${VERSION:1}" > "$TEMP_FILE"
+          toml set Cargo.toml workspace.package.version "${VERSION:1}" > "$TEMP_FILE"
           mv "$TEMP_FILE" Cargo.toml
+          toml set midi-sampler/Cargo.toml package.version "${VERSION:1}" > "$TEMP_FILE"
+          mv "$TEMP_FILE" midi-sampler/Cargo.toml
+          toml set audio-sampler/Cargo.toml package.version "${VERSION:1}" > "$TEMP_FILE"
+          mv "$TEMP_FILE" audio-sampler/Cargo.toml
       - uses: actions-rs/cargo@v1
         env:
           VERSION: '${{ steps.get_version.outputs.VERSION }}'
