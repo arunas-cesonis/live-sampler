@@ -244,23 +244,23 @@ jobs:
         run: 'echo ::set-output name=VERSION::$(cat ./version)'
         shell: bash
       - uses: actions/download-artifact@master
-        with:
-          name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-x86_64-unknown-linux-gnu-vst3
 #     - uses: actions/download-artifact@master
 #       with:
 #         name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-x86_64-apple-darwin-vst3
 #     - uses: actions/download-artifact@master
 #       with:
 #         name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-x86_64-pc-windows-msvc-vst3
-      - uses: actions/download-artifact@master
-        with:
-          name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-x86_64-unknown-linux-gnu-clap
+#      - uses: actions/download-artifact@master
+#        with:
+#          name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-x86_64-unknown-linux-gnu-clap
 #     - uses: actions/download-artifact@master
 #       with:
 #         name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-x86_64-apple-darwin-clap
 #     - uses: actions/download-artifact@master
 #       with:
 #         name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-x86_64-pc-windows-msvc-clap
+      - name: Display structure of downloaded files
+        run: ls -R
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -285,7 +285,6 @@ jobs:
           mv "$TEMP_FILE" audio-sampler/Cargo.toml
           git config user.email "karunce@gmail.com"
           git config user.name "Arunas Cesonis"
-          find .
       - uses: stefanzweifel/git-auto-commit-action@v4.1.3
         env:
           GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
@@ -306,19 +305,12 @@ jobs:
           release_name: 'Release ${{ steps.get_version.outputs.VERSION }}'
           draft: false
           prerelease: false
-      - shell: bash
-        env:
-          VERSION: '${{ steps.get_version.outputs.VERSION }}'
-          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
-        run: |
-          set -x
-          find .
       - uses: actions/upload-release-asset@v1.0.1
         env:
           GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
         with:
           upload_url: '${{ steps.create_release.outputs.upload_url }}'
-          asset_path: ./${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-x86_64-unknown-linux-gnu-vst3.zip
+          asset_path: ./${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-x86_64-unknown-linux-gnu-vst3
           asset_name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-x86_64-unknown-linux-gnu-vst3
           asset_content_type: application/octet-stream
       - uses: actions/upload-release-asset@v1.0.1
@@ -326,7 +318,7 @@ jobs:
           GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
         with:
           upload_url: '${{ steps.create_release.outputs.upload_url }}'
-          asset_path: ./${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-x86_64-unknown-linux-gnu-clap.zip
+          asset_path: ./${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-x86_64-unknown-linux-gnu-clap
           asset_name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-x86_64-unknown-linux-gnu-clap
           asset_content_type: application/octet-stream
 #     - uses: actions/upload-release-asset@v1.0.1
