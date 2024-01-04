@@ -1,17 +1,30 @@
-use std::sync::Arc;
+use std::fmt;
+use std::io::Write;
+use std::sync::{Arc, Mutex};
+use std::time::UNIX_EPOCH;
 
 use nih_plug::prelude::*;
 
 use crate::sampler::Sampler;
 
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 mod sampler;
 mod volume;
+
+type SysEx = ();
 
 pub struct LiveSampler {
     audio_io_layout: AudioIOLayout,
     params: Arc<LiveSamplerParams>,
     sample_rate: f32,
     sampler: Sampler,
+    //    debug: Arc<Mutex<Option<std::fs::File>>>,
 }
 
 #[derive(Params)]
@@ -56,6 +69,7 @@ impl Default for LiveSampler {
             params: Arc::new(LiveSamplerParams::default()),
             sample_rate: -1.0,
             sampler: Sampler::new(0, &sampler::Params::default()),
+            //debug: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -71,6 +85,14 @@ impl LiveSampler {
             .unwrap();
         channel_count
     }
+    //fn debug_println(&mut self, fmt: fmt::Arguments) {
+    //    let f = self.debug.lock();
+    //    let binding = f.unwrap();
+    //    let mut file = binding.as_ref().unwrap();
+    //    file.write_fmt(fmt).unwrap();
+    //    file.write(&[b'\n']).unwrap();
+    //    file.flush().unwrap();
+    //}
     fn sampler_params(&self) -> sampler::Params {
         let params_speed = self.params.speed.smoothed.next();
         let params_passthru = self.params.auto_passthru.value();
@@ -108,7 +130,7 @@ impl Plugin for LiveSampler {
     ];
     const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
-    type SysExMessage = ();
+    type SysExMessage = SysEx;
 
     type BackgroundTask = ();
 
@@ -125,6 +147,17 @@ impl Plugin for LiveSampler {
         self.audio_io_layout = audio_io_layout.clone();
         self.sample_rate = buffer_config.sample_rate;
         self.sampler = Sampler::new(self.channel_count(), &self.sampler_params());
+        let debug = std::fs::File::create(format!(
+            "/tmp/live-sampler-{}-{}.log",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ))
+        .unwrap();
+        //let mut f = self.debug.lock().unwrap();
+        //*f = Some(debug);
         true
     }
 
@@ -147,6 +180,7 @@ impl Plugin for LiveSampler {
                 if event.timing() != sample_id as u32 {
                     break;
                 }
+                //self.debug_println(format_args!("{:?}", event));
                 //nih_warn!("event {:?}", event);
                 // assert!(event.voice_id().is_none());
                 match event {
