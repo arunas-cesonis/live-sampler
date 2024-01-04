@@ -94,7 +94,7 @@ mod test {
         m.dec("a");
         m.dec("c");
 
-        let r: Vec<(&str, &usize)> = m.iter_nonzero().collect::<Vec<_>>();
+        let _r: Vec<(&str, &usize)> = m.iter_nonzero().collect::<Vec<_>>();
         let counts = ["a", "b", "c"].map(|k| m.get(k));
         assert_eq!(counts, [1, 2, 0]);
     }
