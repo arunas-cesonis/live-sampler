@@ -3,5 +3,4 @@ members = ["audio-sampler", "midi-sampler"]
 
 [workspace.package]
 name = "live-sampler"
-version = "0.1.0"
 edition = "2021"
