@@ -223,6 +223,10 @@ jobs:
           path: ./target/bundled/${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}.clap
   release:
     if: github.ref == 'refs/heads/master'
+    permissions:
+      contents: write
+      issues: read
+      packages: none
     needs:
       - build
     runs-on: ubuntu-latest
