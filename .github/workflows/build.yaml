@@ -285,6 +285,7 @@ jobs:
           mv "$TEMP_FILE" audio-sampler/Cargo.toml
           git config user.email "karunce@gmail.com"
           git config user.name "Arunas Cesonis"
+          find .
       - uses: stefanzweifel/git-auto-commit-action@v4.1.3
         env:
           GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
