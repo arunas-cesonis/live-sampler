@@ -65,6 +65,13 @@ jobs:
           # The macOS AArch64 build is done from an x86_64 macOS CI runner, so
           # it needs to be cross compiled
           targets: ${{ matrix.cross-target }}
+      - uses: actions-rs/cargo@v1
+        env:
+          VERSION: '${{ steps.get_version.outputs.VERSION }}'
+          REPOSITORY_NAME: '${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}'
+        with:
+          command: install
+          args: '--git https://github.com/robbert-vdh/nih-plug.git cargo-nih-plug --target-dir ~/target-cargo-nih-plug'
       - name: Package all targets from bundler.toml
         # Instead of hardcoding which targets to build and package, we'll
         # package everything that's got en entry in the `bundler.toml` file
