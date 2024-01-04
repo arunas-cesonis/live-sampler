@@ -1,6 +1,7 @@
 [package]
 name = "live-sampler"
 edition = "2021"
+version = ""
 
 [lib]
 name = "live_sampler"
