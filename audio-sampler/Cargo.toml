@@ -1,0 +1,20 @@
+[package]
+name = "live-sampler"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "live_sampler"
+crate-type = ["cdylib", "lib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "live-sampler"
+path = "src/main.rs"
+
+[dependencies.nih_plug]
+git = "https://github.com/robbert-vdh/nih-plug"
+features = ["standalone", "vst3"]
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.5.4"
