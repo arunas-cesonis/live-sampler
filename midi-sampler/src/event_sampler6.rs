@@ -229,7 +229,7 @@ where
 
     fn finish_playing(&mut self, output: &mut Vec<NoteEvent<S>>) -> bool {
         if let Some(mut playing) = self.playing.take() {
-            nih_warn!("{:<8} FINISHED PLAYING time={}", self.time, playing.time);
+            nih_warn!("{:<8} FINISHED PLAYING time=t {}", self.time, playing.time);
             playing.voices.gen_events_to_stop_voices(self.time, output);
             true
         } else {
