@@ -222,7 +222,7 @@ jobs:
           name: ${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}-${{ matrix.target }}-clap
           path: ./target/bundled/${{ steps.get_repository_name.outputs.REPOSITORY_NAME }}.clap
   release:
-    # if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master'
     needs:
       - build
     runs-on: ubuntu-latest
