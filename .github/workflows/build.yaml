@@ -237,7 +237,7 @@ jobs:
         with:
           name: version
       - id: get_version
-        run: 'echo ::set-output name=VERSION::$(cat ./version/version)'
+        run: 'echo ::set-output name=VERSION::$(cat ./version)'
         shell: bash
       - uses: actions/download-artifact@master
         with:
@@ -283,6 +283,7 @@ jobs:
         with:
           skip_checkout: true
           commit_message: Bump cargo version
+          tagging_message: '${{ steps.get_version.outputs.VERSION }}'
           branch: ${{ github.head_ref }}
           file_pattern: Cargo.toml
       - id: create_release
