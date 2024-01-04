@@ -1,6 +1,6 @@
-use std::fmt;
-use std::io::Write;
-use std::sync::{Arc, Mutex};
+
+
+use std::sync::{Arc};
 use std::time::UNIX_EPOCH;
 
 use nih_plug::prelude::*;
@@ -147,7 +147,7 @@ impl Plugin for LiveSampler {
         self.audio_io_layout = audio_io_layout.clone();
         self.sample_rate = buffer_config.sample_rate;
         self.sampler = Sampler::new(self.channel_count(), &self.sampler_params());
-        let debug = std::fs::File::create(format!(
+        let _debug = std::fs::File::create(format!(
             "/tmp/live-sampler-{}-{}.log",
             std::process::id(),
             std::time::SystemTime::now()

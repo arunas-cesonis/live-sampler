@@ -1,14 +1,14 @@
-use crate::count_map::CountMap;
-use crate::utils::{is_note_off, is_note_on, note_from_event, Note, NoteState};
+
+use crate::utils::{note_from_event, Note, NoteState};
 use intmap::IntMap;
-use nih_plug::log::Record;
+
 use nih_plug::midi::NoteEvent;
 use nih_plug::nih_warn;
-use nih_plug::prelude::ClapFeature::NoteEffect;
-use std::collections::{HashMap, VecDeque};
+
+
 use std::fmt::Debug;
-use std::process::Output;
-use std::slice::from_raw_parts;
+
+
 use std::sync::Arc;
 
 // 'time 'in this module is calculated as number of audio frames processed
@@ -49,7 +49,7 @@ impl<S> Clip<S> {
             .map(|e| e.note_events.len())
             .sum::<usize>()
     }
-    fn push_events<'a, I>(&mut self, time: usize, note_events: I)
+    fn push_events<'a, I>(&mut self, _time: usize, note_events: I)
     where
         I: IntoIterator<Item = &'a NoteEvent<S>> + 'a,
         S: 'a + Clone + Debug,
@@ -58,7 +58,7 @@ impl<S> Clip<S> {
         if note_events.is_empty() {
             return;
         }
-        let tmp = note_events.clone();
+        let _tmp = note_events.clone();
         self.events.push(TimedEvents {
             note_events,
             time: self.duration,
@@ -135,7 +135,7 @@ impl Voices {
     }
     fn voice_off(&mut self, time: usize, note: Note) {
         if let Some(voice) = self.map.get_mut(note.into()) {
-            let debug_duration = time - voice.start;
+            let _debug_duration = time - voice.start;
             voice.count -= 1;
             if voice.count == 0 {
                 self.map.remove(note.into());
@@ -187,7 +187,7 @@ where
     }
 
     fn start_recording(&mut self) {
-        let mut clip = Clip::default();
+        let clip = Clip::default();
         self.recording = Some(clip);
     }
 
@@ -237,7 +237,7 @@ where
         }
     }
 
-    fn start_playing(&mut self, output: &mut Vec<NoteEvent<S>>) {
+    fn start_playing(&mut self, _output: &mut Vec<NoteEvent<S>>) {
         if let Some(clip) = &self.stored {
             self.playing = Some(Playing {
                 clip: clip.clone(),
@@ -287,7 +287,7 @@ where
     pub fn process_sample(
         &mut self,
         events: Vec<NoteEvent<S>>,
-        params: &Params,
+        _params: &Params,
     ) -> Vec<NoteEvent<S>> {
         let mut output = vec![];
         for e in &events {
@@ -296,7 +296,7 @@ where
         let (events, actions) = partition_actions(events);
         self.process_recording(&actions, &events);
         self.process_playback(&actions, &mut output);
-        output.iter().enumerate().for_each(|e| {});
+        output.iter().enumerate().for_each(|_e| {});
         for e in &output {
             nih_warn!("{:<8} OUT EVENT {:?}", self.time, note_from_event(e));
         }

@@ -1,5 +1,5 @@
 use nih_plug::prelude::NoteEvent;
-use nih_plug::wrapper::vst3::vst3_sys::vst::NoteOffEvent;
+
 use std::fmt::Debug;
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]

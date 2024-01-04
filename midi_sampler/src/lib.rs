@@ -5,10 +5,10 @@ mod count_map;
 mod event_sampler6;
 mod utils;
 
-use std::fmt;
-use std::io::Write;
-use std::sync::{Arc, Mutex};
-use std::time::UNIX_EPOCH;
+
+
+use std::sync::{Arc};
+
 
 use crate::event_sampler6::EventSampler;
 use crate::utils::set_event_timing;
@@ -94,7 +94,7 @@ impl Plugin for MIDISampler {
 
     fn initialize(
         &mut self,
-        audio_io_layout: &AudioIOLayout,
+        _audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
@@ -117,7 +117,7 @@ impl Plugin for MIDISampler {
     ) -> ProcessStatus {
         let mut next_event = context.next_event();
 
-        for (sample_id, channel_samples) in buffer.iter_samples().enumerate() {
+        for (sample_id, _channel_samples) in buffer.iter_samples().enumerate() {
             let params = self.sampler_params(context);
             let params = &params;
 
