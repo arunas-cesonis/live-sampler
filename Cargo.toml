@@ -1,5 +1,5 @@
 [workspace]
-members = ["audio-sampler", "midi-sampler", "xtask"]
+members = ["audio_sampler", "midi_sampler", "xtask"]
 
 [workspace.package]
 name = "live-sampler"
