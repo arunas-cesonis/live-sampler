@@ -1,14 +1,14 @@
 [package]
-name = "live-sampler"
+name = "audio_sampler"
 edition = "2021"
 
 [lib]
-name = "live_sampler"
+name = "audio_sampler"
 crate-type = ["cdylib", "lib"]
 path = "src/lib.rs"
 
 [[bin]]
-name = "live-sampler"
+name = "audio-sampler"
 path = "src/main.rs"
 
 [dependencies.nih_plug]

@@ -1,5 +1,5 @@
 [package]
-name = "midi-sampler"
+name = "midi_sampler"
 edition = "2021"
 
 [lib]
