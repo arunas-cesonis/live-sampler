@@ -5,3 +5,6 @@ members = ["audio-sampler", "midi-sampler"]
 name = "live-sampler"
 version = "0.1.0"
 edition = "2021"
+
+[package]
+version = ""
