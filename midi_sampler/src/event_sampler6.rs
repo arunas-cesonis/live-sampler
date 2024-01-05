@@ -1,13 +1,10 @@
-
 use crate::utils::{note_from_event, Note, NoteState};
 use intmap::IntMap;
 
 use nih_plug::midi::NoteEvent;
 use nih_plug::nih_warn;
 
-
 use std::fmt::Debug;
-
 
 use std::sync::Arc;
 
@@ -43,6 +40,42 @@ impl<S> Default for Clip<S> {
 }
 
 impl<S> Clip<S> {
+    fn to_notes_with_durations(&self) -> Vec<(Note, usize)> {
+        let mut out = vec![];
+        let mut voices = Voices::default();
+        let mut last_time = 0;
+        for e in &self.events {
+            match e {
+                TimedEvents { note_events, time } => note_events.iter().for_each(|e| {
+                    last_time = *time;
+                    match note_from_event(e) {
+                        Some((note, NoteState::On)) => voices.voice_on(*time, note),
+                        Some((note, NoteState::Off)) => {
+                            if let Some(voice) = voices.voice_off(*time, note) {
+                                out.push((note, *time - voice.start));
+                            }
+                        }
+                        None => {}
+                    }
+                }),
+            }
+        }
+        for x in voices.gen_events_to_stop_voices::<()>() {
+            let time = last_time + 1;
+            for v in voices.handle_event(time, &x) {
+                match note_from_event(&x) {
+                    Some((note, NoteState::On)) => voices.voice_on(time, note),
+                    Some((note, NoteState::Off)) => {
+                        if let Some(voice) = voices.voice_off(time, note) {
+                            out.push((note, time - voice.start));
+                        }
+                    }
+                    None => {}
+                }
+            }
+        }
+        out
+    }
     fn count_events(&self) -> usize {
         self.events
             .iter()
@@ -58,7 +91,6 @@ impl<S> Clip<S> {
         if note_events.is_empty() {
             return;
         }
-        let _tmp = note_events.clone();
         self.events.push(TimedEvents {
             note_events,
             time: self.duration,
@@ -133,41 +165,47 @@ impl Voices {
             );
         }
     }
-    fn voice_off(&mut self, time: usize, note: Note) {
+    fn voice_off(&mut self, time: usize, note: Note) -> Option<Voice> {
         if let Some(voice) = self.map.get_mut(note.into()) {
-            let _debug_duration = time - voice.start;
             voice.count -= 1;
             if voice.count == 0 {
-                self.map.remove(note.into());
+                self.map.remove(note.into())
+            } else {
+                None
             }
+        } else {
+            None
         }
     }
-    fn handle_event<S>(&mut self, time: usize, e: &NoteEvent<S>) {
+    fn handle_event<S>(&mut self, time: usize, e: &NoteEvent<S>) -> Vec<Voice> {
+        let mut out = vec![];
         match note_from_event(e) {
             Some((note, NoteState::On)) => {
                 self.voice_on(time, note);
             }
             Some((note, NoteState::Off)) => {
-                self.voice_off(time, note);
+                self.voice_off(time, note)
+                    .into_iter()
+                    .for_each(|v| out.push(v));
             }
             None => (),
         };
+        out
     }
-    fn gen_events_to_stop_voices<S>(&mut self, time: usize, output: &mut Vec<NoteEvent<S>>) {
-        let mut tmp = vec![];
+    fn gen_events_to_stop_voices<S>(&mut self) -> Vec<NoteEvent<S>> {
+        let mut events = vec![];
         for (key, voice) in self.map.iter() {
             let note: Note = (*key).into();
             assert!(voice.count > 0);
-            tmp.push(NoteEvent::NoteOff {
-                timing: 0, // this bit is set in the Plugin implementation
+            events.push(NoteEvent::NoteOff {
+                timing: 0, // this value is set in the Plugin implementation
                 voice_id: None,
                 channel: note.channel,
                 note: note.note,
                 velocity: 0.0,
             });
         }
-        tmp.iter().for_each(|e| self.handle_event(time, e));
-        output.append(&mut tmp);
+        events
     }
 }
 
@@ -180,12 +218,6 @@ impl<S> EventSampler<S>
 where
     S: Clone + Debug,
 {
-    fn stop_playing(&mut self, output: &mut Vec<NoteEvent<S>>) {
-        if let Some(mut playing) = self.playing.take() {
-            playing.voices.gen_events_to_stop_voices(self.time, output);
-        }
-    }
-
     fn start_recording(&mut self) {
         let clip = Clip::default();
         self.recording = Some(clip);
@@ -197,6 +229,11 @@ where
                 "{:<8} FINISHED RECORDING duration={}",
                 self.time,
                 clip.duration
+            );
+            nih_warn!(
+                "{:<8} FINISHED RECORDING events={:?}",
+                self.time,
+                clip.to_notes_with_durations()
             );
             self.stored = Some(Arc::new(clip));
             true
@@ -230,7 +267,10 @@ where
     fn finish_playing(&mut self, output: &mut Vec<NoteEvent<S>>) -> bool {
         if let Some(mut playing) = self.playing.take() {
             nih_warn!("{:<8} FINISHED PLAYING time=t {}", self.time, playing.time);
-            playing.voices.gen_events_to_stop_voices(self.time, output);
+            for x in playing.voices.gen_events_to_stop_voices() {
+                playing.voices.handle_event(self.time, &x);
+                output.push(x);
+            }
             true
         } else {
             false
@@ -262,6 +302,7 @@ where
 
         if let Some(playing) = self.playing.as_mut() {
             let normalized_time = playing.time % playing.clip.duration;
+            // TODO: instead of binary search keep track of last index and only search from there
             if let Ok(index) = playing
                 .clip
                 .events
@@ -274,11 +315,10 @@ where
                 }
             }
             if normalized_time == playing.clip.duration - 1 {
-                let mut note_offs = vec![];
-                playing
-                    .voices
-                    .gen_events_to_stop_voices(self.time, &mut note_offs);
-                output.append(&mut note_offs);
+                for x in playing.voices.gen_events_to_stop_voices() {
+                    playing.voices.handle_event(self.time, &x);
+                    output.push(x);
+                }
             }
             playing.time += 1;
         }
