@@ -164,9 +164,15 @@ jobs:
     - name: Download Artifacts
       uses: actions/download-artifact@v4
 
+
     - name: List Files
       run: find .
 
+    - name: Compress Artifacts
+      run: |
+        for X in live-sampler*-; do
+          zip $X.zip -r $X;
+        done
     - name: Make file
       run: echo ${{ github.sha }} > Release.txt
     - name: Show file
@@ -177,4 +183,4 @@ jobs:
       with:
         files: |
           Release.txt
-          live-sampler-files/*
+          live-sampler-*.zip
