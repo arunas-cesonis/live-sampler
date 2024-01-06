@@ -63,7 +63,7 @@ impl<S> Clip<S> {
         }
         for x in voices.gen_events_to_stop_voices::<()>() {
             let time = last_time + 1;
-            for v in voices.handle_event(time, &x) {
+            for _v in voices.handle_event(time, &x) {
                 match note_from_event(&x) {
                     Some((note, NoteState::On)) => voices.voice_on(time, note),
                     Some((note, NoteState::Off)) => {
@@ -77,12 +77,7 @@ impl<S> Clip<S> {
         }
         out
     }
-    fn count_events(&self) -> usize {
-        self.events
-            .iter()
-            .map(|e| e.note_events.len())
-            .sum::<usize>()
-    }
+
     fn push_events<'a, I>(&mut self, _time: usize, note_events: I)
     where
         I: IntoIterator<Item = &'a NoteEvent<S>> + 'a,
@@ -171,7 +166,7 @@ impl Voices {
             );
         }
     }
-    fn voice_off(&mut self, time: usize, note: Note) -> Option<Voice> {
+    fn voice_off(&mut self, _time: usize, note: Note) -> Option<Voice> {
         if let Some(voice) = self.map.get_mut(note.into()) {
             voice.count -= 1;
             if voice.count == 0 {
