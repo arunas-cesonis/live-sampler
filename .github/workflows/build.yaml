@@ -109,11 +109,17 @@ jobs:
           name: ${{ env.ARCHIVE_NAME }}
           path: ${{ env.ARCHIVE_NAME }}
 
+      - name: Debug print
+        # See files
+        run: |
+          find .
+
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-            files: ${{ env.ARCHIVE_NAME }}
+            files: |
+                ${{ env.ARCHIVE_NAME }}
             tag_name: ${{ github.ref }}
             body: |
                 This is an automated release of ${{ github.ref }}.
