@@ -170,7 +170,7 @@ jobs:
 
     - name: Compress Artifacts
       run: |
-        for X in live-sampler*-; do
+        for X in live-sampler-*; do
           zip $X.zip -r $X;
         done
     - name: Make file
