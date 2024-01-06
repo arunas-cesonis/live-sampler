@@ -17,17 +17,6 @@ defaults:
     shell: bash
 
 jobs:
-#    - name: Release
-#      uses: softprops/action-gh-release@v1
-#      if: startsWith(github.ref, 'refs/tags/')
-#      with:
-#        files: |
-#        body: |
-#          This is an automated release of ${{ github.ref }}.
-#          It contains the following plugins:
-#          ${{ steps.get_plugins.outputs.PLUGINS }}
-#        draft: false
-#        prerelease: false
   build:
     strategy:
       matrix:
@@ -119,25 +108,6 @@ jobs:
           name: ${{ env.ARCHIVE_NAME }}
           path: ${{ env.ARCHIVE_NAME }}
 
-#      - name: Compress
-#        # See files
-#        run: |
-#          zip "$ARCHIVE_NAME/$ARCHIVE_NAME.zip" -r "$ARCHIVE_NAME/$ARCHIVE_NAME"
-  fake-build:
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - name: Make files
-        run: |
-          mkdir live-sampler-files
-          dd if=/dev/urandom of=./live-sampler-files/a bs=1M count=1
-          dd if=/dev/urandom of=./live-sampler-files/b bs=1M count=1
-      - uses: actions/upload-artifact@v4
-        with:
-          name: live-sampler-files
-          path: live-sampler-files
-
   release:
     needs:
       - build
@@ -146,41 +116,17 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
-
-#    - name: Make a 1M random binary file
-#      run: |
-#        dd if=/dev/urandom of=my-1m-file bs=1M count=1
-#
-#    - uses: actions/upload-artifact@v4
-#      with:
-#        name: my-1m-file
-#        path: my-1m-file
-#
-#    - name: Remove file and wait
-#      run: |
-#        rm my-1m-file
-#        sleep 10
-
     - name: Download Artifacts
       uses: actions/download-artifact@v4
-
-
     - name: List Files
       run: find .
-
     - name: Compress Artifacts
       run: |
         for X in live-sampler-*; do
           zip $X.zip -r $X;
         done
-    - name: Make file
-      run: echo ${{ github.sha }} > Release.txt
-    - name: Show file
-      run: cat Release.txt
-    - name: Release file
+    - name: Release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: |
-          Release.txt
-          live-sampler-*.zip
+        files: live-sampler-*.zip
