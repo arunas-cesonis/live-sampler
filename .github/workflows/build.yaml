@@ -118,7 +118,7 @@ jobs:
           mv target/bundled/* "$ARCHIVE_NAME/$ARCHIVE_NAME"
       - uses: actions/upload-artifact@v3
         with:
-          name: live-sampler-${{ matrix.name }}
+          name: ${{ env.ARCHIVE_NAME }}
           path: ${{ env.ARCHIVE_NAME }}
 
 #      - name: Compress
@@ -130,10 +130,11 @@ jobs:
       - build
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: live-sampler-ubuntu-20.04
-      - name: Debug print
-        # See files
-        run: |
-          find .
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Downlod Artifacts
+      uses: actions/download-artifact@v4
+
+    - name: List Files
+      run: find .
