@@ -36,7 +36,7 @@ jobs:
           #- { name: macos-universal,    os: macos-11,       cross-target: aarch64-apple-darwin }
           #- { name: windows,            os: windows-latest, cross-target: '' }
     name: Package plugin binaries
-    if: false
+#    if: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
@@ -114,7 +114,7 @@ jobs:
           # GitHub Action strips the top level directory, great, have another one
           mkdir -p "$ARCHIVE_NAME/$ARCHIVE_NAME"
           mv target/bundled/* "$ARCHIVE_NAME/$ARCHIVE_NAME"
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARCHIVE_NAME }}
           path: ${{ env.ARCHIVE_NAME }}
@@ -131,19 +131,19 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
-    - name: Make a 1M random binary file
-      run: |
-        dd if=/dev/urandom of=my-1m-file bs=1M count=1
-
-    - uses: actions/upload-artifact@v4
-      with:
-        name: my-1m-file
-        path: my-1m-file
-
-    - name: Remove file and wait
-      run: |
-        rm my-1m-file
-        sleep 10
+#    - name: Make a 1M random binary file
+#      run: |
+#        dd if=/dev/urandom of=my-1m-file bs=1M count=1
+#
+#    - uses: actions/upload-artifact@v4
+#      with:
+#        name: my-1m-file
+#        path: my-1m-file
+#
+#    - name: Remove file and wait
+#      run: |
+#        rm my-1m-file
+#        sleep 10
 
     - name: Download Artifacts
       uses: actions/download-artifact@v4
