@@ -142,6 +142,9 @@ jobs:
 
     - name: Download Artifacts
       uses: actions/download-artifact@v4
+      with:
+        name: my-1m-file
+        path: my-1m-file
 
     - name: List Files
       run: find .
