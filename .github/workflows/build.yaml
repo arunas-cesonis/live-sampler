@@ -133,9 +133,14 @@ jobs:
       - uses: actions/checkout@v3
       - name: Fetch all git history
         run: git fetch --force --prune --tags --unshallow
+      - name: Determine build archive name
+        run: |
+          # Windows (usually) doesn't like colons in file names
+          echo "ARCHIVE_NAME=live-sampler-$(date -u +"%Y-%m-%d-%H%m%S")" >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v4
         with:
-          path: build-artifacts
+          name: ${{ env.ARCHIVE_NAME }}-ubuntu-20.04
+          path: ${{ env.ARCHIVE_NAME }}-ubuntu-20.04
       - name: Debug print
         # See files
         run: |
