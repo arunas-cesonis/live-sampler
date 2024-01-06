@@ -140,8 +140,9 @@ jobs:
         name: my-1m-file
         path: my-1m-file
 
-    - name: Wait
+    - name: Remove file and wait
       run: |
+        rm my-1m-file
         sleep 10
 
     - name: Download Artifacts
