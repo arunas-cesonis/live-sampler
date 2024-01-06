@@ -1,13 +1,34 @@
-MIDI controlled audio buffer
+This project contains two CLAP/VST3 plugins that can be used to record and play back a buffer.
+audio-sampler operates on audio buffers, midi-sampler operates on midi buffers.
 
-MIDI
-- Note 0 (C-2) records audio
+*** audio-sampler ***
+
+MIDI bindings
+- Note 0 (C-2) records audio while held
 - Notes 12-27 (C#-1) start a new voice playing recorded audio back, each from next 16th offset of the buffer
 - Note 1 (C#-2) reverses playback
+- All other MIDI events are ignored
+- No MIDI events are passed through
+
+To get started using the plugin it should be enough to just try it.
+However it may not be entirely obvious how some edge cases work, so here's a short description of the plugin's behavior:
+- the playback and recording simulates two indepentent cursors moving through the buffer
+- initially the buffer has zero length
+- when recording starts, recording cursor is reset to beginning
+- if recording cursor is at the end of the buffer, buffer gets extended
+- once recording stops, buffer is trimmed to the length of the recording.
+- playback can be started while recording is still in progress
+- initial playback offset is determined by the length of the buffer when playback is started
 
 Plugin parameters
 - Pass through - disables/enables playing back incoming audio while no buffer playback voices are active
 - Fade time - duration of cross-fading between voices or incoming audio
 - Speed - playback speed multiplier
 
-CLAP/VST3
+*** midi-sampler ***
+
+This has similar concept as audio-sampler but is not as ready for usage.
+
+MIDI
+- Note 0 (C-2) records midi events
+- Notes 12-27 (C#-1) start a playing recorded MIDI events back, from 16th offset of the buffer
