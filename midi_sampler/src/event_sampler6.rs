@@ -277,7 +277,7 @@ where
         }
     }
 
-    fn start_playing(&mut self, _output: &mut Vec<NoteEvent<S>>) {
+    fn start_playing(&mut self) {
         if let Some(clip) = &self.stored {
             self.playing = Some(Playing {
                 clip: clip.clone(),
@@ -291,11 +291,11 @@ where
     fn process_playback(&mut self, frame_actions: &FrameActions, output: &mut Vec<NoteEvent<S>>) {
         if frame_actions.play && frame_actions.stop {
             if self.finish_playing(output) {
-                self.start_playing(output);
+                self.start_playing();
             }
         } else if frame_actions.play {
             self.finish_playing(output);
-            self.start_playing(output);
+            self.start_playing();
         } else if frame_actions.stop {
             self.finish_playing(output);
         }
