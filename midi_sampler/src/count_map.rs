@@ -15,6 +15,7 @@ impl<K: Hash + Eq> Default for CountMap<K> {
     }
 }
 
+#[allow(unused)]
 impl<K> CountMap<K>
 where
     K: Hash + Eq,

@@ -52,20 +52,6 @@ pub fn note_from_event<S>(ev: &NoteEvent<S>) -> Option<(Note, NoteState)> {
     })
 }
 
-pub fn is_note_on<S>(event: &NoteEvent<S>) -> bool {
-    match event {
-        NoteEvent::NoteOn { .. } => true,
-        _ => false,
-    }
-}
-
-pub fn is_note_off<S>(event: &NoteEvent<S>) -> bool {
-    match event {
-        NoteEvent::NoteOff { .. } => true,
-        _ => false,
-    }
-}
-
 pub fn set_event_timing<S>(mut ev: NoteEvent<S>, value: u32) -> NoteEvent<S> {
     set_event_timing_mut(&mut ev, value);
     ev
@@ -95,6 +81,7 @@ pub fn set_event_timing_mut<S>(ev: &mut NoteEvent<S>, value: u32) {
     }
 }
 
+#[allow(unused)]
 pub fn get_event_timing<S: Debug>(ev: &NoteEvent<S>) -> u32 {
     *(match ev {
         NoteEvent::NoteOn { timing, .. } => timing,
