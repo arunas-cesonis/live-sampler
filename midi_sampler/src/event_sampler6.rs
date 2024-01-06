@@ -102,7 +102,6 @@ impl<S> Clip<S> {
 struct Playing<S> {
     clip: Arc<Clip<S>>,
     time: usize,
-    clip_events_index: usize,
     voices: Voices,
 }
 
@@ -118,9 +117,11 @@ pub struct EventSampler<S> {
 struct FrameActions {
     start_recording: bool,
     stop_recording: bool,
-    play: bool,
+    play_from: Option<f32>,
     stop: bool,
 }
+
+const BASE_NOTE: u8 = 12;
 
 fn partition_actions<S>(ev: Vec<NoteEvent<S>>) -> (Vec<NoteEvent<S>>, FrameActions) {
     let mut out_events = vec![];
@@ -129,8 +130,12 @@ fn partition_actions<S>(ev: Vec<NoteEvent<S>>) -> (Vec<NoteEvent<S>>, FrameActio
         match e {
             NoteEvent::NoteOn { note, .. } if note == 0 => frame_actions.start_recording = true,
             NoteEvent::NoteOff { note, .. } if note == 0 => frame_actions.stop_recording = true,
-            NoteEvent::NoteOn { note, .. } if note == 1 => frame_actions.play = true,
-            NoteEvent::NoteOff { note, .. } if note == 1 => frame_actions.stop = true,
+            NoteEvent::NoteOn { note, .. } if note >= BASE_NOTE && note < BASE_NOTE + 16 => {
+                frame_actions.play_from = Some((note - BASE_NOTE) as f32 / 16.0)
+            }
+            NoteEvent::NoteOff { note, .. } if note >= BASE_NOTE && note < BASE_NOTE + 16 => {
+                frame_actions.stop = true;
+            }
             _ => {
                 out_events.push(e);
             }
@@ -266,7 +271,11 @@ where
 
     fn finish_playing(&mut self, output: &mut Vec<NoteEvent<S>>) -> bool {
         if let Some(mut playing) = self.playing.take() {
-            nih_warn!("{:<8} FINISHED PLAYING time=t {}", self.time, playing.time);
+            nih_warn!(
+                "{:<8} FINISHED PLAYING clip.time={}",
+                self.time,
+                playing.time
+            );
             for x in playing.voices.gen_events_to_stop_voices() {
                 playing.voices.handle_event(self.time, &x);
                 output.push(x);
@@ -277,25 +286,32 @@ where
         }
     }
 
-    fn start_playing(&mut self) {
+    fn start_playing(&mut self, play_from: f32) {
         if let Some(clip) = &self.stored {
+            let time = (clip.duration as f32 * play_from).round() as usize;
+            nih_warn!(
+                "{:<8} START PLAYING clip.duration={} clip.time={}",
+                self.time,
+                clip.duration,
+                time
+            );
             self.playing = Some(Playing {
                 clip: clip.clone(),
-                time: 0,
-                clip_events_index: 0,
+                time,
                 voices: Voices::default(),
             });
         }
     }
 
     fn process_playback(&mut self, frame_actions: &FrameActions, output: &mut Vec<NoteEvent<S>>) {
-        if frame_actions.play && frame_actions.stop {
+        if frame_actions.play_from.is_some() && frame_actions.stop {
+            let play_from = frame_actions.play_from.unwrap();
             if self.finish_playing(output) {
-                self.start_playing();
+                self.start_playing(play_from);
             }
-        } else if frame_actions.play {
+        } else if let Some(play_from) = frame_actions.play_from {
             self.finish_playing(output);
-            self.start_playing();
+            self.start_playing(play_from);
         } else if frame_actions.stop {
             self.finish_playing(output);
         }
