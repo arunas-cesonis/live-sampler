@@ -171,4 +171,5 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          live-sampler/live-sampler-files
+          live-sampler/live-sampler-files/a
+          live-sampler/live-sampler-files/b
