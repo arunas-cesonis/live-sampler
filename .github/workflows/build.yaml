@@ -124,8 +124,8 @@ jobs:
 #        run: |
 #          zip "$ARCHIVE_NAME/$ARCHIVE_NAME.zip" -r "$ARCHIVE_NAME/$ARCHIVE_NAME"
   release:
-#    needs:
-#      - build
+    needs:
+      - build
     runs-on: ubuntu-20.04
     steps:
     - name: Checkout
