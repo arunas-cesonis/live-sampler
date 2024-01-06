@@ -1,7 +1,6 @@
 # Based on https://github.com/robbert-vdh/nih-plug/blob/36ee023fb38e2d1ecb38486bb2bceea07e60fc48/.github/workflows/build.yml
 
 name: Automated Builds
-
 on:
   push:
     branches:
@@ -23,8 +22,6 @@ jobs:
 #      if: startsWith(github.ref, 'refs/tags/')
 #      with:
 #        files: |
-#          ${{ env.ARCHIVE_NAME }}/${{ env.ARCHIVE_NAME }}.zip
-#        tag_name: ${{ github.ref }}
 #        body: |
 #          This is an automated release of ${{ github.ref }}.
 #          It contains the following plugins:
@@ -39,6 +36,7 @@ jobs:
           #- { name: macos-universal,    os: macos-11,       cross-target: aarch64-apple-darwin }
           #- { name: windows,            os: windows-latest, cross-target: '' }
     name: Package plugin binaries
+    if: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
@@ -126,14 +124,23 @@ jobs:
 #        run: |
 #          zip "$ARCHIVE_NAME/$ARCHIVE_NAME.zip" -r "$ARCHIVE_NAME/$ARCHIVE_NAME"
   release:
-    needs:
-      - build
+#    needs:
+#      - build
     runs-on: ubuntu-20.04
     steps:
     - name: Checkout
       uses: actions/checkout@v3
 
-    - name: Downlod Artifacts
+    - name: Make a 1M random binary file
+      run: |
+        dd if=/dev/urandom of=my-1m-file bs=1M count=1
+
+    - uses: actions/upload-artifact@v3
+      with:
+        name: my-1m-file
+        path: my-1m-file
+
+    - name: Download Artifacts
       uses: actions/download-artifact@v4
 
     - name: List Files
