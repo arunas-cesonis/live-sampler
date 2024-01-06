@@ -18,8 +18,20 @@ defaults:
     shell: bash
 
 jobs:
-  # We'll only package the plugins with an entry in bundler.toml
-  package:
+#    - name: Release
+#      uses: softprops/action-gh-release@v1
+#      if: startsWith(github.ref, 'refs/tags/')
+#      with:
+#        files: |
+#          ${{ env.ARCHIVE_NAME }}/${{ env.ARCHIVE_NAME }}.zip
+#        tag_name: ${{ github.ref }}
+#        body: |
+#          This is an automated release of ${{ github.ref }}.
+#          It contains the following plugins:
+#          ${{ steps.get_plugins.outputs.PLUGINS }}
+#        draft: false
+#        prerelease: false
+  build:
     strategy:
       matrix:
         include:
@@ -109,27 +121,19 @@ jobs:
           name: ${{ env.ARCHIVE_NAME }}
           path: ${{ env.ARCHIVE_NAME }}
 
+#      - name: Compress
+#        # See files
+#        run: |
+#          zip "$ARCHIVE_NAME/$ARCHIVE_NAME.zip" -r "$ARCHIVE_NAME/$ARCHIVE_NAME"
+  release:
+    needs:
+      - build
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: build-artifacts
       - name: Debug print
         # See files
         run: |
           find .
-
-      - name: Compress
-        # See files
-        run: |
-          zip "$ARCHIVE_NAME/$ARCHIVE_NAME.zip" -r "$ARCHIVE_NAME/$ARCHIVE_NAME"
-          find .
-
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-            files: |
-                ${{ env.ARCHIVE_NAME }}/${{ env.ARCHIVE_NAME }}.zip
-            tag_name: ${{ github.ref }}
-            body: |
-                This is an automated release of ${{ github.ref }}.
-                It contains the following plugins:
-                ${{ steps.get_plugins.outputs.PLUGINS }}
-            draft: false
-            prerelease: false
