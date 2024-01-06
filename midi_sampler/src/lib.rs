@@ -5,10 +5,7 @@ mod count_map;
 mod event_sampler6;
 mod utils;
 
-
-
-use std::sync::{Arc};
-
+use std::sync::Arc;
 
 use crate::event_sampler6::EventSampler;
 use crate::utils::set_event_timing;
@@ -24,8 +21,8 @@ pub struct MIDISampler {
 
 #[derive(Params)]
 struct MIDISamplerParams {
-    //    #[id = "auto_passthru"]
-    //    pub auto_passthru: BoolParam,
+    #[id = "passthru"]
+    pub passthru: BoolParam,
     //    #[id = "speed"]
     //    pub speed: FloatParam,
     //    #[id = "fade time"]
@@ -34,7 +31,9 @@ struct MIDISamplerParams {
 
 impl Default for MIDISamplerParams {
     fn default() -> Self {
-        Self {}
+        Self {
+            passthru: BoolParam::new("Pass through", true),
+        }
     }
 }
 
@@ -52,6 +51,7 @@ impl MIDISampler {
     fn sampler_params(&self, context: &mut impl ProcessContext<Self>) -> event_sampler6::Params {
         event_sampler6::Params {
             sample_rate: self.sample_rate,
+            passthru: self.params.passthru.value(),
             pos_beats: context.transport().pos_beats(),
             pos_samples: context.transport().pos_samples(),
             pos_seconds: context.transport().pos_seconds(),

@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 pub struct Params {
     pub sample_rate: f32, // for better messaging / debugging purposes
+    pub passthru: bool,
     pub pos_beats: Option<f64>,
     pub pos_samples: Option<i64>,
     pub pos_seconds: Option<f64>,
@@ -343,16 +344,18 @@ where
     pub fn process_sample(
         &mut self,
         events: Vec<NoteEvent<S>>,
-        _params: &Params,
+        params: &Params,
     ) -> Vec<NoteEvent<S>> {
         let mut output = vec![];
         for e in &events {
             nih_warn!("{:<8} IN  EVENT {:?}", self.time, note_from_event(e));
         }
-        let (events, actions) = partition_actions(events);
+        let (mut events, actions) = partition_actions(events);
         self.process_recording(&actions, &events);
         self.process_playback(&actions, &mut output);
-        output.iter().enumerate().for_each(|_e| {});
+        if params.passthru {
+            output.append(&mut events);
+        }
         for e in &output {
             nih_warn!("{:<8} OUT EVENT {:?}", self.time, note_from_event(e));
         }
