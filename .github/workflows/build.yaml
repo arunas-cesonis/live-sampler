@@ -177,5 +177,4 @@ jobs:
       with:
         files: |
           Release.txt
-          live-sampler-files/a
-          live-sampler-files/b
+          live-sampler-files/*
