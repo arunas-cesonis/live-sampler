@@ -36,6 +36,8 @@ struct AudioSamplerParams {
     pub decay: FloatParam,
 }
 
+const MILLISECONDS_PARAM_SKEW_FACTOR: f32 = 0.25;
+
 impl Default for AudioSamplerParams {
     fn default() -> Self {
         Self {
@@ -54,17 +56,17 @@ impl Default for AudioSamplerParams {
                 FloatRange::Skewed {
                     min: 0.0,
                     max: 1000.0,
-                    factor: 2.0,
+                    factor: MILLISECONDS_PARAM_SKEW_FACTOR,
                 },
             )
             .with_unit(" ms"),
             decay: FloatParam::new(
-                "decay",
+                "Decay",
                 0.1,
                 FloatRange::Skewed {
                     min: 0.0,
                     max: 1000.0,
-                    factor: 2.0,
+                    factor: MILLISECONDS_PARAM_SKEW_FACTOR,
                 },
             )
             .with_unit(" ms"),
