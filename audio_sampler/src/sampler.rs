@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use nih_plug::nih_warn;
+use nih_plug::prelude::Enum;
 
 use crate::volume::Volume;
 
@@ -37,11 +38,18 @@ struct Channel {
     passthru_volume: Volume,
 }
 
+#[derive(Debug, Enum, PartialEq, Clone)]
+pub enum LoopMode {
+    PlayOnce,
+    Loop,
+}
+
 #[derive(Debug, Clone)]
 pub struct Params {
     pub attack_samples: usize,
     pub decay_samples: usize,
     pub auto_passthru: bool,
+    pub loop_mode: LoopMode,
     pub speed: f32,
 }
 
@@ -50,6 +58,7 @@ impl Default for Params {
         Self {
             auto_passthru: true,
             attack_samples: 100,
+            loop_mode: LoopMode::PlayOnce,
             decay_samples: 100,
             speed: 1.0,
         }
@@ -183,13 +192,52 @@ impl Channel {
         }
 
         let mut output = 0.0;
-        let mut removed = vec![];
+        let mut finished = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
             if !self.data.is_empty() {
-                let y = self.data[calc_sample_pos(self.data.len(), voice.read)];
+                // calculate sample position from voice position
+                let sample_pos = calc_sample_pos(self.data.len(), voice.read);
+                // read sample value
+                let y = self.data[sample_pos];
+                // mix sample value into channel output
                 output += y * voice.volume.value(self.now);
-                voice.read += voice.speed * self.global_speed * params.speed;
+
+                let speed = voice.speed * self.global_speed * params.speed;
+
+                // update voice read position
+                voice.read += speed;
+
+                if !voice.finished {
+                    match params.loop_mode {
+                        LoopMode::PlayOnce => {
+                            let next_sample_pos = calc_sample_pos(self.data.len(), voice.read);
+                            if speed > 0.0 && next_sample_pos < sample_pos {
+                                finished.push(i);
+                            } else if speed < 0.0 && next_sample_pos > sample_pos {
+                                finished.push(i);
+                            }
+                        }
+                        LoopMode::Loop => (),
+                    }
+                }
             };
+            //voice.volume.step(self.now);
+            //if voice.volume.is_static_and_mute() && voice.finished {
+            //    removed.push(i);
+            //}
+        }
+
+        // handle finished voices
+        while let Some(j) = finished.pop() {
+            let voice = &mut self.voices[j];
+            Self::finish_voice(self.now, voice, params);
+            self.note_on_count -= 1;
+            self.handle_passthru(params);
+        }
+
+        let mut removed = vec![];
+        // handle voice volums and find voices that can be removed (finished and mute)
+        for (i, voice) in self.voices.iter_mut().enumerate() {
             voice.volume.step(self.now);
             if voice.volume.is_static_and_mute() && voice.finished {
                 removed.push(i);
