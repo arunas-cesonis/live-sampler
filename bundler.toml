@@ -7,5 +7,5 @@
 [audio_sampler]
 name = "Audio Sampler"
 
-[midi_sampler]
-name = "MIDI Sampler"
+# [midi_sampler]
+# name = "MIDI Sampler"
