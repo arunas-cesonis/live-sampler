@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use nih_plug::prelude::*;
 
-use crate::sampler::Sampler;
+use crate::sampler::{LoopMode, Sampler};
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -34,6 +34,8 @@ struct AudioSamplerParams {
     pub attack: FloatParam,
     #[id = "decay"]
     pub decay: FloatParam,
+    #[id = "loop_mode"]
+    pub loop_mode: EnumParam<LoopMode>,
 }
 
 const MILLISECONDS_PARAM_SKEW_FACTOR: f32 = 0.25;
@@ -70,6 +72,7 @@ impl Default for AudioSamplerParams {
                 },
             )
             .with_unit(" ms"),
+            loop_mode: EnumParam::new("Loop mode", LoopMode::Loop),
         }
     }
 }
@@ -115,6 +118,7 @@ impl AudioSampler {
         let params = sampler::Params {
             auto_passthru: params_passthru,
             attack_samples,
+            loop_mode: self.params.loop_mode.value(),
             decay_samples,
             speed: params_speed,
         };
