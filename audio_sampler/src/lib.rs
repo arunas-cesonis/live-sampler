@@ -30,8 +30,10 @@ struct AudioSamplerParams {
     pub auto_passthru: BoolParam,
     #[id = "speed"]
     pub speed: FloatParam,
-    #[id = "fade time"]
-    pub fade_time: FloatParam,
+    #[id = "attack"]
+    pub attack: FloatParam,
+    #[id = "decay"]
+    pub decay: FloatParam,
 }
 
 impl Default for AudioSamplerParams {
@@ -46,12 +48,23 @@ impl Default for AudioSamplerParams {
                     max: 2.0,
                 },
             ),
-            fade_time: FloatParam::new(
-                "Fade time",
-                2.0,
-                FloatRange::Linear {
+            attack: FloatParam::new(
+                "Attack",
+                0.1,
+                FloatRange::Skewed {
                     min: 0.0,
                     max: 1000.0,
+                    factor: 2.0,
+                },
+            )
+            .with_unit(" ms"),
+            decay: FloatParam::new(
+                "decay",
+                0.1,
+                FloatRange::Skewed {
+                    min: 0.0,
+                    max: 1000.0,
+                    factor: 2.0,
                 },
             )
             .with_unit(" ms"),
@@ -93,11 +106,14 @@ impl AudioSampler {
     fn sampler_params(&self) -> sampler::Params {
         let params_speed = self.params.speed.smoothed.next();
         let params_passthru = self.params.auto_passthru.value();
-        let params_fade_time = self.params.fade_time.smoothed.next();
-        let params_fade_samples = (params_fade_time * self.sample_rate / 1000.0) as usize;
+        let attack_millis = self.params.attack.smoothed.next();
+        let attack_samples = (attack_millis * self.sample_rate / 1000.0) as usize;
+        let decay_millis = self.params.decay.smoothed.next();
+        let decay_samples = (decay_millis * self.sample_rate / 1000.0) as usize;
         let params = sampler::Params {
-            fade_samples: params_fade_samples,
             auto_passthru: params_passthru,
+            attack_samples,
+            decay_samples,
             speed: params_speed,
         };
         params
