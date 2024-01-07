@@ -145,8 +145,8 @@ impl Plugin for MIDISampler {
 }
 
 impl ClapPlugin for MIDISampler {
-    const CLAP_ID: &'static str = "com.livesampler";
-    const CLAP_DESCRIPTION: Option<&'static str> = Some("Live sampler");
+    const CLAP_ID: &'static str = "com.midisampler";
+    const CLAP_DESCRIPTION: Option<&'static str> = Some("MIDI sampler");
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
     const CLAP_FEATURES: &'static [ClapFeature] = &[
@@ -158,7 +158,7 @@ impl ClapPlugin for MIDISampler {
 }
 
 impl Vst3Plugin for MIDISampler {
-    const VST3_CLASS_ID: [u8; 16] = *b"LiveSamplerPlugi";
+    const VST3_CLASS_ID: [u8; 16] = *b"MidiSamplerPlugi";
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
         &[Vst3SubCategory::Fx, Vst3SubCategory::Tools];
 }

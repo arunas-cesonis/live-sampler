@@ -1,7 +1,4 @@
-
-
-use std::sync::{Arc};
-use std::time::UNIX_EPOCH;
+use std::sync::Arc;
 
 use nih_plug::prelude::*;
 
@@ -19,16 +16,16 @@ mod volume;
 
 type SysEx = ();
 
-pub struct LiveSampler {
+pub struct AudioSampler {
     audio_io_layout: AudioIOLayout,
-    params: Arc<LiveSamplerParams>,
+    params: Arc<AudioSamplerParams>,
     sample_rate: f32,
     sampler: Sampler,
     //    debug: Arc<Mutex<Option<std::fs::File>>>,
 }
 
 #[derive(Params)]
-struct LiveSamplerParams {
+struct AudioSamplerParams {
     #[id = "auto_passthru"]
     pub auto_passthru: BoolParam,
     #[id = "speed"]
@@ -37,7 +34,7 @@ struct LiveSamplerParams {
     pub fade_time: FloatParam,
 }
 
-impl Default for LiveSamplerParams {
+impl Default for AudioSamplerParams {
     fn default() -> Self {
         Self {
             auto_passthru: BoolParam::new("Pass through", true),
@@ -62,11 +59,11 @@ impl Default for LiveSamplerParams {
     }
 }
 
-impl Default for LiveSampler {
+impl Default for AudioSampler {
     fn default() -> Self {
         Self {
             audio_io_layout: AudioIOLayout::default(),
-            params: Arc::new(LiveSamplerParams::default()),
+            params: Arc::new(AudioSamplerParams::default()),
             sample_rate: -1.0,
             sampler: Sampler::new(0, &sampler::Params::default()),
             //debug: Arc::new(Mutex::new(None)),
@@ -74,7 +71,7 @@ impl Default for LiveSampler {
     }
 }
 
-impl LiveSampler {
+impl AudioSampler {
     fn channel_count(&self) -> usize {
         let channel_count: usize = self
             .audio_io_layout
@@ -107,8 +104,8 @@ impl LiveSampler {
     }
 }
 
-impl Plugin for LiveSampler {
-    const NAME: &'static str = "Live Sampler";
+impl Plugin for AudioSampler {
+    const NAME: &'static str = "Audio Sampler";
     const VENDOR: &'static str = "seunje";
     const URL: &'static str = "https://github.com/arunas-cesonis/live-sampler";
     const EMAIL: &'static str = "";
@@ -147,17 +144,6 @@ impl Plugin for LiveSampler {
         self.audio_io_layout = audio_io_layout.clone();
         self.sample_rate = buffer_config.sample_rate;
         self.sampler = Sampler::new(self.channel_count(), &self.sampler_params());
-        let _debug = std::fs::File::create(format!(
-            "/tmp/live-sampler-{}-{}.log",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-        ))
-        .unwrap();
-        //let mut f = self.debug.lock().unwrap();
-        //*f = Some(debug);
         true
     }
 
@@ -211,9 +197,9 @@ impl Plugin for LiveSampler {
     }
 }
 
-impl ClapPlugin for LiveSampler {
-    const CLAP_ID: &'static str = "com.livesampler";
-    const CLAP_DESCRIPTION: Option<&'static str> = Some("Live sampler");
+impl ClapPlugin for AudioSampler {
+    const CLAP_ID: &'static str = "com.audiosampler";
+    const CLAP_DESCRIPTION: Option<&'static str> = Some("Audio Sampler");
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
     const CLAP_FEATURES: &'static [ClapFeature] = &[
@@ -224,11 +210,11 @@ impl ClapPlugin for LiveSampler {
     ];
 }
 
-impl Vst3Plugin for LiveSampler {
-    const VST3_CLASS_ID: [u8; 16] = *b"LiveSamplerPlugi";
+impl Vst3Plugin for AudioSampler {
+    const VST3_CLASS_ID: [u8; 16] = *b"AudioSamplerPlug";
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
         &[Vst3SubCategory::Fx, Vst3SubCategory::Tools];
 }
 
-nih_export_clap!(LiveSampler);
-nih_export_vst3!(LiveSampler);
+nih_export_clap!(AudioSampler);
+nih_export_vst3!(AudioSampler);
