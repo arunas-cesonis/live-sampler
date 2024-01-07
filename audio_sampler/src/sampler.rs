@@ -39,7 +39,8 @@ struct Channel {
 
 #[derive(Debug, Clone)]
 pub struct Params {
-    pub fade_samples: usize,
+    pub attack_samples: usize,
+    pub decay_samples: usize,
     pub auto_passthru: bool,
     pub speed: f32,
 }
@@ -47,8 +48,9 @@ pub struct Params {
 impl Default for Params {
     fn default() -> Self {
         Self {
-            fade_samples: 100,
             auto_passthru: true,
+            attack_samples: 100,
+            decay_samples: 100,
             speed: 1.0,
         }
     }
@@ -71,17 +73,18 @@ impl Channel {
 
     fn log(&self, params: &Params, s: String) {
         nih_warn!(
-            "voices={} note_on={} fade_time={} passthru_vol={:.2} {}",
+            "voices={} note_on={} attack={} decay={} passthru_vol={:.2} {}",
             self.voices.len(),
             self.note_on_count,
-            params.fade_samples,
+            params.attack_samples,
+            params.decay_samples,
             self.passthru_volume.value(self.now),
             s
         );
     }
 
     fn finish_voice(now: usize, voice: &mut Voice, params: &Params) {
-        voice.volume.to(now, params.fade_samples, 0.0);
+        voice.volume.to(now, params.decay_samples, 0.0);
         voice.finished = true;
     }
 
@@ -94,7 +97,7 @@ impl Channel {
             speed: 1.0,
             finished: false,
         };
-        voice.volume.to(self.now, params.fade_samples, velocity);
+        voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
         self.note_on_count += 1;
         self.handle_passthru(params);
@@ -149,18 +152,19 @@ impl Channel {
             if self.note_on_count == 0 {
                 if !self.passthru_on {
                     self.passthru_on = true;
-                    self.passthru_volume.to(self.now, params.fade_samples, 1.0);
+                    self.passthru_volume
+                        .to(self.now, params.attack_samples, 1.0);
                 }
             } else {
                 if self.passthru_on {
                     self.passthru_on = false;
-                    self.passthru_volume.to(self.now, params.fade_samples, 0.0);
+                    self.passthru_volume.to(self.now, params.decay_samples, 0.0);
                 }
             }
         } else {
             if self.passthru_on {
                 self.passthru_on = false;
-                self.passthru_volume.to(self.now, params.fade_samples, 0.0);
+                self.passthru_volume.to(self.now, params.decay_samples, 0.0);
             }
         }
     }
