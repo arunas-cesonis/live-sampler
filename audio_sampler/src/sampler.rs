@@ -192,7 +192,7 @@ impl Channel {
         }
 
         let mut output = 0.0;
-        let mut finished = vec![];
+        let mut finished_play_once = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
             if !self.data.is_empty() {
                 // calculate sample position from voice position
@@ -212,31 +212,27 @@ impl Channel {
                         LoopMode::PlayOnce => {
                             let next_sample_pos = calc_sample_pos(self.data.len(), voice.read);
                             if speed > 0.0 && next_sample_pos < sample_pos {
-                                finished.push(i);
+                                finished_play_once.push(i);
                             } else if speed < 0.0 && next_sample_pos > sample_pos {
-                                finished.push(i);
+                                finished_play_once.push(i);
                             }
                         }
                         LoopMode::Loop => (),
                     }
                 }
             };
-            //voice.volume.step(self.now);
-            //if voice.volume.is_static_and_mute() && voice.finished {
-            //    removed.push(i);
-            //}
         }
 
-        // handle finished voices
-        while let Some(j) = finished.pop() {
+        // process voices finished due to LoopMode::PlayOnce being set
+        while let Some(j) = finished_play_once.pop() {
             let voice = &mut self.voices[j];
             Self::finish_voice(self.now, voice, params);
             self.note_on_count -= 1;
             self.handle_passthru(params);
         }
 
+        // update voice volumes and find voices that can be removed (finished and mute)
         let mut removed = vec![];
-        // handle voice volums and find voices that can be removed (finished and mute)
         for (i, voice) in self.voices.iter_mut().enumerate() {
             voice.volume.step(self.now);
             if voice.volume.is_static_and_mute() && voice.finished {
@@ -244,19 +240,17 @@ impl Channel {
             }
         }
 
+        // remove voices that are finished and mute
         while let Some(j) = removed.pop() {
             self.voices.remove(j);
         }
 
+        // update passthru volume. this method is called everywhere around code, its probably enough to just leave
+        // this one in as the passthru_volume is used and updated only in next lines after this
+        // TODO: remove excessive handle_passthru calls if possible
         self.handle_passthru(params);
 
-        // if (params.auto_passthru
-        //     && self.passthru_volume.is_static_and_mute()
-        //     && self.note_on_count == 0)
-        // {
-        //     nih_error!("{}", self.dump_before_death());
-        //     panic!("unexpected state");
-        // }
+        // mix passthru into output sample and update passthru value
         output += value * self.passthru_volume.value(self.now);
         self.passthru_volume.step(self.now);
 
