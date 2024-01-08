@@ -36,6 +36,8 @@ struct AudioSamplerParams {
     pub decay: FloatParam,
     #[id = "loop_mode"]
     pub loop_mode: EnumParam<LoopMode>,
+    #[id = "loop_length"]
+    pub loop_length: FloatParam,
 }
 
 const MILLISECONDS_PARAM_SKEW_FACTOR: f32 = 0.25;
@@ -73,6 +75,11 @@ impl Default for AudioSamplerParams {
             )
             .with_unit(" ms"),
             loop_mode: EnumParam::new("Loop mode", LoopMode::Loop),
+            loop_length: FloatParam::new(
+                "Loop length",
+                0.1,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            ),
         }
     }
 }
@@ -119,6 +126,7 @@ impl AudioSampler {
             auto_passthru: params_passthru,
             attack_samples,
             loop_mode: self.params.loop_mode.value(),
+            loop_length: self.params.loop_length.smoothed.next(),
             decay_samples,
             speed: params_speed,
         };
