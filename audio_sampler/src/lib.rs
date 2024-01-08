@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use nih_plug::prelude::*;
 
-use crate::sampler::Sampler;
+use crate::sampler::{LoopMode, Sampler};
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -30,9 +30,17 @@ struct AudioSamplerParams {
     pub auto_passthru: BoolParam,
     #[id = "speed"]
     pub speed: FloatParam,
-    #[id = "fade time"]
-    pub fade_time: FloatParam,
+    #[id = "attack"]
+    pub attack: FloatParam,
+    #[id = "decay"]
+    pub decay: FloatParam,
+    #[id = "loop_mode"]
+    pub loop_mode: EnumParam<LoopMode>,
+    #[id = "loop_length"]
+    pub loop_length: FloatParam,
 }
+
+const MILLISECONDS_PARAM_SKEW_FACTOR: f32 = 0.25;
 
 impl Default for AudioSamplerParams {
     fn default() -> Self {
@@ -46,15 +54,32 @@ impl Default for AudioSamplerParams {
                     max: 2.0,
                 },
             ),
-            fade_time: FloatParam::new(
-                "Fade time",
-                2.0,
-                FloatRange::Linear {
+            attack: FloatParam::new(
+                "Attack",
+                0.1,
+                FloatRange::Skewed {
                     min: 0.0,
                     max: 1000.0,
+                    factor: MILLISECONDS_PARAM_SKEW_FACTOR,
                 },
             )
             .with_unit(" ms"),
+            decay: FloatParam::new(
+                "Decay",
+                0.1,
+                FloatRange::Skewed {
+                    min: 0.0,
+                    max: 1000.0,
+                    factor: MILLISECONDS_PARAM_SKEW_FACTOR,
+                },
+            )
+            .with_unit(" ms"),
+            loop_mode: EnumParam::new("Loop mode", LoopMode::Loop),
+            loop_length: FloatParam::new(
+                "Loop length",
+                0.1,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            ),
         }
     }
 }
@@ -93,11 +118,16 @@ impl AudioSampler {
     fn sampler_params(&self) -> sampler::Params {
         let params_speed = self.params.speed.smoothed.next();
         let params_passthru = self.params.auto_passthru.value();
-        let params_fade_time = self.params.fade_time.smoothed.next();
-        let params_fade_samples = (params_fade_time * self.sample_rate / 1000.0) as usize;
+        let attack_millis = self.params.attack.smoothed.next();
+        let attack_samples = (attack_millis * self.sample_rate / 1000.0) as usize;
+        let decay_millis = self.params.decay.smoothed.next();
+        let decay_samples = (decay_millis * self.sample_rate / 1000.0) as usize;
         let params = sampler::Params {
-            fade_samples: params_fade_samples,
             auto_passthru: params_passthru,
+            attack_samples,
+            loop_mode: self.params.loop_mode.value(),
+            loop_length: self.params.loop_length.smoothed.next(),
+            decay_samples,
             speed: params_speed,
         };
         params

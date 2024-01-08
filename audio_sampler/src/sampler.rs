@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use nih_plug::nih_warn;
+use nih_plug::prelude::Enum;
 
 use crate::volume::Volume;
 
@@ -21,6 +22,7 @@ struct Voice {
     read: f32,
     volume: Volume,
     speed: f32,
+    start_pos: f32,
     finished: bool,
 }
 
@@ -37,18 +39,30 @@ struct Channel {
     passthru_volume: Volume,
 }
 
+#[derive(Debug, Enum, PartialEq, Clone)]
+pub enum LoopMode {
+    PlayOnce,
+    Loop,
+}
+
 #[derive(Debug, Clone)]
 pub struct Params {
-    pub fade_samples: usize,
+    pub attack_samples: usize,
+    pub decay_samples: usize,
     pub auto_passthru: bool,
+    pub loop_mode: LoopMode,
+    pub loop_length: f32,
     pub speed: f32,
 }
 
 impl Default for Params {
     fn default() -> Self {
         Self {
-            fade_samples: 100,
             auto_passthru: true,
+            attack_samples: 100,
+            loop_mode: LoopMode::PlayOnce,
+            loop_length: 1.0,
+            decay_samples: 100,
             speed: 1.0,
         }
     }
@@ -71,17 +85,18 @@ impl Channel {
 
     fn log(&self, params: &Params, s: String) {
         nih_warn!(
-            "voices={} note_on={} fade_time={} passthru_vol={:.2} {}",
+            "voices={} note_on={} attack={} decay={} passthru_vol={:.2} {}",
             self.voices.len(),
             self.note_on_count,
-            params.fade_samples,
+            params.attack_samples,
+            params.decay_samples,
             self.passthru_volume.value(self.now),
             s
         );
     }
 
     fn finish_voice(now: usize, voice: &mut Voice, params: &Params) {
-        voice.volume.to(now, params.fade_samples, 0.0);
+        voice.volume.to(now, params.decay_samples, 0.0);
         voice.finished = true;
     }
 
@@ -89,12 +104,13 @@ impl Channel {
         let read = (pos * self.data.len() as f32).round();
         let mut voice = Voice {
             note,
+            start_pos: pos,
             read,
             volume: Volume::new(0.0),
             speed: 1.0,
             finished: false,
         };
-        voice.volume.to(self.now, params.fade_samples, velocity);
+        voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
         self.note_on_count += 1;
         self.handle_passthru(params);
@@ -149,18 +165,19 @@ impl Channel {
             if self.note_on_count == 0 {
                 if !self.passthru_on {
                     self.passthru_on = true;
-                    self.passthru_volume.to(self.now, params.fade_samples, 1.0);
+                    self.passthru_volume
+                        .to(self.now, params.attack_samples, 1.0);
                 }
             } else {
                 if self.passthru_on {
                     self.passthru_on = false;
-                    self.passthru_volume.to(self.now, params.fade_samples, 0.0);
+                    self.passthru_volume.to(self.now, params.decay_samples, 0.0);
                 }
             }
         } else {
             if self.passthru_on {
                 self.passthru_on = false;
-                self.passthru_volume.to(self.now, params.fade_samples, 0.0);
+                self.passthru_volume.to(self.now, params.decay_samples, 0.0);
             }
         }
     }
@@ -179,32 +196,65 @@ impl Channel {
         }
 
         let mut output = 0.0;
-        let mut removed = vec![];
+        let mut finished_play_once = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
             if !self.data.is_empty() {
-                let y = self.data[calc_sample_pos(self.data.len(), voice.read)];
+                // calculate sample position from voice position
+                let sample_pos = calc_sample_pos(self.data.len(), voice.read);
+                // read sample value
+                let y = self.data[sample_pos];
+                // mix sample value into channel output
                 output += y * voice.volume.value(self.now);
-                voice.read += voice.speed * self.global_speed * params.speed;
+
+                let speed = voice.speed * self.global_speed * params.speed;
+
+                // update voice read position
+                voice.read += speed;
+
+                if !voice.finished {
+                    let next_sample_pos = calc_sample_pos(self.data.len(), voice.read);
+                    match params.loop_mode {
+                        LoopMode::PlayOnce => {
+                            if speed > 0.0 && next_sample_pos < sample_pos {
+                                finished_play_once.push(i);
+                            } else if speed < 0.0 && next_sample_pos > sample_pos {
+                                finished_play_once.push(i);
+                            }
+                        }
+                        LoopMode::Loop => (),
+                    }
+                }
             };
+        }
+
+        // process voices finished due to LoopMode::PlayOnce being set
+        while let Some(j) = finished_play_once.pop() {
+            let voice = &mut self.voices[j];
+            Self::finish_voice(self.now, voice, params);
+            self.note_on_count -= 1;
+            self.handle_passthru(params);
+        }
+
+        // update voice volumes and find voices that can be removed (finished and mute)
+        let mut removed = vec![];
+        for (i, voice) in self.voices.iter_mut().enumerate() {
             voice.volume.step(self.now);
             if voice.volume.is_static_and_mute() && voice.finished {
                 removed.push(i);
             }
         }
 
+        // remove voices that are finished and mute
         while let Some(j) = removed.pop() {
             self.voices.remove(j);
         }
 
+        // update passthru volume. this method is called everywhere around code, its probably enough to just leave
+        // this one in as the passthru_volume is used and updated only in next lines after this
+        // TODO: remove excessive handle_passthru calls if possible
         self.handle_passthru(params);
 
-        // if (params.auto_passthru
-        //     && self.passthru_volume.is_static_and_mute()
-        //     && self.note_on_count == 0)
-        // {
-        //     nih_error!("{}", self.dump_before_death());
-        //     panic!("unexpected state");
-        // }
+        // mix passthru into output sample and update passthru value
         output += value * self.passthru_volume.value(self.now);
         self.passthru_volume.step(self.now);
 
