@@ -22,6 +22,7 @@ struct Voice {
     read: f32,
     volume: Volume,
     speed: f32,
+    start_pos: f32,
     finished: bool,
 }
 
@@ -50,6 +51,7 @@ pub struct Params {
     pub decay_samples: usize,
     pub auto_passthru: bool,
     pub loop_mode: LoopMode,
+    pub loop_length: f32,
     pub speed: f32,
 }
 
@@ -59,6 +61,7 @@ impl Default for Params {
             auto_passthru: true,
             attack_samples: 100,
             loop_mode: LoopMode::PlayOnce,
+            loop_length: 1.0,
             decay_samples: 100,
             speed: 1.0,
         }
@@ -101,6 +104,7 @@ impl Channel {
         let read = (pos * self.data.len() as f32).round();
         let mut voice = Voice {
             note,
+            start_pos: pos,
             read,
             volume: Volume::new(0.0),
             speed: 1.0,
@@ -208,9 +212,9 @@ impl Channel {
                 voice.read += speed;
 
                 if !voice.finished {
+                    let next_sample_pos = calc_sample_pos(self.data.len(), voice.read);
                     match params.loop_mode {
                         LoopMode::PlayOnce => {
-                            let next_sample_pos = calc_sample_pos(self.data.len(), voice.read);
                             if speed > 0.0 && next_sample_pos < sample_pos {
                                 finished_play_once.push(i);
                             } else if speed < 0.0 && next_sample_pos > sample_pos {
