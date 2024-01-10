@@ -74,12 +74,16 @@ impl Default for AudioSamplerParams {
                 },
             )
             .with_unit(" ms"),
-            loop_mode: EnumParam::new("Loop mode", LoopMode::Loop),
+            loop_mode: EnumParam::new("Loop mode", LoopMode::PlayOnce),
             loop_length: FloatParam::new(
                 "Loop length",
                 0.1,
-                FloatRange::Linear { min: 0.0, max: 1.0 },
-            ),
+                FloatRange::Linear {
+                    min: 0.0,
+                    max: 60000.0,
+                },
+            )
+            .with_unit(" ms"),
         }
     }
 }
@@ -126,7 +130,7 @@ impl AudioSampler {
             auto_passthru: params_passthru,
             attack_samples,
             loop_mode: self.params.loop_mode.value(),
-            loop_length: self.params.loop_length.smoothed.next(),
+            loop_length_percent: self.params.loop_length.smoothed.next(),
             decay_samples,
             speed: params_speed,
         };
