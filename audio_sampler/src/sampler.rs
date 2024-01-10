@@ -1,5 +1,7 @@
 use std::fmt::Debug;
+use std::thread::park_timeout_ms;
 
+use log::log;
 use nih_plug::nih_warn;
 use nih_plug::prelude::Enum;
 
@@ -12,8 +14,8 @@ fn calc_sample_pos_f32(data_len: usize, read: f32) -> f32 {
     i
 }
 
-fn calc_sample_pos(data_len: usize, read: f32) -> usize {
-    calc_sample_pos_f32(data_len, read) as usize
+fn calc_sample_index(data_len: usize, read: f32) -> usize {
+    crate::sampler::calc_sample_pos_f32(data_len, read) as usize
 }
 
 #[derive(Clone, Debug, Default)]
@@ -21,8 +23,8 @@ struct Voice {
     note: u8,
     read: f32,
     volume: Volume,
+    start_percent: f32,
     speed: f32,
-    start_pos: f32,
     finished: bool,
 }
 
@@ -51,7 +53,7 @@ pub struct Params {
     pub decay_samples: usize,
     pub auto_passthru: bool,
     pub loop_mode: LoopMode,
-    pub loop_length: f32,
+    pub loop_length_percent: f32,
     pub speed: f32,
 }
 
@@ -61,7 +63,7 @@ impl Default for Params {
             auto_passthru: true,
             attack_samples: 100,
             loop_mode: LoopMode::PlayOnce,
-            loop_length: 1.0,
+            loop_length_percent: 1.0,
             decay_samples: 100,
             speed: 1.0,
         }
@@ -101,11 +103,12 @@ impl Channel {
     }
 
     pub fn start_playing(&mut self, pos: f32, note: u8, velocity: f32, params: &Params) {
+        assert!(pos >= 0.0 && pos <= 1.0);
         let read = (pos * self.data.len() as f32).round();
         let mut voice = Voice {
             note,
-            start_pos: pos,
             read,
+            start_percent: pos,
             volume: Volume::new(0.0),
             speed: 1.0,
             finished: false,
@@ -196,43 +199,30 @@ impl Channel {
         }
 
         let mut output = 0.0;
-        let mut finished_play_once = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
             if !self.data.is_empty() {
                 // calculate sample position from voice position
-                let sample_pos = calc_sample_pos(self.data.len(), voice.read);
+                let sample_pos = calc_sample_index(self.data.len(), voice.read);
+
                 // read sample value
                 let y = self.data[sample_pos];
+
                 // mix sample value into channel output
                 output += y * voice.volume.value(self.now);
 
+                // calculate playback speed
                 let speed = voice.speed * self.global_speed * params.speed;
 
-                // update voice read position
-                voice.read += speed;
+                // calculate next read position
+                let prev_read = voice.read;
+                let next_read = voice.read + speed;
 
-                if !voice.finished {
-                    let next_sample_pos = calc_sample_pos(self.data.len(), voice.read);
-                    match params.loop_mode {
-                        LoopMode::PlayOnce => {
-                            if speed > 0.0 && next_sample_pos < sample_pos {
-                                finished_play_once.push(i);
-                            } else if speed < 0.0 && next_sample_pos > sample_pos {
-                                finished_play_once.push(i);
-                            }
-                        }
-                        LoopMode::Loop => (),
-                    }
-                }
+                // update read position in voice wrapping it around buffer boundaries
+                let len_f32 = self.data.len() as f32;
+                let read = next_read % len_f32;
+                let read = if read < 0.0 { read + len_f32 } else { read };
+                voice.read = read;
             };
-        }
-
-        // process voices finished due to LoopMode::PlayOnce being set
-        while let Some(j) = finished_play_once.pop() {
-            let voice = &mut self.voices[j];
-            Self::finish_voice(self.now, voice, params);
-            self.note_on_count -= 1;
-            self.handle_passthru(params);
         }
 
         // update voice volumes and find voices that can be removed (finished and mute)

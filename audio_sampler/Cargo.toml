@@ -17,3 +17,5 @@ features = ["standalone", "vst3"]
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.5.4"
+[dependencies]
+log = "0.4.20"
