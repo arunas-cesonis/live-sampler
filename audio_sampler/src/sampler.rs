@@ -207,7 +207,7 @@ impl Channel {
         }
 
         let mut output = 0.0;
-        //let mut finished = vec![];
+        let mut finished = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
             if !self.data.is_empty() {
                 // calculate sample position from voice position
@@ -222,31 +222,31 @@ impl Channel {
                 // calculate playback speed
                 let speed = voice.speed * self.global_speed * params.speed;
 
-                let loop_start = voice.start_percent * self.data.len() as f32;
-                let loop_end = ((voice.start_percent + params.loop_length_percent) % 1.0)
-                    * self.data.len() as f32;
+                let len_f32 = self.data.len() as f32;
+                let loop_start = voice.start_percent * len_f32;
+                let loop_end = (voice.start_percent + params.loop_length_percent) * len_f32;
 
                 // calculate next read position
                 let prev_read = voice.read;
                 let mut next_read = prev_read + speed;
-                //match params.loop_mode {
-                //    LoopMode::PlayOnce => {
-                //        if !voice.finished {
-                //            if speed > 0.0 && prev_read <= loop_end && loop_end <= next_read {
-                //                finished.push(i);
-                //            } else {
-                //                if speed < 0.0 && prev_read >= loop_start && loop_start >= next_read
-                //                {
-                //                    finished.push(i);
-                //                }
-                //            }
-                //        }
-                //    }
-                //    LoopMode::Loop => (),
-                //};
+
+                match params.loop_mode {
+                    LoopMode::PlayOnce => {
+                        if !voice.finished {
+                            if speed > 0.0 && prev_read <= loop_end && loop_end <= next_read {
+                                finished.push(i);
+                            } else {
+                                if speed < 0.0 && prev_read >= loop_start && loop_start >= next_read
+                                {
+                                    finished.push(i);
+                                }
+                            }
+                        }
+                    }
+                    LoopMode::Loop => (),
+                };
 
                 // update read position in voice wrapping it around buffer boundaries
-                let len_f32 = self.data.len() as f32;
                 let read = next_read % len_f32;
                 let read = if read < 0.0 { read + len_f32 } else { read };
                 voice.read = read;
@@ -254,9 +254,9 @@ impl Channel {
         }
 
         // remove voices that are finished and mute
-        //while let Some(j) = finished.pop() {
-        //    Self::finish_voice(self.now, &mut self.voices[j], params);
-        //}
+        while let Some(j) = finished.pop() {
+            Self::finish_voice(self.now, &mut self.voices[j], params);
+        }
 
         // update voice volumes and find voices that can be removed (finished and mute)
         let mut removed = vec![];

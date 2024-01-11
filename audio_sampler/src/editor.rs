@@ -173,18 +173,18 @@ where
         for voice in &self.info.voices {
             //s.draw(renderer, style
 
-            //let mut bounds = bounds.clone();
-            //bounds.x = bounds.x + width * voice.start;
-            //bounds.width = (voice.end - voice.start) * width;
-            //renderer.fill_quad(
-            //    renderer::Quad {
-            //        bounds,
-            //        border_radius: 0.0,
-            //        border_width: 0.0,
-            //        border_color: Color::TRANSPARENT,
-            //    },
-            //    Background::Color(Color::new(0.25, 0.25, 0.25, 1.0)),
-            //);
+            let mut bounds = bounds.clone();
+            bounds.x = x + width * voice.start;
+            bounds.width = (voice.end - voice.start) * width;
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds,
+                    border_radius: 0.0,
+                    border_width: 0.0,
+                    border_color: Color::TRANSPARENT,
+                },
+                Background::Color(Color::new(0.15, 0.25, 0.25, 1.0)),
+            );
 
             let mut bounds = bounds.clone();
             bounds.x = width * voice.pos;
