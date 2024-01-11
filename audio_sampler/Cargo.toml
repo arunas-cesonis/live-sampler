@@ -15,7 +15,16 @@ path = "src/main.rs"
 git = "https://github.com/robbert-vdh/nih-plug"
 features = ["standalone", "vst3"]
 
+[dependencies.nih_plug_iced]
+git = "https://github.com/robbert-vdh/nih-plug"
+
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.5.4"
 [dependencies]
 log = "0.4.20"
+
+serde = { version = "1.0", features = ["derive"] }
+
+atomic_refcell = "0.1"
+atomic_float = "0.1"
+crossbeam = "0.8"
