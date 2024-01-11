@@ -7,15 +7,14 @@ use nih_plug::prelude::Enum;
 
 use crate::volume::Volume;
 
-fn calc_sample_pos_f32(data_len: usize, read: f32) -> f32 {
-    let len_f32 = data_len as f32;
+fn calc_sample_index_f32(len_f32: f32, read: f32) -> f32 {
     let i = read % len_f32;
     let i = if i < 0.0 { i + len_f32 } else { i };
     i
 }
 
 fn calc_sample_index(data_len: usize, read: f32) -> usize {
-    crate::sampler::calc_sample_pos_f32(data_len, read) as usize
+    calc_sample_index_f32(data_len as f32, read) as usize
 }
 
 #[derive(Clone, Debug, Default)]
@@ -54,6 +53,18 @@ pub struct Params {
     pub loop_mode: LoopMode,
     pub loop_length_percent: f32,
     pub speed: f32,
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct VoiceInfo {
+    pub start: f32,
+    pub end: f32,
+    pub pos: f32,
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct Info {
+    pub voices: Vec<VoiceInfo>,
 }
 
 impl Default for Params {
@@ -333,15 +344,20 @@ impl Sampler {
         }
     }
 
-    pub fn process_sample_iter<'a>(
-        &'a mut self,
-        iter: impl IntoIterator<Item = &'a mut f32>,
-        params: &'a Params,
-    ) -> impl IntoIterator<Item = &'a mut f32> {
-        iter.into_iter().enumerate().map(|(i, sample)| {
-            self.channels[i].process_sample(sample, params);
-            sample
-        })
+    pub fn get_info(&self, params: &Params) -> Info {
+        let data_len_f32 = self.channels[0].data.len() as f32;
+        Info {
+            voices: self.channels[0]
+                .voices
+                .iter()
+                .map(|v| {
+                    let start = v.start_percent;
+                    let end = (v.start_percent + params.loop_length_percent) % 1.0;
+                    let pos = calc_sample_index_f32(data_len_f32, v.read) / data_len_f32;
+                    VoiceInfo { start, end, pos }
+                })
+                .collect(),
+        }
     }
 }
 
