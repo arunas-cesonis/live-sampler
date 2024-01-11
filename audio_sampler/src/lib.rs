@@ -88,7 +88,7 @@ impl Default for AudioSamplerParams {
                 },
             )
             .with_unit(" ms"),
-            loop_mode: EnumParam::new("Loop mode", LoopMode::Loop),
+            loop_mode: EnumParam::new("Loop mode", LoopMode::PlayOnce),
             loop_length: FloatParam::new(
                 "Loop length",
                 1.0,
