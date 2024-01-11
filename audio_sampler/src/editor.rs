@@ -8,7 +8,9 @@ use std::marker::PhantomData;
 //use std::intrinsics::mir::Len;
 // use std::marker::ConstParamTy;
 use crossbeam_queue::ArrayQueue;
-use nih_plug_iced::backend::Renderer;
+use iced_graphics::svg::Handle;
+use nih_plug_iced::layout::Limits;
+use nih_plug_iced::renderer::Renderer;
 use nih_plug_iced::widgets::PeakMeter;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -96,8 +98,9 @@ where
     }
 }
 
-impl<'a, Message> Widget<Message, Renderer> for PlayerWidget<'a, Message>
+impl<'a, Message, Renderer> Widget<Message, Renderer> for PlayerWidget<'a, Message>
 where
+    Renderer: nih_plug_iced::renderer::Renderer,
     Message: Clone,
 {
     fn width(&self) -> Length {
@@ -124,7 +127,25 @@ where
     ) {
         let bounds = layout.bounds();
         let width = bounds.width;
-        use nih_plug_iced::renderer::Renderer;
+        let x = bounds.x;
+        //let hnd = Handle::from_pixels(
+        //    10,
+        //    10,
+        //    (0..100)
+        //        .into_iter()
+        //        .map(|_| [255, 0, 0, 255])
+        //        .flatten()
+        //        .collect(),
+        //);
+        //let img = Image::new(hnd);
+        //img.draw(
+        //    renderer,
+        //    style,
+        //    layout.children().next().unwrap(),
+        //    _cursor_position,
+        //    _viewport,
+        //);
+
         renderer.fill_quad(
             renderer::Quad {
                 bounds,
@@ -136,7 +157,7 @@ where
         );
         for i in 0..16 {
             let mut bounds = bounds.clone();
-            bounds.x = ((i as f32) / 16.0) * width;
+            bounds.x = x + ((i as f32) / 16.0) * width;
             bounds.width = 2.0;
             renderer.fill_quad(
                 renderer::Quad {
@@ -148,19 +169,22 @@ where
                 Background::Color(Color::new(0.5, 0.5, 0.5, 1.0)),
             );
         }
+
         for voice in &self.info.voices {
-            let mut bounds = bounds.clone();
-            bounds.x = width * voice.start;
-            bounds.width = (voice.end - voice.start) * width;
-            renderer.fill_quad(
-                renderer::Quad {
-                    bounds,
-                    border_radius: 0.0,
-                    border_width: 0.0,
-                    border_color: Color::TRANSPARENT,
-                },
-                Background::Color(Color::new(0.25, 0.25, 0.25, 1.0)),
-            );
+            //s.draw(renderer, style
+
+            //let mut bounds = bounds.clone();
+            //bounds.x = bounds.x + width * voice.start;
+            //bounds.width = (voice.end - voice.start) * width;
+            //renderer.fill_quad(
+            //    renderer::Quad {
+            //        bounds,
+            //        border_radius: 0.0,
+            //        border_width: 0.0,
+            //        border_color: Color::TRANSPARENT,
+            //    },
+            //    Background::Color(Color::new(0.25, 0.25, 0.25, 1.0)),
+            //);
 
             let mut bounds = bounds.clone();
             bounds.x = width * voice.pos;
