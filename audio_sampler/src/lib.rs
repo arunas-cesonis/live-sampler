@@ -1,6 +1,9 @@
+use crossbeam::atomic::AtomicCell;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use nih_plug::prelude::*;
+use nih_plug_iced::IcedState;
 
 use crate::sampler::{LoopMode, Sampler};
 
@@ -11,6 +14,7 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+mod editor;
 mod sampler;
 mod volume;
 
@@ -21,7 +25,11 @@ pub struct AudioSampler {
     params: Arc<AudioSamplerParams>,
     sample_rate: f32,
     sampler: Sampler,
-    //    debug: Arc<Mutex<Option<std::fs::File>>>,
+    peak_meter: Arc<AtomicF32>,
+    peak_meter_decay_weight: f32, //self.peak_meter_decay_weight = 0.25f64
+                                  //    .powf((buffer_config.sample_rate as f64 * PEAK_METER_DECAY_MS / 1000.0).recip())
+                                  //    as f32;
+                                  //    debug: Arc<Mutex<Option<std::fs::File>>>,
 }
 
 #[derive(Params)]
@@ -38,6 +46,12 @@ struct AudioSamplerParams {
     pub loop_mode: EnumParam<LoopMode>,
     #[id = "loop_length"]
     pub loop_length: FloatParam,
+    #[id = "volume"]
+    pub volume: FloatParam,
+    /// The editor state, saved together with the parameter state so the custom scaling can be
+    /// restored.
+    #[persist = "editor-state"]
+    editor_state: Arc<IcedState>,
 }
 
 const MILLISECONDS_PARAM_SKEW_FACTOR: f32 = 0.25;
@@ -45,6 +59,7 @@ const MILLISECONDS_PARAM_SKEW_FACTOR: f32 = 0.25;
 impl Default for AudioSamplerParams {
     fn default() -> Self {
         Self {
+            editor_state: editor::default_state(),
             auto_passthru: BoolParam::new("Pass through", true),
             speed: FloatParam::new(
                 "Speed",
@@ -74,16 +89,14 @@ impl Default for AudioSamplerParams {
                 },
             )
             .with_unit(" ms"),
-            loop_mode: EnumParam::new("Loop mode", LoopMode::PlayOnce),
+            loop_mode: EnumParam::new("Loop mode", LoopMode::Loop),
             loop_length: FloatParam::new(
                 "Loop length",
-                0.1,
-                FloatRange::Linear {
-                    min: 0.0,
-                    max: 60000.0,
-                },
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
             )
-            .with_unit(" ms"),
+            .with_unit(" %"),
+            volume: FloatParam::new("Gain", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
         }
     }
 }
@@ -94,8 +107,9 @@ impl Default for AudioSampler {
             audio_io_layout: AudioIOLayout::default(),
             params: Arc::new(AudioSamplerParams::default()),
             sample_rate: -1.0,
+            peak_meter_decay_weight: 1.0,
             sampler: Sampler::new(0, &sampler::Params::default()),
-            //debug: Arc::new(Mutex::new(None)),
+            peak_meter: Default::default(), //debug: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -136,7 +150,23 @@ impl AudioSampler {
         };
         params
     }
+
+    fn update_peak_meter(&mut self, frame: &mut [&mut f32]) {
+        let amplitude = (frame.iter().fold(0.0, |z, x| z + **x) / frame.len() as f32).abs();
+        let current_peak_meter = self.peak_meter.load(std::sync::atomic::Ordering::Relaxed);
+        let new_peak_meter = if amplitude > current_peak_meter {
+            amplitude
+        } else {
+            current_peak_meter * self.peak_meter_decay_weight
+                + amplitude * (1.0 - self.peak_meter_decay_weight)
+        };
+
+        self.peak_meter
+            .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed)
+    }
 }
+
+const PEAK_METER_DECAY_MS: f64 = 150.0;
 
 impl Plugin for AudioSampler {
     const NAME: &'static str = "Audio Sampler";
@@ -169,6 +199,14 @@ impl Plugin for AudioSampler {
         self.params.clone()
     }
 
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        editor::create(
+            self.params.clone(),
+            self.peak_meter.clone(),
+            self.params.editor_state.clone(),
+        )
+    }
+
     fn initialize(
         &mut self,
         audio_io_layout: &AudioIOLayout,
@@ -178,6 +216,9 @@ impl Plugin for AudioSampler {
         self.audio_io_layout = audio_io_layout.clone();
         self.sample_rate = buffer_config.sample_rate;
         self.sampler = Sampler::new(self.channel_count(), &self.sampler_params());
+        self.peak_meter_decay_weight = 0.25f64
+            .powf((buffer_config.sample_rate as f64 * PEAK_METER_DECAY_MS / 1000.0).recip())
+            as f32;
         true
     }
 
@@ -224,7 +265,15 @@ impl Plugin for AudioSampler {
                 next_event = context.next_event();
             }
 
-            self.sampler.process_sample(channel_samples, params);
+            let mut frame = channel_samples.into_iter().collect::<Vec<_>>();
+            self.sampler.process_frame(&mut frame, params);
+
+            //for sample in channel_samples {
+            //    amplitude += *sample;
+            //}
+            if self.params.editor_state.is_open() {
+                self.update_peak_meter(&mut frame);
+            }
         }
 
         ProcessStatus::Normal

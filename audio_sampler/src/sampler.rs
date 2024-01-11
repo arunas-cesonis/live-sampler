@@ -36,7 +36,6 @@ struct Channel {
     voices: Vec<Voice>,
     recording: bool,
     now: usize,
-    note_on_count: usize,
     passthru_on: bool,
     passthru_volume: Volume,
 }
@@ -79,7 +78,6 @@ impl Channel {
             voices: vec![],
             recording: false,
             now: 0,
-            note_on_count: 0,
             passthru_on: false,
             passthru_volume: Volume::new(if params.auto_passthru { 1.0 } else { 0.0 }),
         }
@@ -87,9 +85,9 @@ impl Channel {
 
     fn log(&self, params: &Params, s: String) {
         nih_warn!(
-            "voices={} note_on={} attack={} decay={} passthru_vol={:.2} {}",
+            "voices={} voices(!finished)={} attack={} decay={} passthru_vol={:.2} {}",
             self.voices.len(),
-            self.note_on_count,
+            self.voices.iter().filter(|v| !v.finished).count(),
             params.attack_samples,
             params.decay_samples,
             self.passthru_volume.value(self.now),
@@ -115,7 +113,6 @@ impl Channel {
         };
         voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
-        self.note_on_count += 1;
         self.handle_passthru(params);
         self.log(params, format!("START PLAYING note={}", note));
     }
@@ -126,7 +123,6 @@ impl Channel {
             if voice.note == note && !voice.finished {
                 Self::finish_voice(self.now, voice, params);
 
-                self.note_on_count -= 1;
                 self.handle_passthru(params);
                 self.log(params, format!("STOP PLAYING note={}", note));
 
@@ -165,7 +161,8 @@ impl Channel {
 
     fn handle_passthru(&mut self, params: &Params) {
         if params.auto_passthru {
-            if self.note_on_count == 0 {
+            let have_unfinished_voices = self.voices.iter().any(|v| !v.finished);
+            if !have_unfinished_voices {
                 if !self.passthru_on {
                     self.passthru_on = true;
                     self.passthru_volume
@@ -199,6 +196,7 @@ impl Channel {
         }
 
         let mut output = 0.0;
+        //let mut finished = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
             if !self.data.is_empty() {
                 // calculate sample position from voice position
@@ -213,9 +211,28 @@ impl Channel {
                 // calculate playback speed
                 let speed = voice.speed * self.global_speed * params.speed;
 
+                let loop_start = voice.start_percent * self.data.len() as f32;
+                let loop_end = ((voice.start_percent + params.loop_length_percent) % 1.0)
+                    * self.data.len() as f32;
+
                 // calculate next read position
                 let prev_read = voice.read;
-                let next_read = voice.read + speed;
+                let mut next_read = prev_read + speed;
+                //match params.loop_mode {
+                //    LoopMode::PlayOnce => {
+                //        if !voice.finished {
+                //            if speed > 0.0 && prev_read <= loop_end && loop_end <= next_read {
+                //                finished.push(i);
+                //            } else {
+                //                if speed < 0.0 && prev_read >= loop_start && loop_start >= next_read
+                //                {
+                //                    finished.push(i);
+                //                }
+                //            }
+                //        }
+                //    }
+                //    LoopMode::Loop => (),
+                //};
 
                 // update read position in voice wrapping it around buffer boundaries
                 let len_f32 = self.data.len() as f32;
@@ -224,6 +241,11 @@ impl Channel {
                 voice.read = read;
             };
         }
+
+        // remove voices that are finished and mute
+        //while let Some(j) = finished.pop() {
+        //    Self::finish_voice(self.now, &mut self.voices[j], params);
+        //}
 
         // update voice volumes and find voices that can be removed (finished and mute)
         let mut removed = vec![];
@@ -304,4 +326,27 @@ impl Sampler {
             self.channels[i].process_sample(sample, params);
         }
     }
+
+    pub fn process_frame<'a>(&mut self, mut frame: &mut [&'a mut f32], params: &Params) {
+        for j in 0..frame.len() {
+            self.channels[j].process_sample(frame[j], params);
+        }
+    }
+
+    pub fn process_sample_iter<'a>(
+        &'a mut self,
+        iter: impl IntoIterator<Item = &'a mut f32>,
+        params: &'a Params,
+    ) -> impl IntoIterator<Item = &'a mut f32> {
+        iter.into_iter().enumerate().map(|(i, sample)| {
+            self.channels[i].process_sample(sample, params);
+            sample
+        })
+    }
 }
+
+//struct ProcessIter<'a, I> {
+//    sampler: &'a mut Sampler,
+//    iter: I,
+//    params: &'a Params,
+//}
