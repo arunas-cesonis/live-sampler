@@ -1,11 +1,12 @@
 use crossbeam::atomic::AtomicCell;
+use crossbeam_queue::ArrayQueue;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use nih_plug::prelude::*;
 use nih_plug_iced::IcedState;
 
-use crate::sampler::{LoopMode, Sampler};
+use crate::sampler::{Info, LoopMode, Sampler};
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -26,10 +27,8 @@ pub struct AudioSampler {
     sample_rate: f32,
     sampler: Sampler,
     peak_meter: Arc<AtomicF32>,
-    peak_meter_decay_weight: f32, //self.peak_meter_decay_weight = 0.25f64
-                                  //    .powf((buffer_config.sample_rate as f64 * PEAK_METER_DECAY_MS / 1000.0).recip())
-                                  //    as f32;
-                                  //    debug: Arc<Mutex<Option<std::fs::File>>>,
+    info: Arc<ArrayQueue<Info>>,
+    peak_meter_decay_weight: f32,
 }
 
 #[derive(Params)]
@@ -109,6 +108,7 @@ impl Default for AudioSampler {
             sample_rate: -1.0,
             peak_meter_decay_weight: 1.0,
             sampler: Sampler::new(0, &sampler::Params::default()),
+            info: Arc::new(ArrayQueue::new(1)),
             peak_meter: Default::default(), //debug: Arc::new(Mutex::new(None)),
         }
     }
@@ -204,6 +204,7 @@ impl Plugin for AudioSampler {
             self.params.clone(),
             self.peak_meter.clone(),
             self.params.editor_state.clone(),
+            self.info.clone(),
         )
     }
 
@@ -273,6 +274,8 @@ impl Plugin for AudioSampler {
             //}
             if self.params.editor_state.is_open() {
                 self.update_peak_meter(&mut frame);
+                let info = self.sampler.get_info(params);
+                self.info.force_push(info);
             }
         }
 
