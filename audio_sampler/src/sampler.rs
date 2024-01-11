@@ -225,6 +225,7 @@ impl Channel {
                 let len_f32 = self.data.len() as f32;
                 let loop_start = voice.start_percent * len_f32;
                 let loop_end = (voice.start_percent + params.loop_length_percent) * len_f32;
+                let loop_length = params.loop_length_percent * len_f32;
 
                 // calculate next read position
                 let prev_read = voice.read;
@@ -243,7 +244,15 @@ impl Channel {
                             }
                         }
                     }
-                    LoopMode::Loop => (),
+                    LoopMode::Loop => {
+                        if speed > 0.0 && next_read > loop_end {
+                            let extra = (next_read - loop_end) % loop_length;
+                            next_read = loop_start + extra;
+                        } else if speed < 0.0 && next_read < loop_start {
+                            let extra = (loop_start - next_read) % loop_length;
+                            next_read = loop_end - extra;
+                        }
+                    }
                 };
 
                 // update read position in voice wrapping it around buffer boundaries

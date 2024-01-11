@@ -92,7 +92,11 @@ impl Default for AudioSamplerParams {
             loop_length: FloatParam::new(
                 "Loop length",
                 1.0,
-                FloatRange::Linear { min: 0.0, max: 1.0 },
+                FloatRange::Skewed {
+                    min: 0.001,
+                    max: 1.0,
+                    factor: 0.25,
+                },
             )
             .with_unit(" %"),
             volume: FloatParam::new("Gain", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
