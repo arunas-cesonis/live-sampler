@@ -4,9 +4,12 @@ use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::{util, Editor, GuiContext};
 use nih_plug_iced::widgets as nih_widgets;
 use nih_plug_iced::*;
+use std::marker::PhantomData;
 //use std::intrinsics::mir::Len;
 // use std::marker::ConstParamTy;
 use crossbeam_queue::ArrayQueue;
+use nih_plug_iced::backend::Renderer;
+use nih_plug_iced::widgets::PeakMeter;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -70,6 +73,118 @@ struct AudioSamplerEditor {
 enum Message {
     /// Update a parameter's value.
     ParamUpdate(nih_widgets::ParamMessage),
+}
+
+struct PlayerWidget<'a, Message> {
+    info: &'a Info,
+    height: Length,
+    width: Length,
+    _phantom: PhantomData<Message>,
+}
+
+impl<'a, Message> PlayerWidget<'a, Message>
+where
+    Message: Clone,
+{
+    pub fn new(info: &'a Info) -> Self {
+        PlayerWidget {
+            info,
+            width: Length::Fill,
+            height: Length::Units(40),
+            _phantom: Default::default(),
+        }
+    }
+}
+
+impl<'a, Message> Widget<Message, Renderer> for PlayerWidget<'a, Message>
+where
+    Message: Clone,
+{
+    fn width(&self) -> Length {
+        self.width
+    }
+
+    fn height(&self) -> Length {
+        self.height
+    }
+
+    fn layout(&self, _renderer: &Renderer, limits: &layout::Limits) -> layout::Node {
+        let limits = limits.width(self.width).height(self.height);
+        let size = limits.resolve(Size::ZERO);
+
+        layout::Node::new(size)
+    }
+    fn draw(
+        &self,
+        renderer: &mut Renderer,
+        style: &renderer::Style,
+        layout: Layout<'_>,
+        _cursor_position: Point,
+        _viewport: &Rectangle,
+    ) {
+        let bounds = layout.bounds();
+        let width = bounds.width;
+        use nih_plug_iced::renderer::Renderer;
+        renderer.fill_quad(
+            renderer::Quad {
+                bounds,
+                border_radius: 0.0,
+                border_width: 0.0,
+                border_color: Color::TRANSPARENT,
+            },
+            Background::Color(Color::BLACK),
+        );
+        for i in 0..16 {
+            let mut bounds = bounds.clone();
+            bounds.x = ((i as f32) / 16.0) * width;
+            bounds.width = 2.0;
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds,
+                    border_radius: 0.0,
+                    border_width: 0.0,
+                    border_color: Color::TRANSPARENT,
+                },
+                Background::Color(Color::new(0.5, 0.5, 0.5, 1.0)),
+            );
+        }
+        for voice in &self.info.voices {
+            let mut bounds = bounds.clone();
+            bounds.x = width * voice.start;
+            bounds.width = (voice.end - voice.start) * width;
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds,
+                    border_radius: 0.0,
+                    border_width: 0.0,
+                    border_color: Color::TRANSPARENT,
+                },
+                Background::Color(Color::new(0.25, 0.25, 0.25, 1.0)),
+            );
+
+            let mut bounds = bounds.clone();
+            bounds.x = width * voice.pos;
+            bounds.width = 2.0;
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds,
+                    border_radius: 0.0,
+                    border_width: 0.0,
+                    border_color: Color::TRANSPARENT,
+                },
+                Background::Color(Color::WHITE),
+            );
+        }
+    }
+}
+
+impl<'a, Message> From<PlayerWidget<'a, Message>> for Element<'a, Message>
+where
+    Message: 'a + Clone,
+{
+    fn from(widget: PlayerWidget<'a, Message>) -> Self {
+        Element::new(widget)
+    }
 }
 
 impl IcedEditor for AudioSamplerEditor {
@@ -161,6 +276,13 @@ impl IcedEditor for AudioSamplerEditor {
                 )
                 .height(Length::Fill)
                 .width(Length::Fill),
+            )
+            .push(
+                Container::new(PlayerWidget::new(info))
+                    .width(Length::Fill)
+                    //.horizontal_alignment(alignment::Horizontal::Center)
+                    //.vertical_alignment(alignment::Vertical::Center)
+                    .padding(Padding::new(10)),
             )
             .push(
                 Container::new(ProgressBar::new(0.0..=100.0, 35.0).height(20.into()))
