@@ -24,6 +24,7 @@ struct Voice {
     volume: Volume,
     start_percent: f32,
     speed: f32,
+    speed_ping_pong: f32,
     finished: bool,
 }
 
@@ -42,6 +43,7 @@ struct Channel {
 #[derive(Debug, Enum, PartialEq, Clone)]
 pub enum LoopMode {
     PlayOnce,
+    PingPong,
     Loop,
 }
 
@@ -120,6 +122,7 @@ impl Channel {
             start_percent: pos,
             volume: Volume::new(0.0),
             speed: 1.0,
+            speed_ping_pong: 1.0,
             finished: false,
         };
         voice.volume.to(self.now, params.attack_samples, velocity);
@@ -220,7 +223,7 @@ impl Channel {
                 output += y * voice.volume.value(self.now);
 
                 // calculate playback speed
-                let speed = voice.speed * self.global_speed * params.speed;
+                let speed = voice.speed * self.global_speed * params.speed * voice.speed_ping_pong;
 
                 let len_f32 = self.data.len() as f32;
                 let loop_start = voice.start_percent * len_f32;
@@ -244,6 +247,7 @@ impl Channel {
                             }
                         }
                     }
+                    // TODO: ensure next_read  is withing loop_start and loop_end like in PingPong?
                     LoopMode::Loop => {
                         if speed > 0.0 && next_read > loop_end {
                             let extra = (next_read - loop_end) % loop_length;
@@ -251,6 +255,24 @@ impl Channel {
                         } else if speed < 0.0 && next_read < loop_start {
                             let extra = (loop_start - next_read) % loop_length;
                             next_read = loop_end - extra;
+                        }
+                    }
+                    // TODO: verify math here
+                    LoopMode::PingPong => {
+                        if speed > 0.0 && next_read > loop_end {
+                            let extra = (next_read - loop_end) % loop_length;
+                            next_read = loop_end - extra;
+                            if next_read < loop_start {
+                                next_read = loop_start
+                            }
+                            voice.speed_ping_pong *= -1.0;
+                        } else if speed < 0.0 && next_read < loop_start {
+                            let extra = (loop_start - next_read) % loop_length;
+                            next_read = loop_start + extra;
+                            if next_read > loop_end {
+                                next_read = loop_end
+                            }
+                            voice.speed_ping_pong *= -1.0;
                         }
                     }
                 };
