@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use nih_plug::prelude::*;
-use nih_plug_iced::IcedState;
+use nih_plug_vizia::ViziaState;
 
 use crate::sampler::{Info, LoopMode, Sampler};
 
@@ -15,7 +15,8 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-mod editor;
+// mod editor;
+mod editor_vizia;
 mod sampler;
 mod volume;
 
@@ -50,7 +51,7 @@ struct AudioSamplerParams {
     /// The editor state, saved together with the parameter state so the custom scaling can be
     /// restored.
     #[persist = "editor-state"]
-    editor_state: Arc<IcedState>,
+    editor_state: Arc<ViziaState>,
 }
 
 const MILLISECONDS_PARAM_SKEW_FACTOR: f32 = 0.25;
@@ -58,7 +59,7 @@ const MILLISECONDS_PARAM_SKEW_FACTOR: f32 = 0.25;
 impl Default for AudioSamplerParams {
     fn default() -> Self {
         Self {
-            editor_state: editor::default_state(),
+            editor_state: editor_vizia::default_state(),
             auto_passthru: BoolParam::new("Pass through", true),
             speed: FloatParam::new(
                 "Speed",
@@ -204,7 +205,7 @@ impl Plugin for AudioSampler {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        editor::create(
+        editor_vizia::create(
             self.params.clone(),
             self.peak_meter.clone(),
             self.params.editor_state.clone(),

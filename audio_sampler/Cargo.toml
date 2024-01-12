@@ -15,8 +15,11 @@ path = "src/main.rs"
 git = "https://github.com/robbert-vdh/nih-plug"
 features = ["standalone", "vst3"]
 
-[dependencies.nih_plug_iced]
+[dependencies.nih_plug_vizia]
 git = "https://github.com/robbert-vdh/nih-plug"
+
+#[dependencies.nih_plug_iced]
+#git = "https://github.com/robbert-vdh/nih-plug"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.5.4"
@@ -32,4 +35,4 @@ parking_lot = "0.12.1"
 crossbeam-queue = "0.3.11"
 
 #iced_baseview = "0.0.1"
-iced_graphics = "0.2.0"
+#iced_graphics = "0.2.0"
