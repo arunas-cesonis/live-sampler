@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 //use std::intrinsics::mir::Len;
 // use std::marker::ConstParamTy;
 use crossbeam_queue::ArrayQueue;
-use iced_graphics::svg::Handle;
+use iced_graphics::image::Handle;
 use nih_plug_iced::layout::Limits;
 use nih_plug_iced::renderer::Renderer;
 use nih_plug_iced::widgets::PeakMeter;
