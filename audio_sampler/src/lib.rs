@@ -205,6 +205,7 @@ impl Plugin for AudioSampler {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        // Using vizia as Iced doesn't support drawing bitmap images under OpenGL
         editor_vizia::create(
             self.params.clone(),
             self.peak_meter.clone(),
