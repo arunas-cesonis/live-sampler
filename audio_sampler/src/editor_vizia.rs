@@ -52,7 +52,9 @@ where
     // The below prints this in stdout:
     // UNSUPPORTED (log once): POSSIBLE ISSUE: unit 0 GLD_TEXTURE_INDEX_2D is unloadable and bound to sampler type (Float) - using zero texture because texture unloadable
     // It may be Apple M1 specific, as quick search reveals
-    // TODO: check on other platforms, try loading image file, also check how Vizia renders fonts
+    // TODO: check on linux, try loading image file, also check how Vizia renders fonts
+    // - macOS; displays black rectangle with above message
+    // - windows; displays black rectangle, not sure if message is printed
     fn draw_image(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
         let w = 50;
         let h = 20;
