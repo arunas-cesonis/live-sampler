@@ -7,7 +7,7 @@ use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
 use nih_plug_vizia::vizia::vg::imgref::{Img, ImgVec};
 use nih_plug_vizia::vizia::vg::rgb::{RGB, RGB8};
-use nih_plug_vizia::vizia::vg::{ImageSource, Path};
+use nih_plug_vizia::vizia::vg::{ImageFlags, ImageId, ImageSource, Paint, Path, PixelFormat};
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 use std::sync::atomic::Ordering;
@@ -50,6 +50,17 @@ where
     }
 }
 
+fn rectangle_path(x: f32, y: f32, w: f32, h: f32) -> Path {
+    let mut path = vg::Path::new();
+    path.move_to(x, y);
+    path.line_to(x, y + h);
+    path.line_to(x + w, y + h);
+    path.line_to(x + w, y);
+    path.line_to(x, y);
+    path.close();
+    path
+}
+
 impl<T> View for WaveformView<T>
 where
     T: Lens<Target = f32>,
@@ -74,6 +85,24 @@ where
         let color = Color::rgb(255, 0, 0);
         let paint = vg::Paint::color(color.into());
         canvas.fill_path(&path, &paint);
+
+        let w = 50;
+        let h = 20;
+        let image_id = canvas
+            .create_image_empty(w, h, PixelFormat::Rgb8, ImageFlags::empty())
+            .unwrap();
+
+        let data = vec![RGB8::new(0, 255, 0); w * h];
+        let img = Img::new(data.as_slice(), w, h);
+        let img = ImageSource::from(img);
+        canvas.update_image(image_id, img, 0, 0).unwrap();
+
+        let image_paint = Paint::image(image_id, 0.0, 0.0, w as f32, h as f32, 0.0, 1.0);
+        //pub fn image(id: ImageId, cx: f32, cy: f32, width: f32, height: f32, angle: f32, alpha: f32) -> Self {
+        let rect = BoundingBox::from_min_max(0.0, 0.0, w as f32, h as f32);
+        let path = rectangle_path(0.0, 0.0, w as f32, h as f32);
+        canvas.fill_path(&path, &image_paint);
+        canvas.delete_image(image_id);
     }
 }
 
