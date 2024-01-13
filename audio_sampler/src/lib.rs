@@ -1,6 +1,4 @@
-use crossbeam::atomic::AtomicCell;
 use crossbeam_queue::ArrayQueue;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use nih_plug::prelude::*;
@@ -28,7 +26,7 @@ pub struct AudioSampler {
     sample_rate: f32,
     sampler: Sampler,
     peak_meter: Arc<AtomicF32>,
-    info: Arc<ArrayQueue<Info>>,
+    info_queue: Arc<ArrayQueue<Info>>,
     peak_meter_decay_weight: f32,
 }
 
@@ -113,7 +111,7 @@ impl Default for AudioSampler {
             sample_rate: -1.0,
             peak_meter_decay_weight: 1.0,
             sampler: Sampler::new(0, &sampler::Params::default()),
-            info: Arc::new(ArrayQueue::new(1)),
+            info_queue: Arc::new(ArrayQueue::new(1)),
             peak_meter: Default::default(), //debug: Arc::new(Mutex::new(None)),
         }
     }
@@ -206,11 +204,14 @@ impl Plugin for AudioSampler {
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         // Using vizia as Iced doesn't support drawing bitmap images under OpenGL
+        let info_queue = Arc::new(ArrayQueue::new(1));
+        self.info_queue = info_queue.clone();
+
         editor_vizia::create(
             self.params.clone(),
             self.peak_meter.clone(),
             self.params.editor_state.clone(),
-            self.info.clone(),
+            info_queue,
         )
     }
 
@@ -281,7 +282,7 @@ impl Plugin for AudioSampler {
             if self.params.editor_state.is_open() {
                 self.update_peak_meter(&mut frame);
                 let info = self.sampler.get_info(params);
-                self.info.force_push(info);
+                self.info_queue.force_push(info);
             }
         }
 

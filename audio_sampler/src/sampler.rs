@@ -1,4 +1,6 @@
+use crossbeam_queue::ArrayQueue;
 use std::fmt::Debug;
+use std::sync::Arc;
 use std::thread::park_timeout_ms;
 
 use log::log;
@@ -247,7 +249,8 @@ impl Channel {
                             }
                         }
                     }
-                    // TODO: ensure next_read  is withing loop_start and loop_end like in PingPong?
+                    // TODO: ensure next_read is withing loop_start and loop_end like in PingPong?
+                    // FIXME: this does not work correctly when loop end is behind loop start, or the waveformview is not displaying it correctly
                     LoopMode::Loop => {
                         if speed > 0.0 && next_read > loop_end {
                             let extra = (next_read - loop_end) % loop_length;
