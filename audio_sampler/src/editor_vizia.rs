@@ -28,7 +28,7 @@ impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (200, 150))
+    ViziaState::new(|| (640, 320))
 }
 
 struct WaveformView<T>
@@ -47,6 +47,30 @@ where
         T: Lens<Target = f32>,
     {
         Self { image }.build(cx, |_| {})
+    }
+
+    // The below prints this in stdout:
+    // UNSUPPORTED (log once): POSSIBLE ISSUE: unit 0 GLD_TEXTURE_INDEX_2D is unloadable and bound to sampler type (Float) - using zero texture because texture unloadable
+    // It may be Apple M1 specific, as quick search reveals
+    // TODO: check on other platforms
+    fn draw_image(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+        let w = 50;
+        let h = 20;
+        let image_id = canvas
+            .create_image_empty(w, h, PixelFormat::Rgb8, ImageFlags::empty())
+            .unwrap();
+
+        let data = vec![RGB8::new(0u8, 255u8, 0u8); w * h];
+        let img = Img::new(data.as_slice(), w, h);
+        let img = ImageSource::from(img);
+        canvas.update_image(image_id, img, 0, 0).unwrap();
+
+        let image_paint = Paint::image(image_id, 0.0, 0.0, w as f32, h as f32, 0.0, 1.0);
+        //pub fn image(id: ImageId, cx: f32, cy: f32, width: f32, height: f32, angle: f32, alpha: f32) -> Self {
+        let rect = BoundingBox::from_min_max(0.0, 0.0, w as f32, h as f32);
+        let path = rectangle_path(0.0, 0.0, w as f32, h as f32);
+        canvas.fill_path(&path, &image_paint);
+        canvas.delete_image(image_id);
     }
 }
 
@@ -85,24 +109,6 @@ where
         let color = Color::rgb(255, 0, 0);
         let paint = vg::Paint::color(color.into());
         canvas.fill_path(&path, &paint);
-
-        let w = 50;
-        let h = 20;
-        let image_id = canvas
-            .create_image_empty(w, h, PixelFormat::Rgb8, ImageFlags::empty())
-            .unwrap();
-
-        let data = vec![RGB8::new(0, 255, 0); w * h];
-        let img = Img::new(data.as_slice(), w, h);
-        let img = ImageSource::from(img);
-        canvas.update_image(image_id, img, 0, 0).unwrap();
-
-        let image_paint = Paint::image(image_id, 0.0, 0.0, w as f32, h as f32, 0.0, 1.0);
-        //pub fn image(id: ImageId, cx: f32, cy: f32, width: f32, height: f32, angle: f32, alpha: f32) -> Self {
-        let rect = BoundingBox::from_min_max(0.0, 0.0, w as f32, h as f32);
-        let path = rectangle_path(0.0, 0.0, w as f32, h as f32);
-        canvas.fill_path(&path, &image_paint);
-        canvas.delete_image(image_id);
     }
 }
 
@@ -131,33 +137,65 @@ pub(crate) fn create(
         let img = ImageSource::from(img);
 
         //let img = Image::new(cx, img);
-
         VStack::new(cx, |cx| {
-            Label::new(cx, "Gain GUI")
+            Label::new(cx, "Audio Sampler")
                 .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
                 .font_weight(FontWeightKeyword::Bold)
                 .font_size(30.0)
-                .height(Pixels(50.0))
+                .text_align(TextAlign::Left)
+                .height(Pixels(42.0))
                 .child_top(Stretch(1.0))
                 .child_bottom(Pixels(0.0));
-
-            Label::new(cx, "Gain");
-            ParamSlider::new(cx, Data::params, |params| &params.volume);
-
-            PeakMeter::new(
-                cx,
-                Data::peak_meter
-                    .map(|peak_meter| util::gain_to_db(peak_meter.load(Ordering::Relaxed))),
-                Some(Duration::from_millis(600)),
-            )
-            // This is how adding padding works in vizia
-            .top(Pixels(10.0));
-
-            WaveformView::new(cx, StaticLens::new(&1.0));
+            HStack::new(cx, |cx| {
+                VStack::new(cx, |cx| {
+                    Label::new(cx, "Volume").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.volume);
+                    Label::new(cx, "Attack").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.attack);
+                    Label::new(cx, "Decay").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.decay);
+                    Label::new(cx, "Passthru").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.auto_passthru)
+                        .top(Pixels(10.0));
+                });
+                VStack::new(cx, |cx| {
+                    Label::new(cx, "Speed").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.speed);
+                    Label::new(cx, "Loop length").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.loop_length);
+                    Label::new(cx, "Loop mode").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.loop_mode);
+                });
+            });
         })
-        .row_between(Pixels(0.0))
-        .child_left(Stretch(1.0))
-        .child_right(Stretch(1.0));
+        .border_width(Pixels(10.0));
+
+        //VStack::new(cx, |cx| {
+        //    Label::new(cx, "Audio Sampler")
+        //        .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+        //        .font_weight(FontWeightKeyword::Bold)
+        //        .font_size(30.0)
+        //        .height(Pixels(50.0))
+        //        .child_top(Stretch(1.0))
+        //        .child_bottom(Pixels(0.0));
+
+        //    Label::new(cx, "Gain");
+        //    ParamSlider::new(cx, Data::params, |params| &params.volume);
+
+        //    PeakMeter::new(
+        //        cx,
+        //        Data::peak_meter
+        //            .map(|peak_meter| util::gain_to_db(peak_meter.load(Ordering::Relaxed))),
+        //        Some(Duration::from_millis(600)),
+        //    )
+        //    // This is how adding padding works in vizia
+        //    .top(Pixels(10.0));
+
+        //    WaveformView::new(cx, StaticLens::new(&1.0));
+        //})
+        //.row_between(Pixels(0.0))
+        //.child_left(Stretch(1.0))
+        //.child_right(Stretch(1.0));
 
         ResizeHandle::new(cx);
     })
