@@ -6,7 +6,7 @@ use nih_plug_vizia::vizia::image::DynamicImage::ImageRgb8;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
 use nih_plug_vizia::vizia::vg::imgref::{Img, ImgVec};
-use nih_plug_vizia::vizia::vg::rgb::{RGB, RGB8};
+use nih_plug_vizia::vizia::vg::rgb::{RGB, RGB8, RGBA8};
 use nih_plug_vizia::vizia::vg::{ImageFlags, ImageId, ImageSource, Paint, Path, PixelFormat};
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
@@ -52,15 +52,16 @@ where
     // The below prints this in stdout:
     // UNSUPPORTED (log once): POSSIBLE ISSUE: unit 0 GLD_TEXTURE_INDEX_2D is unloadable and bound to sampler type (Float) - using zero texture because texture unloadable
     // It may be Apple M1 specific, as quick search reveals
-    // TODO: check on other platforms
+    // TODO: check on other platforms, try loading image file, also check how Vizia renders fonts
     fn draw_image(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
         let w = 50;
         let h = 20;
         let image_id = canvas
-            .create_image_empty(w, h, PixelFormat::Rgb8, ImageFlags::empty())
+            .create_image_empty(w, h, PixelFormat::Rgba8, ImageFlags::empty())
             .unwrap();
 
-        let data = vec![RGB8::new(0u8, 255u8, 0u8); w * h];
+        //let data = vec![RGBA8::new(255u8, 0u8, 0u8, 255u8); w * h];
+        let data = vec![RGBA8::new(255u8, 0u8, 0u8, 255u8); w * h];
         let img = Img::new(data.as_slice(), w, h);
         let img = ImageSource::from(img);
         canvas.update_image(image_id, img, 0, 0).unwrap();
@@ -90,25 +91,26 @@ where
     T: Lens<Target = f32>,
 {
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
-        let mut path = vg::Path::new();
-        let bounds = cx.bounds();
-        let border_width = cx.border_width();
-        {
-            let x = bounds.x + border_width / 2.0;
-            let y = bounds.y + border_width / 2.0;
-            let w = bounds.w - border_width;
-            let h = bounds.h - border_width;
-            path.move_to(x, y);
-            path.line_to(x, y + h);
-            path.line_to(x + w, y + h);
-            path.line_to(x + w, y);
-            path.line_to(x, y);
-            path.close();
-        }
-        let background_color = cx.background_color();
-        let color = Color::rgb(255, 0, 0);
-        let paint = vg::Paint::color(color.into());
-        canvas.fill_path(&path, &paint);
+        self.draw_image(cx, canvas);
+        //let mut path = vg::Path::new();
+        //let bounds = cx.bounds();
+        //let border_width = cx.border_width();
+        //{
+        //    let x = bounds.x + border_width / 2.0;
+        //    let y = bounds.y + border_width / 2.0;
+        //    let w = bounds.w - border_width;
+        //    let h = bounds.h - border_width;
+        //    path.move_to(x, y);
+        //    path.line_to(x, y + h);
+        //    path.line_to(x + w, y + h);
+        //    path.line_to(x + w, y);
+        //    path.line_to(x, y);
+        //    path.close();
+        //}
+        //let background_color = cx.background_color();
+        //let color = Color::rgb(255, 0, 0);
+        //let paint = vg::Paint::color(color.into());
+        //canvas.fill_path(&path, &paint);
     }
 }
 
@@ -167,6 +169,7 @@ pub(crate) fn create(
                     ParamSlider::new(cx, Data::params, |params| &params.loop_mode);
                 });
             });
+            WaveformView::new(cx, StaticLens::new(&1.0));
         })
         .border_width(Pixels(10.0));
 
