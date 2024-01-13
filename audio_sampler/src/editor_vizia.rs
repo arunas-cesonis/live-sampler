@@ -1,8 +1,10 @@
 use atomic_float::AtomicF32;
 use crossbeam_queue::ArrayQueue;
+use nih_plug::nih_warn;
 use nih_plug::prelude::{util, Editor};
-use nih_plug_vizia::vizia::image::DynamicImage;
 use nih_plug_vizia::vizia::image::DynamicImage::ImageRgb8;
+use nih_plug_vizia::vizia::image::{DynamicImage, ImageBuffer};
+use nih_plug_vizia::vizia::prelude::Role::Image;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
 use nih_plug_vizia::vizia::vg::imgref::{Img, ImgVec};
@@ -10,6 +12,7 @@ use nih_plug_vizia::vizia::vg::rgb::{RGB, RGB8, RGBA8};
 use nih_plug_vizia::vizia::vg::{ImageFlags, ImageId, ImageSource, Paint, Path, PixelFormat};
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
+use std::cell::Cell;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,32 +24,27 @@ use crate::AudioSamplerParams;
 struct Data {
     params: Arc<AudioSamplerParams>,
     peak_meter: Arc<AtomicF32>,
-    info: Arc<ArrayQueue<Info>>,
 }
 
 impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (640, 320))
+    ViziaState::new(|| (640, 370))
 }
 
-struct WaveformView<T>
-where
-    T: Lens<Target = f32>,
-{
-    image: T,
+struct WaveformView {
+    info_queue: Arc<ArrayQueue<Info>>,
+    current: Cell<Info>,
 }
 
-impl<T> WaveformView<T>
-where
-    T: Lens<Target = f32>,
-{
-    pub fn new(cx: &mut Context, image: T) -> Handle<Self>
-    where
-        T: Lens<Target = f32>,
-    {
-        Self { image }.build(cx, |_| {})
+impl WaveformView {
+    pub fn new(cx: &mut Context, info_queue: Arc<ArrayQueue<Info>>) -> Handle<Self> {
+        Self {
+            info_queue,
+            current: Cell::new(Info::default()),
+        }
+        .build(cx, |_| {})
     }
 
     // The below prints this in stdout:
@@ -69,8 +67,6 @@ where
         canvas.update_image(image_id, img, 0, 0).unwrap();
 
         let image_paint = Paint::image(image_id, 0.0, 0.0, w as f32, h as f32, 0.0, 1.0);
-        //pub fn image(id: ImageId, cx: f32, cy: f32, width: f32, height: f32, angle: f32, alpha: f32) -> Self {
-        let rect = BoundingBox::from_min_max(0.0, 0.0, w as f32, h as f32);
         let path = rectangle_path(0.0, 0.0, w as f32, h as f32);
         canvas.fill_path(&path, &image_paint);
         canvas.delete_image(image_id);
@@ -88,31 +84,68 @@ fn rectangle_path(x: f32, y: f32, w: f32, h: f32) -> Path {
     path
 }
 
-impl<T> View for WaveformView<T>
-where
-    T: Lens<Target = f32>,
-{
+impl View for WaveformView {
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
-        self.draw_image(cx, canvas);
-        //let mut path = vg::Path::new();
-        //let bounds = cx.bounds();
-        //let border_width = cx.border_width();
-        //{
-        //    let x = bounds.x + border_width / 2.0;
-        //    let y = bounds.y + border_width / 2.0;
-        //    let w = bounds.w - border_width;
-        //    let h = bounds.h - border_width;
-        //    path.move_to(x, y);
-        //    path.line_to(x, y + h);
-        //    path.line_to(x + w, y + h);
-        //    path.line_to(x + w, y);
-        //    path.line_to(x, y);
-        //    path.close();
-        //}
+        //self.draw_image(cx, canvas);
+        let mut path = vg::Path::new();
+        let bounds = cx.bounds();
+        let border_width = cx.border_width();
+        {
+            let x = bounds.x + border_width / 2.0;
+            let y = bounds.y + border_width / 2.0;
+            let w = bounds.w - border_width;
+            let h = bounds.h - border_width;
+            path.move_to(x, y);
+            path.line_to(x, y + h);
+            path.line_to(x + w, y + h);
+            path.line_to(x + w, y);
+            path.line_to(x, y);
+            path.close();
+        }
         //let background_color = cx.background_color();
-        //let color = Color::rgb(255, 0, 0);
-        //let paint = vg::Paint::color(color.into());
-        //canvas.fill_path(&path, &paint);
+        let color = Color::rgb(200, 200, 200);
+        let paint = vg::Paint::color(color.into());
+        canvas.fill_path(&path, &paint);
+
+        // loop
+        let color = Color::rgb(100, 100, 150);
+        let loop_paint = vg::Paint::color(color.into());
+        let color = Color::rgb(200, 100, 100);
+        let pos_paint = vg::Paint::color(color.into());
+
+        let info = if let Some(info) = self.info_queue.pop() {
+            info
+        } else {
+            self.current.take()
+        };
+
+        for v in &info.voices {
+            if v.start < v.end {
+                let start = v.start * bounds.w + bounds.x;
+                let end = v.end * bounds.w + bounds.x;
+                let width = end - start;
+                let path = rectangle_path(start, bounds.y, width, bounds.h);
+                canvas.fill_path(&path, &loop_paint);
+            } else {
+                let start = v.start * bounds.w + bounds.x;
+                let end = bounds.w + bounds.x;
+                let width = end - start;
+                let path = rectangle_path(start, bounds.y, width, bounds.h);
+                canvas.fill_path(&path, &loop_paint);
+
+                let start = bounds.x;
+                let end = v.end * bounds.w + bounds.x;
+                let width = end - start;
+                let path = rectangle_path(start, bounds.y, width, bounds.h);
+                canvas.fill_path(&path, &loop_paint);
+            }
+            let x = v.pos * bounds.w + bounds.x;
+            let width = 5.0;
+            let path = rectangle_path(x, bounds.y, width, bounds.h);
+            canvas.fill_path(&path, &pos_paint);
+        }
+
+        self.current.set(info);
     }
 }
 
@@ -120,7 +153,7 @@ pub(crate) fn create(
     params: Arc<AudioSamplerParams>,
     peak_meter: Arc<AtomicF32>,
     editor_state: Arc<ViziaState>,
-    info: Arc<ArrayQueue<Info>>,
+    info_queue: Arc<ArrayQueue<Info>>,
 ) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         assets::register_noto_sans_light(cx);
@@ -129,18 +162,9 @@ pub(crate) fn create(
         Data {
             params: params.clone(),
             peak_meter: peak_meter.clone(),
-            info: info.clone(),
         }
         .build(cx);
 
-        //ImageSource::
-        let w = 50;
-        let h = 20;
-        let data = vec![RGB8::new(255, 0, 0); w * h];
-        let img = Img::new(data.as_slice(), w, h);
-        let img = ImageSource::from(img);
-
-        //let img = Image::new(cx, img);
         VStack::new(cx, |cx| {
             Label::new(cx, "Audio Sampler")
                 .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
@@ -171,7 +195,7 @@ pub(crate) fn create(
                     ParamSlider::new(cx, Data::params, |params| &params.loop_mode);
                 });
             });
-            WaveformView::new(cx, StaticLens::new(&1.0));
+            WaveformView::new(cx, info_queue.clone()).height(Pixels(50.0));
         })
         .border_width(Pixels(10.0));
 
