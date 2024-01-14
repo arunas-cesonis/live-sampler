@@ -34,7 +34,7 @@ struct Voice {
 struct Channel {
     data: Vec<f32>,
     write: usize,
-    global_speed: f32,
+    reverse_speed: f32,
     voices: Vec<Voice>,
     recording: bool,
     now: usize,
@@ -89,7 +89,7 @@ impl Channel {
         Channel {
             data: vec![],
             write: 0,
-            global_speed: 1.0,
+            reverse_speed: 1.0,
             voices: vec![],
             recording: false,
             now: 0,
@@ -151,11 +151,11 @@ impl Channel {
     }
 
     pub fn reverse(&mut self, _params: &Params) {
-        self.global_speed = -1.0;
+        self.reverse_speed = -1.0;
     }
 
     pub fn unreverse(&mut self, _params: &Params) {
-        self.global_speed = 1.0;
+        self.reverse_speed = 1.0;
     }
 
     pub fn start_recording(&mut self, _params: &Params) {
@@ -225,7 +225,7 @@ impl Channel {
                 output += y * voice.volume.value(self.now);
 
                 // calculate playback speed
-                let speed = voice.speed * self.global_speed * params.speed * voice.speed_ping_pong;
+                let speed = voice.speed * self.reverse_speed * params.speed * voice.speed_ping_pong;
 
                 let len_f32 = self.data.len() as f32;
                 let loop_start = voice.start_percent * len_f32;
@@ -317,6 +317,40 @@ impl Channel {
 
         self.now += 1;
         *sample = output;
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::sampler::{LoopMode, Params, Sampler};
+    use nih_plug_vizia::vizia::views::combo_box_derived_lenses::p;
+
+    #[test]
+    fn test_looping() {
+        let params = Params {
+            loop_mode: LoopMode::Loop,
+            loop_length_percent: 0.5,
+            ..Params::default()
+        };
+        let mut sampler = Sampler::new(1, &params);
+        sampler.start_recording(&params);
+        (0..10).into_iter().for_each(|x| {
+            sampler.process_sample(&mut [x as f32], &params);
+        });
+        sampler.stop_recording(&params);
+        sampler.start_playing(0.8, 11, 1.0, &params);
+        let mut frame = vec![999.0];
+        sampler.process_sample(&mut frame, &params);
+        let mut frame = vec![999.0];
+        sampler.process_sample(&mut frame, &params);
+        let mut frame = vec![999.0];
+        sampler.process_sample(&mut frame, &params);
+        let mut frame = vec![999.0];
+        sampler.process_sample(&mut frame, &params);
+        let mut frame = vec![999.0];
+        sampler.process_sample(&mut frame, &params);
+        let mut frame = vec![999.0];
+        sampler.process_sample(&mut frame, &params);
     }
 }
 
