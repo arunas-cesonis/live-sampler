@@ -235,6 +235,10 @@ impl Channel {
                 // calculate next read position
                 let prev_read = voice.read;
                 let mut next_read = prev_read + speed;
+                eprintln!(
+                    "loop_start={} loop_end={} prev_read={} next_read={}",
+                    loop_start, loop_end, prev_read, next_read
+                );
 
                 match params.loop_mode {
                     LoopMode::PlayOnce => {
@@ -252,10 +256,10 @@ impl Channel {
                     // TODO: ensure next_read is withing loop_start and loop_end like in PingPong?
                     // FIXME: this does not work correctly when loop end is behind loop start, or the waveformview is not displaying it correctly
                     LoopMode::Loop => {
-                        if speed > 0.0 && next_read > loop_end {
+                        if speed > 0.0 && next_read >= loop_end {
                             let extra = (next_read - loop_end) % loop_length;
                             next_read = loop_start + extra;
-                        } else if speed < 0.0 && next_read < loop_start {
+                        } else if speed < 0.0 && next_read <= loop_start {
                             let extra = (loop_start - next_read) % loop_length;
                             next_read = loop_end - extra;
                         }
@@ -325,32 +329,63 @@ mod test {
     use crate::sampler::{LoopMode, Params, Sampler};
     use nih_plug_vizia::vizia::views::combo_box_derived_lenses::p;
 
-    #[test]
-    fn test_looping() {
+    fn run_sampler(input: &[f32], play_start: f32) -> Vec<f32> {
         let params = Params {
             loop_mode: LoopMode::Loop,
+            attack_samples: 0,
+            decay_samples: 0,
             loop_length_percent: 0.5,
             ..Params::default()
         };
         let mut sampler = Sampler::new(1, &params);
         sampler.start_recording(&params);
-        (0..10).into_iter().for_each(|x| {
-            sampler.process_sample(&mut [x as f32], &params);
+        input.iter().for_each(|x| {
+            sampler.process_sample(&mut [*x], &params);
         });
         sampler.stop_recording(&params);
-        sampler.start_playing(0.8, 11, 1.0, &params);
-        let mut frame = vec![999.0];
-        sampler.process_sample(&mut frame, &params);
-        let mut frame = vec![999.0];
-        sampler.process_sample(&mut frame, &params);
-        let mut frame = vec![999.0];
-        sampler.process_sample(&mut frame, &params);
-        let mut frame = vec![999.0];
-        sampler.process_sample(&mut frame, &params);
-        let mut frame = vec![999.0];
-        sampler.process_sample(&mut frame, &params);
-        let mut frame = vec![999.0];
-        sampler.process_sample(&mut frame, &params);
+        sampler.start_playing(play_start, 11, 1.0, &params);
+
+        let mut buffer = vec![0.0; 10];
+        let output: Vec<_> = buffer
+            .into_iter()
+            .map(|x| {
+                let mut frame = vec![x];
+                sampler.process_sample(&mut frame, &params);
+                frame[0]
+            })
+            .collect();
+        sampler.stop_playing(11, &params);
+        output
+    }
+
+    fn simple_input() -> Vec<f32> {
+        let input: Vec<_> = (0..10).into_iter().map(|x| x as f32).collect();
+        input
+    }
+
+    #[test]
+    fn test_looping() {
+        let input = simple_input();
+        let output = run_sampler(&input, 0.0);
+        assert_eq!(&output[0..5], &input[0..5]);
+        assert_eq!(&output[5..10], &input[0..5]);
+
+        let output = run_sampler(&input, 0.8);
+        eprintln!("{:?}", output);
+        assert_eq!(output[0..5], vec![&input[8..10], &input[0..3]].concat());
+        assert_eq!(output[5..10], vec![&input[8..10], &input[0..3]].concat());
+        //assert_eq!(output[0], input[8]);
+        //assert_eq!(output[1], input[9]);
+        //assert_eq!(output[2], input[0]);
+        //assert_eq!(output[3], input[1]);
+        //assert_eq!(output[4], input[2]);
+        //assert_eq!(output[5], input[8]);
+        //assert_eq!(output[6], input[9]);
+        //assert_eq!(output[7], input[0]);
+        //assert_eq!(output[8], input[1]);
+        //assert_eq!(output[9], input[2]);
+        //assert_eq!(&output[0..5], &input[0..5]);
+        //assert_eq!(&output[5..10], &input[0..5]);
     }
 }
 
