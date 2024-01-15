@@ -368,7 +368,7 @@ impl Channel {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Sampler {
     channels: Vec<Channel>,
 }
