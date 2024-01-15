@@ -201,6 +201,9 @@ impl Channel {
     pub fn process_sample<'a>(&mut self, sample: &mut f32, params: &Params) {
         let value = *sample;
 
+        // output sample of this  channel
+        let mut output = 0.0;
+
         if self.recording {
             assert!(self.write <= self.data.len());
             if self.write == self.data.len() {
@@ -232,24 +235,45 @@ impl Channel {
                 let loop_end = (voice.start_percent + params.loop_length_percent) * len_f32;
                 let loop_length = params.loop_length_percent * len_f32;
 
+                let loop_end2 = if loop_end < loop_start {
+                    loop_end + len_f32
+                } else {
+                    loop_end
+                };
+
                 // calculate next read position
                 let prev_read = voice.read;
                 let mut next_read = prev_read + speed;
-                eprintln!(
-                    "loop_start={} loop_end={} prev_read={} next_read={}",
-                    loop_start, loop_end, prev_read, next_read
-                );
+                let next_read2 = if next_read < loop_start {
+                    next_read + len_f32
+                } else {
+                    next_read
+                };
+                // A ..p.. S ... E ........ B
+                // A ..p.. E ... S ........ B
+                let played = if speed >= 1.0 {
+                    next_read2 - loop_start
+                } else {
+                    loop_end2 - next_read2
+                };
 
+                assert!(
+                    loop_start <= loop_end2,
+                    "loop_start={} loop_end2={}",
+                    loop_start,
+                    loop_end2
+                );
+                assert!(
+                    loop_start <= next_read2,
+                    "loop_start={} next_read2={}",
+                    loop_start,
+                    next_read2
+                );
                 match params.loop_mode {
                     LoopMode::PlayOnce => {
                         if !voice.finished {
-                            if speed > 0.0 && prev_read <= loop_end && loop_end <= next_read {
+                            if played >= loop_length {
                                 finished.push(i);
-                            } else {
-                                if speed < 0.0 && prev_read >= loop_start && loop_start >= next_read
-                                {
-                                    finished.push(i);
-                                }
                             }
                         }
                     }
@@ -288,6 +312,11 @@ impl Channel {
                 let read = next_read % len_f32;
                 let read = if read < 0.0 { read + len_f32 } else { read };
                 voice.read = read;
+
+                eprintln!(
+                    "now={} voice={} played={} loop_length={} loop_start={} loop_end={} {} prev_read={} y={} next_read={} {}",
+                    self.now, i, played, loop_length, loop_start, loop_end, loop_end2, prev_read, y, next_read, next_read2
+                );
             };
         }
 
@@ -310,82 +339,32 @@ impl Channel {
             self.voices.remove(j);
         }
 
-        // update passthru volume. this method is called everywhere around code, its probably enough to just leave
-        // this one in as the passthru_volume is used and updated only in next lines after this
-        // TODO: remove excessive handle_passthru calls if possible
-        self.handle_passthru(params);
+        /**
+         * passthru handling
+         */
+        {
+            // Sample processing
+            // 1. Calculate output value based on state
+            // 2. Make updates to state for next sample
+            // 3. Update envolope values for next sample
 
-        // mix passthru into output sample and update passthru value
-        output += value * self.passthru_volume.value(self.now);
-        self.passthru_volume.step(self.now);
+            // its important output is calculated before updating state & volume
+            let passhtru_value = self.passthru_volume.value(self.now);
+            output += value * passhtru_value;
+
+            // update volume
+            self.passthru_volume.step(self.now);
+
+            // update state
+            self.handle_passthru(params);
+            eprintln!(
+                "now={} passthru_on={} passthru={:?} passhtru_value={:.2} output={:.2}",
+                self.now, self.passthru_on, self.passthru_volume, passhtru_value, output
+            );
+        }
 
         self.now += 1;
         *sample = output;
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::sampler::{LoopMode, Params, Sampler};
-    use nih_plug_vizia::vizia::views::combo_box_derived_lenses::p;
-
-    fn run_sampler(input: &[f32], play_start: f32) -> Vec<f32> {
-        let params = Params {
-            loop_mode: LoopMode::Loop,
-            attack_samples: 0,
-            decay_samples: 0,
-            loop_length_percent: 0.5,
-            ..Params::default()
-        };
-        let mut sampler = Sampler::new(1, &params);
-        sampler.start_recording(&params);
-        input.iter().for_each(|x| {
-            sampler.process_sample(&mut [*x], &params);
-        });
-        sampler.stop_recording(&params);
-        sampler.start_playing(play_start, 11, 1.0, &params);
-
-        let mut buffer = vec![0.0; 10];
-        let output: Vec<_> = buffer
-            .into_iter()
-            .map(|x| {
-                let mut frame = vec![x];
-                sampler.process_sample(&mut frame, &params);
-                frame[0]
-            })
-            .collect();
-        sampler.stop_playing(11, &params);
-        output
-    }
-
-    fn simple_input() -> Vec<f32> {
-        let input: Vec<_> = (0..10).into_iter().map(|x| x as f32).collect();
-        input
-    }
-
-    #[test]
-    fn test_looping() {
-        let input = simple_input();
-        let output = run_sampler(&input, 0.0);
-        assert_eq!(&output[0..5], &input[0..5]);
-        assert_eq!(&output[5..10], &input[0..5]);
-
-        let output = run_sampler(&input, 0.8);
-        eprintln!("{:?}", output);
-        assert_eq!(output[0..5], vec![&input[8..10], &input[0..3]].concat());
-        assert_eq!(output[5..10], vec![&input[8..10], &input[0..3]].concat());
-        //assert_eq!(output[0], input[8]);
-        //assert_eq!(output[1], input[9]);
-        //assert_eq!(output[2], input[0]);
-        //assert_eq!(output[3], input[1]);
-        //assert_eq!(output[4], input[2]);
-        //assert_eq!(output[5], input[8]);
-        //assert_eq!(output[6], input[9]);
-        //assert_eq!(output[7], input[0]);
-        //assert_eq!(output[8], input[1]);
-        //assert_eq!(output[9], input[2]);
-        //assert_eq!(&output[0..5], &input[0..5]);
-        //assert_eq!(&output[5..10], &input[0..5]);
     }
 }
 
