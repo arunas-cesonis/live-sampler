@@ -15,8 +15,20 @@ fn calc_sample_index_f32(len_f32: f32, read: f32) -> f32 {
     i
 }
 
-fn calc_sample_index(data_len: usize, read: f32) -> usize {
-    calc_sample_index_f32(data_len as f32, read) as usize
+/**
+ * calculate sample index from read position and read direction
+ */
+fn calc_sample_index(data_len: usize, read: f32, reverse: bool) -> usize {
+    let index = calc_sample_index_f32(data_len as f32, read) as usize;
+    if reverse {
+        if index > 0 {
+            index - 1
+        } else {
+            data_len - 1
+        }
+    } else {
+        calc_sample_index_f32(data_len as f32, read) as usize
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -218,17 +230,18 @@ impl Channel {
         let mut finished = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
             if !self.data.is_empty() {
+                // calculate playback speed
+                let speed = voice.speed * self.reverse_speed * params.speed * voice.speed_ping_pong;
+
                 // calculate sample position from voice position
-                let sample_pos = calc_sample_index(self.data.len(), voice.read);
+                let read = voice.read;
+                let sample_index = calc_sample_index(self.data.len(), read, speed < 0.0);
 
                 // read sample value
-                let y = self.data[sample_pos];
+                let y = self.data[sample_index];
 
                 // mix sample value into channel output
                 output += y * voice.volume.value(self.now);
-
-                // calculate playback speed
-                let speed = voice.speed * self.reverse_speed * params.speed * voice.speed_ping_pong;
 
                 let len_f32 = self.data.len() as f32;
                 let loop_start = voice.start_percent * len_f32;
@@ -314,8 +327,8 @@ impl Channel {
                 voice.read = read;
 
                 eprintln!(
-                    "now={} voice={} played={} loop_length={} loop_start={} loop_end={} {} prev_read={} y={} next_read={} {}",
-                    self.now, i, played, loop_length, loop_start, loop_end, loop_end2, prev_read, y, next_read, next_read2
+                    "now={} voice={} sample_index={} played={} speed={} loop_length={} loop_start={} loop_end={} {} prev_read={} y={} next_read={} {}",
+                    self.now, i, sample_index, played, speed, loop_length, loop_start, loop_end, loop_end2, prev_read, y, next_read, next_read2
                 );
             };
         }
@@ -357,10 +370,10 @@ impl Channel {
 
             // update state
             self.handle_passthru(params);
-            eprintln!(
-                "now={} passthru_on={} passthru={:?} passhtru_value={:.2} output={:.2}",
-                self.now, self.passthru_on, self.passthru_volume, passhtru_value, output
-            );
+            //eprintln!(
+            //    "now={} passthru_on={} passthru={:?} passhtru_value={:.2} output={:.2}",
+            //    self.now, self.passthru_on, self.passthru_volume, passhtru_value, output
+            //);
         }
 
         self.now += 1;
