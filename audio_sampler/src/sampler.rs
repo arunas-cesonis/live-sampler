@@ -291,12 +291,8 @@ impl Channel {
                     // TODO: ensure next_read is withing loop_start and loop_end like in PingPong?
                     // FIXME: this does not work correctly when loop end is behind loop start, or the waveformview is not displaying it correctly
                     LoopMode::Loop => {
-                        if speed > 0.0 && next_read >= loop_end {
-                            let extra = (next_read - loop_end) % loop_length;
-                            next_read = loop_start + extra;
-                        } else if speed < 0.0 && next_read <= loop_start {
-                            let extra = (loop_start - next_read) % loop_length;
-                            next_read = loop_end - extra;
+                        if played >= loop_length {
+                            next_read = loop_start;
                         }
                     }
                     // TODO: verify math here
@@ -325,6 +321,11 @@ impl Channel {
                 voice.read = read;
 
                 eprintln!("now={} ========================================", self.now);
+                eprintln!("now={} played={}", self.now, played);
+                eprintln!(
+                    "now={} voice.start_percent={}",
+                    self.now, voice.start_percent
+                );
                 eprintln!("now={} loop_length={}", self.now, loop_length);
                 eprintln!(
                     "now={} params.loop_length_percent={}",
