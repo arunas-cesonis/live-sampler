@@ -201,34 +201,129 @@ mod test {
 
     #[test]
     fn test_looping() {
-        let input = simple_input();
         let params = Params {
             loop_mode: LoopMode::Loop,
             attack_samples: 0,
             decay_samples: 0,
-            loop_length_percent: 0.5,
+            loop_length_percent: 1.0,
             ..Params::default()
         };
+        let ten_tens = vec![100.0; 10];
+        let five_tens = vec![100.0; 5];
+        let one_to_ten = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let one_to_five = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let input = vec![one_to_ten.clone(), ten_tens.clone()].concat();
 
-        let output = run_sampler(&input, 0, 0.0, &params);
-        assert_eq!(&output[0..5], &input[0..5]);
-        assert_eq!(&output[5..10], &input[0..5]);
+        // record first 10 smaples, then for 10 samples duration play loop length 100%
+        let mut host = Host::new(Params {
+            loop_length_percent: 10.0,
+            ..params.clone()
+        });
+        host.schedule(0, Cmd::StartRecording);
+        host.schedule(10, Cmd::StopRecording);
+        host.schedule(10, Cmd::StartPlaying { pos: 0.0 });
+        let output = host.run_input(input.clone());
+        assert_eq!(
+            output,
+            vec![one_to_ten.clone(), one_to_ten.clone()].concat()
+        );
 
-        let output = run_sampler(&input, 0, 0.8, &params);
+        // record first 10 smaples, then for 10 samples duration play loop length 50%
+        let mut host = Host::new(Params {
+            loop_length_percent: 0.5,
+            ..params.clone()
+        });
+        host.schedule(0, Cmd::StartRecording);
+        host.schedule(10, Cmd::StopRecording);
+        host.schedule(10, Cmd::StartPlaying { pos: 0.0 });
+        let output = host.run_input(input.clone());
+        assert_eq!(
+            output,
+            vec![one_to_ten.clone(), one_to_five.clone(), one_to_five.clone()].concat()
+        );
+
+        return;
+        // record first 10 smaples, then PlayOnce with loop length 50%
+        let mut host = Host::new(Params {
+            loop_length_percent: 0.5,
+            ..params.clone()
+        });
+        host.schedule(0, Cmd::StartRecording);
+        host.schedule(10, Cmd::StopRecording);
+        host.schedule(10, Cmd::StartPlaying { pos: 0.0 });
+        let output = host.run_input(input.clone());
+        assert_eq!(
+            output,
+            vec![one_to_ten.clone(), one_to_five.clone(), five_tens.clone()].concat()
+        );
+
+        // record first 10 smaples, then PlayOnce with loop length 100%
+        let mut host = Host::new(Params {
+            loop_length_percent: 1.0,
+            ..params.clone()
+        });
+        host.schedule(0, Cmd::StartRecording);
+        host.schedule(10, Cmd::StopRecording);
+        host.schedule(10, Cmd::StartPlaying { pos: 0.0 });
+        let output = host.run_input(input.clone());
+        assert_eq!(
+            output,
+            vec![one_to_ten.clone(), one_to_ten.clone()].concat()
+        );
+
+        // record first 10 smaples, then wait for 2 samples and PlayOnce with loop length 50%
+        let mut host = Host::new(Params {
+            loop_length_percent: 0.5,
+            ..params.clone()
+        });
+        host.schedule(0, Cmd::StartRecording);
+        host.schedule(10, Cmd::StopRecording);
+        host.schedule(12, Cmd::StartPlaying { pos: 0.0 });
+        let output = host.run_input(input.clone());
+        assert_eq!(
+            output,
+            vec![
+                one_to_ten.clone(),
+                vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 100.0, 100.0, 100.0]
+            ]
+            .concat()
+        );
+
+        // record first 10 smaples, then wait for 2 samples and PlayOnce with loop length 100%
+        let mut host = Host::new(Params {
+            loop_length_percent: 1.0,
+            ..params.clone()
+        });
+        host.schedule(0, Cmd::StartRecording);
+        host.schedule(10, Cmd::StopRecording);
+        host.schedule(12, Cmd::StartPlaying { pos: 0.0 });
+        let tmp = host.clone();
+        let output = host.run_input(vec![input.clone(), ten_tens.clone()].concat());
+        assert_eq!(
+            output,
+            vec![
+                one_to_ten.clone(),
+                vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+                vec![9.0, 10.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+            ]
+            .concat()
+        );
+
+        // same as above, but backwards
+        let mut host = tmp;
+        host.params.speed = -1.0;
+        let output = host.run_input(vec![input.clone(), ten_tens.clone()].concat());
+        assert_eq!(
+            output,
+            vec![
+                one_to_ten.clone(),
+                vec![100.0, 100.0, 10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0],
+                vec![2.0, 1.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+            ]
+            .concat()
+        );
+
+        eprintln!("{:?}", host.sampler);
         eprintln!("{:?}", output);
-        assert_eq!(output[0..5], vec![&input[8..10], &input[0..3]].concat());
-        assert_eq!(output[5..10], vec![&input[8..10], &input[0..3]].concat());
-        //assert_eq!(output[0], input[8]);
-        //assert_eq!(output[1], input[9]);
-        //assert_eq!(output[2], input[0]);
-        //assert_eq!(output[3], input[1]);
-        //assert_eq!(output[4], input[2]);
-        //assert_eq!(output[5], input[8]);
-        //assert_eq!(output[6], input[9]);
-        //assert_eq!(output[7], input[0]);
-        //assert_eq!(output[8], input[1]);
-        //assert_eq!(output[9], input[2]);
-        //assert_eq!(&output[0..5], &input[0..5]);
-        //assert_eq!(&output[5..10], &input[0..5]);
     }
 }
