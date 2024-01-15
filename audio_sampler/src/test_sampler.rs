@@ -242,88 +242,29 @@ mod test {
             vec![one_to_ten.clone(), one_to_five.clone(), one_to_five.clone()].concat()
         );
 
-        return;
-        // record first 10 smaples, then PlayOnce with loop length 50%
+        // ** BROKEN ** //
+        // ** BROKEN ** //
+        // ** BROKEN ** //
+        // ** BROKEN ** //
+        panic!("BROKEN, PLESAE FIX");
+
+        // record first 10 smaples, wait 2 samples and then for 8 samples duration play loop length 50% from 20%
         let mut host = Host::new(Params {
             loop_length_percent: 0.5,
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
-        host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying { pos: 0.0 });
-        let output = host.run_input(input.clone());
-        assert_eq!(
-            output,
-            vec![one_to_ten.clone(), one_to_five.clone(), five_tens.clone()].concat()
-        );
-
-        // record first 10 smaples, then PlayOnce with loop length 100%
-        let mut host = Host::new(Params {
-            loop_length_percent: 1.0,
-            ..params.clone()
-        });
-        host.schedule(0, Cmd::StartRecording);
-        host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying { pos: 0.0 });
-        let output = host.run_input(input.clone());
-        assert_eq!(
-            output,
-            vec![one_to_ten.clone(), one_to_ten.clone()].concat()
-        );
-
-        // record first 10 smaples, then wait for 2 samples and PlayOnce with loop length 50%
-        let mut host = Host::new(Params {
-            loop_length_percent: 0.5,
-            ..params.clone()
-        });
-        host.schedule(0, Cmd::StartRecording);
-        host.schedule(10, Cmd::StopRecording);
-        host.schedule(12, Cmd::StartPlaying { pos: 0.0 });
+        host.schedule(12, Cmd::StopRecording);
+        host.schedule(12, Cmd::StartPlaying { pos: 0.20 });
         let output = host.run_input(input.clone());
         assert_eq!(
             output,
             vec![
                 one_to_ten.clone(),
-                vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 100.0, 100.0, 100.0]
+                vec![100.0, 100.0],
+                vec![3.0, 4.0, 5.0, 6.0, 7.0, 3.0, 4.0, 5.0],
             ]
             .concat()
         );
-
-        // record first 10 smaples, then wait for 2 samples and PlayOnce with loop length 100%
-        let mut host = Host::new(Params {
-            loop_length_percent: 1.0,
-            ..params.clone()
-        });
-        host.schedule(0, Cmd::StartRecording);
-        host.schedule(10, Cmd::StopRecording);
-        host.schedule(12, Cmd::StartPlaying { pos: 0.0 });
-        let tmp = host.clone();
-        let output = host.run_input(vec![input.clone(), ten_tens.clone()].concat());
-        assert_eq!(
-            output,
-            vec![
-                one_to_ten.clone(),
-                vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-                vec![9.0, 10.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
-            ]
-            .concat()
-        );
-
-        // same as above, but backwards
-        let mut host = tmp;
-        host.params.speed = -1.0;
-        let output = host.run_input(vec![input.clone(), ten_tens.clone()].concat());
-        assert_eq!(
-            output,
-            vec![
-                one_to_ten.clone(),
-                vec![100.0, 100.0, 10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0],
-                vec![2.0, 1.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
-            ]
-            .concat()
-        );
-
-        eprintln!("{:?}", host.sampler);
-        eprintln!("{:?}", output);
     }
 }
