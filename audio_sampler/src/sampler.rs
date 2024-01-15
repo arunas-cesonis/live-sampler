@@ -233,7 +233,7 @@ impl Channel {
                 // calculate playback speed
                 let speed = voice.speed * self.reverse_speed * params.speed * voice.speed_ping_pong;
 
-                // calculate sample position from voice position
+                // calculate sample index from read position and read direction
                 let read = voice.read;
                 let sample_index = calc_sample_index(self.data.len(), read, speed < 0.0);
 
@@ -262,8 +262,6 @@ impl Channel {
                 } else {
                     next_read
                 };
-                // A ..p.. S ... E ........ B
-                // A ..p.. E ... S ........ B
                 let played = if speed >= 1.0 {
                     next_read2 - loop_start
                 } else {
