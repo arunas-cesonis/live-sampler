@@ -216,7 +216,7 @@ mod test {
 
         // record first 10 smaples, then for 10 samples duration play loop length 100%
         let mut host = Host::new(Params {
-            loop_length_percent: 10.0,
+            loop_length_percent: 1.0,
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
@@ -242,19 +242,13 @@ mod test {
             vec![one_to_ten.clone(), one_to_five.clone(), one_to_five.clone()].concat()
         );
 
-        // ** BROKEN ** //
-        // ** BROKEN ** //
-        // ** BROKEN ** //
-        // ** BROKEN ** //
-        panic!("BROKEN, PLESAE FIX");
-
         // record first 10 smaples, wait 2 samples and then for 8 samples duration play loop length 50% from 20%
         let mut host = Host::new(Params {
             loop_length_percent: 0.5,
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
-        host.schedule(12, Cmd::StopRecording);
+        host.schedule(10, Cmd::StopRecording);
         host.schedule(12, Cmd::StartPlaying { pos: 0.20 });
         let output = host.run_input(input.clone());
         assert_eq!(

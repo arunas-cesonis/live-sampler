@@ -324,10 +324,13 @@ impl Channel {
                 let read = if read < 0.0 { read + len_f32 } else { read };
                 voice.read = read;
 
+                eprintln!("now={} ========================================", self.now);
+                eprintln!("now={} loop_length={}", self.now, loop_length);
                 eprintln!(
-                    "now={} voice={} sample_index={} played={} speed={} loop_length={} loop_start={} loop_end={} {} prev_read={} y={} next_read={} {}",
-                    self.now, i, sample_index, played, speed, loop_length, loop_start, loop_end, loop_end2, prev_read, y, next_read, next_read2
+                    "now={} params.loop_length_percent={}",
+                    self.now, params.loop_length_percent
                 );
+                eprintln!("now={} len_f32={}", self.now, len_f32);
             };
         }
 
