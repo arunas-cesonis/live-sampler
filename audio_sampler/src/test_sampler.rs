@@ -260,5 +260,24 @@ mod test {
             ]
             .concat()
         );
+
+        // record first 10 smaples, then play loop length 50% from 80%
+        let mut host = Host::new(Params {
+            loop_length_percent: 0.5,
+            ..params.clone()
+        });
+        host.schedule(0, Cmd::StartRecording);
+        host.schedule(10, Cmd::StopRecording);
+        host.schedule(10, Cmd::StartPlaying { pos: 0.80 });
+        let output = host.run_input(input.clone());
+        assert_eq!(
+            output,
+            vec![
+                one_to_ten.clone(),
+                vec![9.0, 10.0, 1.0, 2.0, 3.0],
+                vec![9.0, 10.0, 1.0, 2.0, 3.0],
+            ]
+            .concat()
+        );
     }
 }
