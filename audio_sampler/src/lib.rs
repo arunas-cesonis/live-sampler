@@ -16,6 +16,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 // mod editor;
 mod editor_vizia;
 mod sampler;
+mod test_sampler;
 mod volume;
 
 type SysEx = ();
