@@ -35,6 +35,7 @@ fn calc_sample_index(data_len: usize, read: f32, reverse: bool) -> usize {
 struct Voice {
     note: u8,
     read: f32,
+    played: f32,
     volume: Volume,
     start_percent: f32,
     speed: f32,
@@ -134,6 +135,7 @@ impl Channel {
             note,
             read,
             start_percent: pos,
+            played: 0.0,
             volume: Volume::new(0.0),
             speed: 1.0,
             speed_ping_pong: 1.0,
@@ -210,11 +212,18 @@ impl Channel {
         }
     }
 
+    fn record_sample(&mut self, value: f32) {
+        assert!(self.recording && self.write <= self.data.len());
+        if self.write == self.data.len() {
+            self.data.push(value);
+        } else {
+            self.data[self.write] = value;
+        }
+        self.write += 1;
+    }
+
     pub fn process_sample<'a>(&mut self, sample: &mut f32, params: &Params) {
         let value = *sample;
-
-        // output sample of this  channel
-        let mut output = 0.0;
 
         if self.recording {
             assert!(self.write <= self.data.len());
@@ -227,111 +236,64 @@ impl Channel {
         }
 
         let mut output = 0.0;
-        let mut finished = vec![];
+        let mut finished: Vec<usize> = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
             if !self.data.is_empty() {
+                let len_f32 = self.data.len() as f32;
+                let loop_start = voice.start_percent * len_f32;
+                let loop_end = ((voice.start_percent + params.loop_length_percent) % 1.0) * len_f32;
+                let loop_length = params.loop_length_percent * len_f32;
                 // calculate playback speed
                 let speed = voice.speed * self.reverse_speed * params.speed * voice.speed_ping_pong;
 
                 // calculate sample index from read position and read direction
-                let read = voice.read;
-                let sample_index = calc_sample_index(self.data.len(), read, speed < 0.0);
-
-                // read sample value
-                let y = self.data[sample_index];
-
-                // mix sample value into channel output
-                output += y * voice.volume.value(self.now);
-
-                let len_f32 = self.data.len() as f32;
-                let loop_start = voice.start_percent * len_f32;
-                let loop_end = (voice.start_percent + params.loop_length_percent) * len_f32;
-                let loop_length = params.loop_length_percent * len_f32;
-
-                let loop_end2 = if loop_end < loop_start {
-                    loop_end + len_f32
+                let index = voice.read.floor() as usize;
+                let index = if speed < 0.0 {
+                    if index == 0 {
+                        self.data.len() - 1
+                    } else {
+                        index - 1
+                    }
                 } else {
-                    loop_end
+                    index
                 };
-
-                // calculate next read position
-                let prev_read = voice.read;
-                let mut next_read = prev_read + speed;
-                let next_read2 = if next_read < loop_start {
-                    next_read + len_f32
-                } else {
-                    next_read
-                };
-                let played = if speed >= 1.0 {
-                    next_read2 - loop_start
-                } else {
-                    loop_end2 - next_read2
-                };
-
-                assert!(
-                    loop_start <= loop_end2,
-                    "loop_start={} loop_end2={}",
-                    loop_start,
-                    loop_end2
+                let value = self.data[index];
+                output += value * voice.volume.value(self.now);
+                let read = (voice.read + speed) % len_f32;
+                let mut read = if read < 0.0 { read + len_f32 } else { read };
+                eprintln!(
+                    "mode={:?} s={} e={} len={} next={} voice.played={}",
+                    params.loop_mode, loop_start, loop_end, loop_length, read, voice.played
                 );
-                assert!(
-                    loop_start <= next_read2,
-                    "loop_start={} next_read2={}",
-                    loop_start,
-                    next_read2
-                );
+                let mut played = voice.played + speed;
                 match params.loop_mode {
                     LoopMode::PlayOnce => {
                         if !voice.finished {
-                            if played >= loop_length {
+                            if played.abs() >= loop_length {
+                                eprintln!("FINSHED");
                                 finished.push(i);
                             }
                         }
                     }
-                    // TODO: ensure next_read is withing loop_start and loop_end like in PingPong?
-                    // FIXME: this does not work correctly when loop end is behind loop start, or the waveformview is not displaying it correctly
                     LoopMode::Loop => {
-                        if played >= loop_length {
-                            next_read = loop_start;
+                        if played.abs() >= loop_length {
+                            let overrun = played.abs() % loop_length;
+                            if speed > 0.0 {
+                                played = overrun;
+                                read = (loop_start + overrun) % len_f32;
+                            } else {
+                                played = -overrun;
+                                read = loop_end - overrun;
+                                if read < 0.0 {
+                                    read += len_f32;
+                                }
+                            }
                         }
                     }
-                    // TODO: verify math here
-                    LoopMode::PingPong => {
-                        if speed > 0.0 && next_read > loop_end {
-                            let extra = (next_read - loop_end) % loop_length;
-                            next_read = loop_end - extra;
-                            if next_read < loop_start {
-                                next_read = loop_start
-                            }
-                            voice.speed_ping_pong *= -1.0;
-                        } else if speed < 0.0 && next_read < loop_start {
-                            let extra = (loop_start - next_read) % loop_length;
-                            next_read = loop_start + extra;
-                            if next_read > loop_end {
-                                next_read = loop_end
-                            }
-                            voice.speed_ping_pong *= -1.0;
-                        }
-                    }
+                    _ => (),
                 };
-
-                // update read position in voice wrapping it around buffer boundaries
-                let read = next_read % len_f32;
-                let read = if read < 0.0 { read + len_f32 } else { read };
+                voice.played = played;
                 voice.read = read;
-
-                eprintln!("now={} ========================================", self.now);
-                eprintln!("now={} played={}", self.now, played);
-                eprintln!(
-                    "now={} voice.start_percent={}",
-                    self.now, voice.start_percent
-                );
-                eprintln!("now={} loop_length={}", self.now, loop_length);
-                eprintln!(
-                    "now={} params.loop_length_percent={}",
-                    self.now, params.loop_length_percent
-                );
-                eprintln!("now={} len_f32={}", self.now, len_f32);
             };
         }
 
