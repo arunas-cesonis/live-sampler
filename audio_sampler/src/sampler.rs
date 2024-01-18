@@ -32,8 +32,7 @@ fn calc_sample_index(data_len: usize, read: f32, reverse: bool) -> usize {
 #[derive(Clone, Debug, Default)]
 struct Voice {
     note: u8,
-    read: f32,
-    played: f32,
+    played_samples: f32,
     volume: Volume,
     start_percent: f32,
     speed: f32,
@@ -128,12 +127,10 @@ impl Channel {
 
     pub fn start_playing(&mut self, pos: f32, note: u8, velocity: f32, params: &Params) {
         assert!(pos >= 0.0 && pos <= 1.0);
-        let read = (pos * self.data.len() as f32).round();
         let mut voice = Voice {
             note,
-            read,
             start_percent: pos,
-            played: 0.0,
+            played_samples: 0.0,
             volume: Volume::new(0.0),
             speed: 1.0,
             speed_ping_pong: 1.0,
@@ -264,23 +261,15 @@ impl Channel {
                 }
 
                 let played = if speed < 0.0 {
-                    voice.played - 1.0
+                    voice.played_samples - 1.0
                 } else {
-                    voice.played
+                    voice.played_samples
                 };
                 let offset = view.project(played)[0];
                 let index = (offset.round() as usize) % self.data.len();
                 let value = self.data[index];
                 output += value * voice.volume.value(self.now);
-
-                // eprintln!("now={} offset={:#?}", self.now, offset);
-                // eprintln!("now={} index={:#?}", self.now, index);
-                // eprintln!("now={} value={:#?}", self.now, value);
-                // eprintln!("now={} played={:#?}", self.now, played);
-                // eprintln!("now={} view={:#?}", self.now, view);
-
-                let played = voice.played + speed;
-                let read = voice.read + speed;
+                let played = voice.played_samples + speed;
 
                 match params.loop_mode {
                     LoopMode::PlayOnce => {
@@ -292,60 +281,8 @@ impl Channel {
                     }
                     _ => (),
                 };
-                voice.played = played;
-                voice.read = read;
 
-                //let value = self.data[index];
-                //output += value * voice.volume.value(self.now);
-
-                // calculate sample index from read position and read direction
-                //let index = voice.read.floor() as usize;
-                //let index = if speed < 0.0 {
-                //    if index == 0 {
-                //        self.data.len() - 1
-                //    } else {
-                //        index - 1
-                //    }
-                //} else {
-                //    index
-                //};
-                //let value = self.data[index];
-                //output += value * voice.volume.value(self.now);
-                //let read = (voice.read + speed) % len_f32;
-                //let mut read = if read < 0.0 { read + len_f32 } else { read };
-                //eprintln!(
-                //    "mode={:?} s={} e={} len={} next={} voice.played={}",
-                //    params.loop_mode, loop_start, loop_end, loop_length, read, voice.played
-                //);
-                //let mut played = voice.played + speed;
-                //match params.loop_mode {
-                //    LoopMode::PlayOnce => {
-                //        if !voice.finished {
-                //            if played.abs() >= loop_length {
-                //                eprintln!("FINSHED");
-                //                finished.push(i);
-                //            }
-                //        }
-                //    }
-                //    LoopMode::Loop => {
-                //        if played.abs() >= loop_length {
-                //            let overrun = played.abs() % loop_length;
-                //            if speed > 0.0 {
-                //                played = overrun;
-                //                read = (loop_start + overrun) % len_f32;
-                //            } else {
-                //                played = -overrun;
-                //                read = loop_end - overrun;
-                //                if read < 0.0 {
-                //                    read += len_f32;
-                //                }
-                //            }
-                //        }
-                //    }
-                //    _ => (),
-                //};
-                //voice.played = played;
-                //voice.read = read;
+                voice.played_samples = played;
             };
         }
 
@@ -462,7 +399,8 @@ impl Sampler {
                 .map(|v| {
                     let start = v.start_percent;
                     let end = (v.start_percent + params.loop_length_percent) % 1.0;
-                    let pos = calc_sample_index_f32(data_len_f32, v.read) / data_len_f32;
+                    let pos = (v.start_percent * data_len_f32 + v.played_samples) % data_len_f32;
+                    let pos = if pos < 0.0 { pos + data_len_f32 } else { pos };
                     VoiceInfo { start, end, pos }
                 })
                 .collect(),
