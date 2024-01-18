@@ -1,4 +1,4 @@
-use std::char::decode_utf16;
+
 
 #[derive(Clone, Debug)]
 struct Clip {
@@ -32,7 +32,7 @@ impl Clips {
     fn advance(&mut self, amount: f32) {
         let mut remaining = amount;
         while remaining < 0.0 {
-            let mut clip = &mut self.clips[self.current];
+            let clip = &mut self.clips[self.current];
             if clip.clean {
                 assert_eq!(clip.read, 0.0);
                 clip.clean = false;
@@ -67,7 +67,7 @@ impl Clips {
             }
         }
         while remaining > 0.0 {
-            let mut clip = &mut self.clips[self.current];
+            let clip = &mut self.clips[self.current];
             let clip_remaining = clip.duration - clip.read;
             if clip_remaining > remaining {
                 clip.read += remaining;

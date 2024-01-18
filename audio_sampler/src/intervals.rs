@@ -275,7 +275,7 @@ mod test {
 
         let mut pos = 0.0;
         let mut out = vec![];
-        while (pos < view.duration()) {
+        while pos < view.duration() {
             let value = view.project(pos, 100.0);
             assert!(value.len() <= 1);
             out.push(value[0]);
@@ -308,7 +308,7 @@ mod test {
         //assert_eq!(view.unproject(25.0 - 100.0, 100.0), vec![15.0]);
         let mut pos = 0.0;
         let mut out = vec![];
-        while (pos < view.duration()) {
+        while pos < view.duration() {
             let value = view.project(pos, 100.0);
             assert!(value.len() <= 1);
             out.push(value[0]);
@@ -341,7 +341,7 @@ mod test {
 
         let mut pos = 0;
         let mut out = vec![];
-        while (pos < view.duration()) {
+        while pos < view.duration() {
             let value = view.project(pos);
             assert!(value.len() <= 1);
             out.push(value[0]);
@@ -371,7 +371,7 @@ mod test {
         //assert_eq!(view.unproject(250 - 1000, 1000), vec![150]);
         let mut pos = 0;
         let mut out = vec![];
-        while (pos < view.duration()) {
+        while pos < view.duration() {
             let value = view.project(pos);
             assert!(value.len() <= 1);
             out.push(value[0]);
