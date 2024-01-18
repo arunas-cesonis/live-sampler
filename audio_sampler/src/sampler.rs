@@ -1,12 +1,12 @@
-use crossbeam_queue::ArrayQueue;
-use std::fmt::Debug;
-use std::sync::Arc;
 
-use crate::intervals::{GIntervals2, Intervals2};
-use log::log;
+use std::fmt::Debug;
+
+
+use crate::intervals::{GIntervals2};
+
 use nih_plug::nih_warn;
 use nih_plug::prelude::Enum;
-use nih_plug_vizia::vizia::image::flat::View;
+
 
 use crate::volume::Volume;
 
@@ -277,8 +277,8 @@ impl Channel {
                 eprintln!("offset={:#?}", offset);
                 let value = self.data[index];
                 output += value * voice.volume.value(self.now);
-                let mut played = voice.played + speed;
-                let mut read = voice.read + speed;
+                let played = voice.played + speed;
+                let read = voice.read + speed;
                 match params.loop_mode {
                     LoopMode::PlayOnce => {
                         if !voice.finished {
@@ -446,7 +446,7 @@ impl Sampler {
         }
     }
 
-    pub fn process_frame<'a>(&mut self, mut frame: &mut [&'a mut f32], params: &Params) {
+    pub fn process_frame<'a>(&mut self, frame: &mut [&'a mut f32], params: &Params) {
         for j in 0..frame.len() {
             self.channels[j].process_sample(frame[j], params);
         }

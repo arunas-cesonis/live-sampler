@@ -1,21 +1,21 @@
 use atomic_float::AtomicF32;
 use crossbeam_queue::ArrayQueue;
-use nih_plug::nih_warn;
-use nih_plug::prelude::{util, Editor};
-use nih_plug_vizia::vizia::image::DynamicImage::ImageRgb8;
-use nih_plug_vizia::vizia::image::{DynamicImage, ImageBuffer};
-use nih_plug_vizia::vizia::prelude::Role::Image;
+
+use nih_plug::prelude::{Editor};
+
+
+
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
-use nih_plug_vizia::vizia::vg::imgref::{Img, ImgVec};
-use nih_plug_vizia::vizia::vg::rgb::{RGB, RGB8, RGBA8};
-use nih_plug_vizia::vizia::vg::{ImageFlags, ImageId, ImageSource, Paint, Path, PixelFormat};
+use nih_plug_vizia::vizia::vg::imgref::{Img};
+use nih_plug_vizia::vizia::vg::rgb::{RGBA8};
+use nih_plug_vizia::vizia::vg::{ImageFlags, ImageSource, Paint, Path, PixelFormat};
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 use std::cell::Cell;
-use std::sync::atomic::Ordering;
+
 use std::sync::Arc;
-use std::time::Duration;
+
 
 use crate::sampler::Info;
 use crate::AudioSamplerParams;
@@ -53,7 +53,7 @@ impl WaveformView {
     // TODO: check on linux, try loading image file, also check how Vizia renders fonts
     // - macOS; displays black rectangle with above message
     // - windows; displays black rectangle, not sure if message is printed
-    fn draw_image(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw_image(&self, _cx: &mut DrawContext, canvas: &mut Canvas) {
         let w = 50;
         let h = 20;
         let image_id = canvas
