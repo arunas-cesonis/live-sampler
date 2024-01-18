@@ -2,25 +2,14 @@ use std::fmt::Display;
 use std::ops::{Add, Rem};
 
 #[derive(Debug, Clone)]
-struct Interval {
-    start: f32,
-    end: f32,
-}
-
-#[derive(Debug, Clone)]
-struct GInterval<T> {
+struct Interval<T> {
     start: T,
     end: T,
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct GIntervals2<T> {
-    intervals: Vec<GInterval<T>>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Intervals2 {
-    intervals: Vec<Interval>,
+pub struct Intervals<T> {
+    intervals: Vec<Interval<T>>,
 }
 
 trait Zero {
@@ -66,7 +55,7 @@ pub fn wrap_to_positive_offset(x: f32, data_len: f32) -> f32 {
     }
 }
 
-impl<T> GIntervals2<T>
+impl<T> Intervals<T>
 where
     T: std::ops::Rem<Output = T>
         + Zero
@@ -82,7 +71,7 @@ where
         assert!(start < end, "start = {}, end = {}", start, end);
         assert!(T::zero() <= start, "start = {}", start);
         assert!(T::zero() <= end, "end = {}", end);
-        self.intervals.push(GInterval { start, end });
+        self.intervals.push(Interval { start, end });
     }
 
     pub fn duration(&self) -> T {
@@ -131,208 +120,13 @@ where
     }
 }
 
-impl Intervals2 {
-    pub fn push(&mut self, start: f32, end: f32) {
-        assert!(start < end, "start = {}, end = {}", start, end);
-        assert!(0.0 <= start, "start = {}", start);
-        assert!(0.0 <= end, "end = {}", end);
-        self.intervals.push(Interval { start, end });
-    }
-
-    pub fn duration(&self) -> f32 {
-        self.intervals.iter().map(|x| x.end - x.start).sum()
-    }
-
-    pub fn project(&self, x: f32, data_len: f32) -> Vec<f32> {
-        let x = wrap_to_positive_offset(x, self.duration());
-        let mut result = vec![];
-        let mut offset = 0.0;
-        for interval in &self.intervals {
-            let s = interval.start;
-            let e = interval.end;
-            let d = e - s;
-            if x >= offset && x < offset + d {
-                eprintln!(
-                    "project duration={} x={} d={} s={} offset={} result={}",
-                    self.duration(),
-                    x,
-                    d,
-                    s,
-                    offset,
-                    s + x - offset
-                );
-                // FIXME: this code fails due to floating point errors: x is 1.9999995 and is less that offset + d = 2.0 however,
-                // subtracting offset and adding to start makes it go above end
-                result.push((s + x - offset) % data_len);
-            }
-            offset += d;
-        }
-        result
-    }
-
-    pub fn unproject(&self, x: f32, data_len: f32) -> Vec<f32> {
-        let x = wrap_to_positive_offset(x, data_len);
-        let mut result = vec![];
-        let mut offset = 0.0;
-        for interval in &self.intervals {
-            let s = interval.start;
-            let e = interval.end;
-            if x >= s && x < e {
-                result.push(x - s + offset);
-            }
-            offset += e - s;
-        }
-        result
-    }
-}
-
-// #[derive(Debug, Clone)]
-// pub struct Intervals {
-//     intervals: Vec<Interval>,
-//     data_len: f32,
-// }
-//
-// impl Intervals {
-//     pub fn new(data_len: f32) -> Self {
-//         Self {
-//             intervals: vec![],
-//             data_len,
-//         }
-//     }
-//
-//     pub fn push(&mut self, start: f32, end: f32) {
-//         assert!(start < end);
-//         assert!(end <= self.data_len);
-//         self.intervals
-//             .last()
-//             .iter()
-//             .for_each(|x| assert!(x.end <= start));
-//         self.intervals.push(Interval { start, end });
-//     }
-//
-//     pub fn intervals_len(&self) -> f32 {
-//         self.intervals.iter().map(|x| x.end - x.start).sum()
-//     }
-//
-//     pub fn data_len(&self) -> f32 {
-//         self.data_len
-//     }
-//
-//     pub fn unproject(&self, x: f32) -> Option<f32> {
-//         let x = x % self.data_len;
-//         let x = if x < 0.0 { x + self.data_len } else { x };
-//         let mut offset = 0.0;
-//         let mut i = 0;
-//         while i < self.intervals.len() {
-//             let s = self.intervals[i].start;
-//             let e = self.intervals[i].end;
-//             if x >= s && x < e {
-//                 return Some(offset + x - s);
-//             }
-//             if x < s {
-//                 return None;
-//             }
-//             offset += e - s;
-//             i += 1;
-//         }
-//         None
-//     }
-//
-//     pub fn project(&self, x: f32) -> f32 {
-//         let length = self.intervals_len();
-//         let x = x % length;
-//         let x = if x < 0.0 { x + length } else { x };
-//         let mut offset = 0.0;
-//         let mut i = 0;
-//         while i < self.intervals.len() {
-//             let s = self.intervals[i].start;
-//             let e = self.intervals[i].end;
-//             let d = e - s;
-//             if x >= offset && x < offset + d {
-//                 return s + (x - offset);
-//             }
-//             offset += d;
-//             i += 1;
-//         }
-//         panic!(
-//             "reached unreachable x= {}, offset = {}, length = {}",
-//             x, offset, length
-//         );
-//     }
-// }
-
 #[cfg(test)]
 mod test {
     use super::*;
     #[test]
-    fn test_intervals2() {
-        let mut view = Intervals2::default();
-        view.push(0.0, 10.0);
-        view.push(20.0, 30.0);
-        view.push(40.0, 50.0);
-        assert_eq!(view.unproject(5.0, 100.0), vec![5.0]);
-        assert_eq!(view.unproject(25.0, 100.0), vec![15.0]);
-        assert_eq!(view.unproject(21.0, 100.0), vec![11.0]);
-        assert_eq!(view.unproject(10.0, 100.0), Vec::<f32>::new());
-
-        assert_eq!(vec![5.0], view.project(5.0, 100.0));
-        assert_eq!(vec![20.0], view.project(10.0, 100.0));
-        assert_eq!(vec![21.0], view.project(11.0, 100.0));
-        assert_eq!(vec![25.0], view.project(15.0, 100.0));
-
-        let mut pos = 0.0;
-        let mut out = vec![];
-        while pos < view.duration() {
-            let value = view.project(pos, 100.0);
-            assert!(value.len() <= 1);
-            out.push(value[0]);
-            pos += 1.0;
-        }
-        let expected: Vec<_> = vec![
-            (0..10).collect::<Vec<_>>(),
-            (20..30).collect::<Vec<_>>(),
-            (40..50).collect::<Vec<_>>(),
-        ]
-        .concat()
-        .into_iter()
-        .map(|x| x as f32)
-        .collect();
-        assert_eq!(expected, out);
-
-        let mut view = Intervals2::default();
-        view.push(10.0, 50.0);
-
-        assert_eq!(view.unproject(25.0, 100.0), vec![15.0]);
-        assert_eq!(view.unproject(25.0 + 100.0, 100.0), vec![15.0]);
-        assert_eq!(view.unproject(25.0 - 100.0, 100.0), vec![15.0]);
-
-        let mut view = Intervals2::default();
-        view.push(40.0, 50.0);
-        view.push(10.0, 20.0);
-
-        //assert_eq!(view.unproject(25.0, 100.0), vec![15.0]);
-        //assert_eq!(view.unproject(25.0 + 100.0, 100.0), vec![15.0]);
-        //assert_eq!(view.unproject(25.0 - 100.0, 100.0), vec![15.0]);
-        let mut pos = 0.0;
-        let mut out = vec![];
-        while pos < view.duration() {
-            let value = view.project(pos, 100.0);
-            assert!(value.len() <= 1);
-            out.push(value[0]);
-            pos += 1.0;
-        }
-        let expected: Vec<_> = vec![(40..50).collect::<Vec<_>>(), (10..20).collect::<Vec<_>>()]
-            .concat()
-            .into_iter()
-            .map(|x| x as f32)
-            .collect();
-        assert_eq!(expected, out);
-        eprintln!("{:?}", view);
-    }
-
     #[test]
     fn test_fp_error() {
-        let mut view = GIntervals2::<i32>::default();
+        let mut view = Intervals::<i32>::default();
         view.push(8, 10);
         view.push(0, 3);
         let mut x: i32 = 0;
@@ -344,7 +138,7 @@ mod test {
             x -= 1;
         }
         eprintln!("");
-        let mut view = GIntervals2::<f32>::default();
+        let mut view = Intervals::<f32>::default();
         view.push(8.0, 10.0);
         view.push(0.0, 2.9999995);
         let mut x: f32 = 0.0;
@@ -359,7 +153,7 @@ mod test {
 
     #[test]
     fn test_g_intervals2() {
-        let mut view = GIntervals2::<i64>::default();
+        let mut view = Intervals::<i64>::default();
         view.push(0, 10);
         view.push(20, 30);
         view.push(40, 50);
@@ -389,14 +183,14 @@ mod test {
         .concat();
         assert_eq!(expected, out);
 
-        let mut view = GIntervals2::<i64>::default();
+        let mut view = Intervals::<i64>::default();
         view.push(10, 50);
 
         assert_eq!(view.unproject(25, 100), vec![15]);
         assert_eq!(view.unproject(25 + 100, 100), vec![15]);
         assert_eq!(view.unproject(25 - 100, 100), vec![15]);
 
-        let mut view = GIntervals2::<i64>::default();
+        let mut view = Intervals::<i64>::default();
         view.push(40, 50);
         view.push(10, 20);
 
