@@ -55,7 +55,6 @@ struct Channel {
 #[derive(Debug, Enum, PartialEq, Clone)]
 pub enum LoopMode {
     PlayOnce,
-    PingPong,
     Loop,
 }
 
