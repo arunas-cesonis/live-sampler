@@ -1,5 +1,5 @@
 use atomic_float::AtomicF32;
-use crossbeam_queue::ArrayQueue;
+use crossbeam_queue::{ArrayQueue, SegQueue};
 
 use nih_plug::prelude::Editor;
 
@@ -21,13 +21,18 @@ use crate::AudioSamplerParams;
 struct Data {
     params: Arc<AudioSamplerParams>,
     peak_meter: Arc<AtomicF32>,
+    debug: Arc<parking_lot::Mutex<String>>,
 }
 
-impl Model for Data {}
+impl Model for Data {
+    //fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+    //    todo!()
+    //}
+}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (640, 370))
+    ViziaState::new(|| (640 + 320, 370))
 }
 
 struct WaveformView {
@@ -151,6 +156,7 @@ pub(crate) fn create(
     peak_meter: Arc<AtomicF32>,
     editor_state: Arc<ViziaState>,
     info_queue: Arc<ArrayQueue<Info>>,
+    debug: Arc<parking_lot::Mutex<String>>,
 ) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         assets::register_noto_sans_light(cx);
@@ -159,6 +165,7 @@ pub(crate) fn create(
         Data {
             params: params.clone(),
             peak_meter: peak_meter.clone(),
+            debug: debug.clone(),
         }
         .build(cx);
 
@@ -182,7 +189,8 @@ pub(crate) fn create(
                     Label::new(cx, "Passthru").top(Pixels(10.0));
                     ParamSlider::new(cx, Data::params, |params| &params.auto_passthru)
                         .top(Pixels(10.0));
-                });
+                })
+                .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
                     Label::new(cx, "Speed").top(Pixels(10.0));
                     ParamSlider::new(cx, Data::params, |params| &params.speed);
@@ -190,6 +198,20 @@ pub(crate) fn create(
                     ParamSlider::new(cx, Data::params, |params| &params.loop_length);
                     Label::new(cx, "Loop mode").top(Pixels(10.0));
                     ParamSlider::new(cx, Data::params, |params| &params.loop_mode);
+                })
+                .width(Percentage(25.0));
+                VStack::new(cx, |cx| {
+                    Label::new(cx, "Debug").top(Pixels(10.0));
+                    Textbox::new_multiline(
+                        cx,
+                        Data::debug.map(|x| {
+                            let m = x.lock();
+                            m.to_string()
+                        }),
+                        true,
+                    )
+                    .width(Percentage(100.0))
+                    .height(Percentage(100.0));
                 });
             });
             WaveformView::new(cx, info_queue.clone()).height(Pixels(50.0));
