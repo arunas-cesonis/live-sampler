@@ -32,7 +32,8 @@ fn calc_sample_index(data_len: usize, read: f32, reverse: bool) -> usize {
 #[derive(Clone, Debug, Default)]
 struct Voice {
     note: u8,
-    played_samples: f32,
+    offset: f32,
+    played: f32,
     volume: Volume,
     start_percent: f32,
     speed: f32,
@@ -93,6 +94,30 @@ impl Default for Params {
     }
 }
 
+fn calc_intervals(start_percent: f32, loop_length_percent: f32, data_len: usize) -> Intervals<f32> {
+    let mut view = Intervals::<f32>::default();
+    let len_f32 = data_len as f32;
+    let loop_start = start_percent * len_f32;
+    let loop_end = ((start_percent + loop_length_percent) % 1.0) * len_f32;
+    let loop_length = loop_length_percent * len_f32;
+    if loop_start < loop_end {
+        view.push(loop_start, loop_end);
+    } else if loop_start > loop_end {
+        //  eprintln!("voice={:#?} params={:#?}", voice, params);
+        view.push(loop_start, len_f32);
+        if loop_end > 0.0 {
+            // end is 0.0 when its percentage is 1.0
+            view.push(0.0, loop_end);
+        }
+    } else if loop_start > 0.0 {
+        view.push(loop_start, len_f32);
+        view.push(0.0, loop_start);
+    } else {
+        view.push(0.0, len_f32);
+    }
+    view
+}
+
 impl Channel {
     fn new(params: &Params) -> Self {
         Channel {
@@ -129,7 +154,8 @@ impl Channel {
         let mut voice = Voice {
             note,
             start_percent: pos,
-            played_samples: 0.0,
+            offset: 0.0,
+            played: 0.0,
             volume: Volume::new(0.0),
             speed: 1.0,
             speed_ping_pong: 1.0,
@@ -233,55 +259,75 @@ impl Channel {
         let mut finished: Vec<usize> = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
             if !self.data.is_empty() {
-                // FIXME: calc these on only when needed and what is needed, especially vector allocations in Intervals
+                //let len_f32 = self.data.len() as f32;
+                //let loop_start = voice.start_percent * len_f32;
+                //let loop_end = ((voice.start_percent + params.loop_length_percent) % 1.0) * len_f32;
+                //let loop_length = params.loop_length_percent * len_f32;
+                //// calculate playback speed
 
-                let len_f32 = self.data.len() as f32;
-                let loop_start = voice.start_percent * len_f32;
-                let loop_end = ((voice.start_percent + params.loop_length_percent) % 1.0) * len_f32;
-                let loop_length = params.loop_length_percent * len_f32;
-                // calculate playback speed
+                //let mut view = Intervals::<f32>::default();
+                //if loop_start < loop_end {
+                //    view.push(loop_start, loop_end);
+                //} else if loop_start > loop_end {
+                //    //  eprintln!("voice={:#?} params={:#?}", voice, params);
+                //    view.push(loop_start, len_f32);
+                //    if loop_end > 0.0 {
+                //        // end is 0.0 when its percentage is 1.0
+                //        view.push(0.0, loop_end);
+                //    }
+                //} else if loop_start > 0.0 {
+                //    view.push(loop_start, len_f32);
+                //    view.push(0.0, loop_start);
+                //} else {
+                //    view.push(0.0, len_f32);
+                //}
                 let speed = voice.speed * self.reverse_speed * params.speed * voice.speed_ping_pong;
 
-                let mut view = Intervals::<f32>::default();
-                if loop_start < loop_end {
-                    view.push(loop_start, loop_end);
-                } else if loop_start > loop_end {
-                    //  eprintln!("voice={:#?} params={:#?}", voice, params);
-                    view.push(loop_start, len_f32);
-                    if loop_end > 0.0 {
-                        // end is 0.0 when its percentage is 1.0
-                        view.push(0.0, loop_end);
-                    }
-                } else if loop_start > 0.0 {
-                    view.push(loop_start, len_f32);
-                    view.push(0.0, loop_start);
-                } else {
-                    view.push(0.0, len_f32);
+                // directed_ means playback direction was taken into account
+                let intervals = calc_intervals(
+                    voice.start_percent,
+                    params.loop_length_percent,
+                    self.data.len(),
+                );
+
+                // start from the beginning if loop length has changed to smaller than before
+                // and offset was in the part that was removed
+                if voice.offset > intervals.duration() {
+                    voice.offset = 0.0;
                 }
 
-                let played = if speed < 0.0 {
-                    voice.played_samples - 1.0
+                // when playing in reverse, read sample which is behind, not ahead
+                // so, e.g. if offset == 0.0 then sample to be played is data[data.len() - 1]
+                let directed_offset = if speed > 0.0 {
+                    voice.offset
                 } else {
-                    voice.played_samples
+                    voice.offset - 1.0
                 };
-                let offset = view.project(played)[0];
-                let index = (offset.round() as usize) % self.data.len();
+
+                let data_offset = intervals.project1(directed_offset);
+                let index = (data_offset.round() as usize) % self.data.len();
                 let value = self.data[index];
                 output += value * voice.volume.value(self.now);
-                let played = voice.played_samples + speed;
+
+                // advance the offset
+                voice.offset = (voice.offset + speed) % intervals.duration();
+                if voice.offset < 0.0 {
+                    voice.offset += intervals.duration();
+                }
+
+                // advance the variable that is used to track distance played from starting position
+                voice.played += speed;
 
                 match params.loop_mode {
                     LoopMode::PlayOnce => {
                         if !voice.finished {
-                            if played.abs() >= loop_length {
+                            if voice.played.abs() >= intervals.duration() {
                                 finished.push(i);
                             }
                         }
                     }
                     _ => (),
                 };
-
-                voice.played_samples = played;
             };
         }
 
@@ -398,7 +444,7 @@ impl Sampler {
                 .map(|v| {
                     let start = v.start_percent;
                     let end = (v.start_percent + params.loop_length_percent) % 1.0;
-                    let pos = (v.start_percent * data_len_f32 + v.played_samples) % data_len_f32;
+                    let pos = (v.start_percent * data_len_f32 + v.offset) % data_len_f32;
                     let pos = if pos < 0.0 { pos + data_len_f32 } else { pos };
                     VoiceInfo { start, end, pos }
                 })
