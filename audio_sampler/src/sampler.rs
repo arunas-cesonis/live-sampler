@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::intervals::GIntervals2;
+use crate::intervals::Intervals;
 
 use nih_plug::nih_warn;
 use nih_plug::prelude::Enum;
@@ -237,6 +237,8 @@ impl Channel {
         let mut finished: Vec<usize> = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
             if !self.data.is_empty() {
+                // FIXME: calc these on only when needed and what is needed, especially vector allocations in Intervals
+
                 let len_f32 = self.data.len() as f32;
                 let loop_start = voice.start_percent * len_f32;
                 let loop_end = ((voice.start_percent + params.loop_length_percent) % 1.0) * len_f32;
@@ -244,7 +246,7 @@ impl Channel {
                 // calculate playback speed
                 let speed = voice.speed * self.reverse_speed * params.speed * voice.speed_ping_pong;
 
-                let mut view = GIntervals2::<f32>::default();
+                let mut view = Intervals::<f32>::default();
                 if loop_start < loop_end {
                     view.push(loop_start, loop_end);
                 } else if loop_start > loop_end {
@@ -261,11 +263,6 @@ impl Channel {
                     view.push(0.0, len_f32);
                 }
 
-                //let arg = if speed < 0.0 {
-                //    voice.played - 1.0
-                //} else {
-                //    voice.played
-                //};
                 let played = if speed < 0.0 {
                     voice.played - 1.0
                 } else {
@@ -276,11 +273,11 @@ impl Channel {
                 let value = self.data[index];
                 output += value * voice.volume.value(self.now);
 
-                eprintln!("now={} offset={:#?}", self.now, offset);
-                eprintln!("now={} index={:#?}", self.now, index);
-                eprintln!("now={} value={:#?}", self.now, value);
-                eprintln!("now={} played={:#?}", self.now, played);
-                eprintln!("now={} view={:#?}", self.now, view);
+                // eprintln!("now={} offset={:#?}", self.now, offset);
+                // eprintln!("now={} index={:#?}", self.now, index);
+                // eprintln!("now={} value={:#?}", self.now, value);
+                // eprintln!("now={} played={:#?}", self.now, played);
+                // eprintln!("now={} view={:#?}", self.now, view);
 
                 let played = voice.played + speed;
                 let read = voice.read + speed;
