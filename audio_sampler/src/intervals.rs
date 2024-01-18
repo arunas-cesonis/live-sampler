@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::ops::{Add, Rem};
 
 #[derive(Debug, Clone)]
 struct Interval {
@@ -38,9 +39,15 @@ impl Zero for i64 {
     }
 }
 
+impl Zero for i32 {
+    fn zero() -> Self {
+        0
+    }
+}
+
 pub fn g_wrap_to_positive_offset<T>(x: T, data_len: T) -> T
 where
-    T: std::ops::Rem<Output = T> + Zero + std::ops::Add<Output = T> + std::cmp::PartialOrd + Copy,
+    T: Rem<Output = T> + Zero + Add<Output = T> + PartialOrd + Copy,
 {
     let x = x % data_len;
     if x < T::zero() {
@@ -91,15 +98,15 @@ where
             let e = interval.end;
             let d = e - s;
             if x >= offset && x < offset + d {
-                eprintln!(
-                    "project duration={} x={} d={} s={} offset={} result={}",
-                    self.duration(),
-                    x,
-                    d,
-                    s,
-                    offset,
-                    s + x - offset
-                );
+                //eprintln!(
+                //    "project duration={} x={} d={} s={} offset={} result={}",
+                //    self.duration(),
+                //    x,
+                //    d,
+                //    s,
+                //    offset,
+                //    s + x - offset
+                //);
                 // FIXME: this code fails due to floating point errors
                 result.push(s + x - offset);
             }
@@ -321,6 +328,33 @@ mod test {
             .collect();
         assert_eq!(expected, out);
         eprintln!("{:?}", view);
+    }
+
+    #[test]
+    fn test_fp_error() {
+        let mut view = GIntervals2::<i32>::default();
+        view.push(8, 10);
+        view.push(0, 3);
+        let mut x: i32 = 0;
+        while x.abs() < view.duration() * 2 {
+            let y = view.project(x)[0];
+            let y = y % 10;
+            let y = if y < 0 { y + 10 } else { y };
+            eprintln!("i32 {} {}", x, y);
+            x -= 1;
+        }
+        eprintln!("");
+        let mut view = GIntervals2::<f32>::default();
+        view.push(8.0, 10.0);
+        view.push(0.0, 2.9999995);
+        let mut x: f32 = 0.0;
+        while x.abs() < view.duration() * 2.0 {
+            let y = view.project(x)[0];
+            let y = (y.round() as i64) % 10;
+            let y = if y < 0 { y + 10 } else { y };
+            eprintln!("f32 {} {}", x, y);
+            x -= 1.0;
+        }
     }
 
     #[test]
