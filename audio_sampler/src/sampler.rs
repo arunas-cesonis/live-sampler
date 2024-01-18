@@ -1,11 +1,12 @@
 use crossbeam_queue::ArrayQueue;
 use std::fmt::Debug;
 use std::sync::Arc;
-use std::thread::park_timeout_ms;
 
+use crate::intervals::{GIntervals2, Intervals2};
 use log::log;
 use nih_plug::nih_warn;
 use nih_plug::prelude::Enum;
+use nih_plug_vizia::vizia::image::flat::View;
 
 use crate::volume::Volume;
 
@@ -246,47 +247,43 @@ impl Channel {
                 // calculate playback speed
                 let speed = voice.speed * self.reverse_speed * params.speed * voice.speed_ping_pong;
 
-                // calculate sample index from read position and read direction
-                let index = voice.read.floor() as usize;
-                let index = if speed < 0.0 {
-                    if index == 0 {
-                        self.data.len() - 1
-                    } else {
-                        index - 1
-                    }
+                let mut view = GIntervals2::<f32>::default();
+                if loop_start < loop_end {
+                    view.push(loop_start, loop_end);
+                } else if loop_start > loop_end {
+                    view.push(loop_start, len_f32);
+                    view.push(0.0, loop_end);
+                } else if loop_start > 0.0 {
+                    view.push(loop_start, len_f32);
+                    view.push(0.0, loop_start);
                 } else {
-                    index
+                    view.push(0.0, len_f32);
+                }
+
+                //let arg = if speed < 0.0 {
+                //    voice.played - 1.0
+                //} else {
+                //    voice.played
+                //};
+                let played = if speed < 0.0 {
+                    voice.played - 1.0
+                } else {
+                    voice.played
                 };
+                let offset = view.project(played)[0];
+                let index = (offset.floor() as usize) % self.data.len();
+                eprintln!("view={:#?}", view);
+                eprintln!("index={:#?}", index);
+                eprintln!("offset={:#?}", offset);
                 let value = self.data[index];
                 output += value * voice.volume.value(self.now);
-                let read = (voice.read + speed) % len_f32;
-                let mut read = if read < 0.0 { read + len_f32 } else { read };
-                eprintln!(
-                    "mode={:?} s={} e={} len={} next={} voice.played={}",
-                    params.loop_mode, loop_start, loop_end, loop_length, read, voice.played
-                );
                 let mut played = voice.played + speed;
+                let mut read = voice.read + speed;
                 match params.loop_mode {
                     LoopMode::PlayOnce => {
                         if !voice.finished {
                             if played.abs() >= loop_length {
-                                eprintln!("FINSHED");
                                 finished.push(i);
-                            }
-                        }
-                    }
-                    LoopMode::Loop => {
-                        if played.abs() >= loop_length {
-                            let overrun = played.abs() % loop_length;
-                            if speed > 0.0 {
-                                played = overrun;
-                                read = (loop_start + overrun) % len_f32;
-                            } else {
-                                played = -overrun;
-                                read = loop_end - overrun;
-                                if read < 0.0 {
-                                    read += len_f32;
-                                }
                             }
                         }
                     }
@@ -294,6 +291,58 @@ impl Channel {
                 };
                 voice.played = played;
                 voice.read = read;
+
+                //let value = self.data[index];
+                //output += value * voice.volume.value(self.now);
+
+                // calculate sample index from read position and read direction
+                //let index = voice.read.floor() as usize;
+                //let index = if speed < 0.0 {
+                //    if index == 0 {
+                //        self.data.len() - 1
+                //    } else {
+                //        index - 1
+                //    }
+                //} else {
+                //    index
+                //};
+                //let value = self.data[index];
+                //output += value * voice.volume.value(self.now);
+                //let read = (voice.read + speed) % len_f32;
+                //let mut read = if read < 0.0 { read + len_f32 } else { read };
+                //eprintln!(
+                //    "mode={:?} s={} e={} len={} next={} voice.played={}",
+                //    params.loop_mode, loop_start, loop_end, loop_length, read, voice.played
+                //);
+                //let mut played = voice.played + speed;
+                //match params.loop_mode {
+                //    LoopMode::PlayOnce => {
+                //        if !voice.finished {
+                //            if played.abs() >= loop_length {
+                //                eprintln!("FINSHED");
+                //                finished.push(i);
+                //            }
+                //        }
+                //    }
+                //    LoopMode::Loop => {
+                //        if played.abs() >= loop_length {
+                //            let overrun = played.abs() % loop_length;
+                //            if speed > 0.0 {
+                //                played = overrun;
+                //                read = (loop_start + overrun) % len_f32;
+                //            } else {
+                //                played = -overrun;
+                //                read = loop_end - overrun;
+                //                if read < 0.0 {
+                //                    read += len_f32;
+                //                }
+                //            }
+                //        }
+                //    }
+                //    _ => (),
+                //};
+                //voice.played = played;
+                //voice.read = read;
             };
         }
 
