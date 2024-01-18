@@ -1,21 +1,18 @@
 use atomic_float::AtomicF32;
 use crossbeam_queue::ArrayQueue;
 
-use nih_plug::prelude::{Editor};
-
-
+use nih_plug::prelude::Editor;
 
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
-use nih_plug_vizia::vizia::vg::imgref::{Img};
-use nih_plug_vizia::vizia::vg::rgb::{RGBA8};
+use nih_plug_vizia::vizia::vg::imgref::Img;
+use nih_plug_vizia::vizia::vg::rgb::RGBA8;
 use nih_plug_vizia::vizia::vg::{ImageFlags, ImageSource, Paint, Path, PixelFormat};
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 use std::cell::Cell;
 
 use std::sync::Arc;
-
 
 use crate::sampler::Info;
 use crate::AudioSamplerParams;
@@ -74,7 +71,7 @@ impl WaveformView {
 }
 
 fn rectangle_path(x: f32, y: f32, w: f32, h: f32) -> Path {
-    let mut path = vg::Path::new();
+    let mut path = Path::new();
     path.move_to(x, y);
     path.line_to(x, y + h);
     path.line_to(x + w, y + h);
@@ -87,7 +84,7 @@ fn rectangle_path(x: f32, y: f32, w: f32, h: f32) -> Path {
 impl View for WaveformView {
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
         //self.draw_image(cx, canvas);
-        let mut path = vg::Path::new();
+        let mut path = Path::new();
         let bounds = cx.bounds();
         let border_width = cx.border_width();
         {
@@ -104,14 +101,14 @@ impl View for WaveformView {
         }
         //let background_color = cx.background_color();
         let color = Color::rgb(200, 200, 200);
-        let paint = vg::Paint::color(color.into());
+        let paint = Paint::color(color.into());
         canvas.fill_path(&path, &paint);
 
         // loop
         let color = Color::rgb(100, 100, 150);
-        let loop_paint = vg::Paint::color(color.into());
+        let loop_paint = Paint::color(color.into());
         let color = Color::rgb(200, 100, 100);
-        let pos_paint = vg::Paint::color(color.into());
+        let pos_paint = Paint::color(color.into());
 
         let info = if let Some(info) = self.info_queue.pop() {
             info

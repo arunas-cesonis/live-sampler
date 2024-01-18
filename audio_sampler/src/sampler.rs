@@ -1,12 +1,9 @@
-
 use std::fmt::Debug;
 
-
-use crate::intervals::{GIntervals2};
+use crate::intervals::GIntervals2;
 
 use nih_plug::nih_warn;
 use nih_plug::prelude::Enum;
-
 
 use crate::volume::Volume;
 
@@ -251,8 +248,12 @@ impl Channel {
                 if loop_start < loop_end {
                     view.push(loop_start, loop_end);
                 } else if loop_start > loop_end {
+                    //  eprintln!("voice={:#?} params={:#?}", voice, params);
                     view.push(loop_start, len_f32);
-                    view.push(0.0, loop_end);
+                    if loop_end > 0.0 {
+                        // end is 0.0 when its percentage is 1.0
+                        view.push(0.0, loop_end);
+                    }
                 } else if loop_start > 0.0 {
                     view.push(loop_start, len_f32);
                     view.push(0.0, loop_start);
@@ -271,14 +272,19 @@ impl Channel {
                     voice.played
                 };
                 let offset = view.project(played)[0];
-                let index = (offset.floor() as usize) % self.data.len();
-                eprintln!("view={:#?}", view);
-                eprintln!("index={:#?}", index);
-                eprintln!("offset={:#?}", offset);
+                let index = (offset.round() as usize) % self.data.len();
                 let value = self.data[index];
                 output += value * voice.volume.value(self.now);
+
+                eprintln!("now={} offset={:#?}", self.now, offset);
+                eprintln!("now={} index={:#?}", self.now, index);
+                eprintln!("now={} value={:#?}", self.now, value);
+                eprintln!("now={} played={:#?}", self.now, played);
+                eprintln!("now={} view={:#?}", self.now, view);
+
                 let played = voice.played + speed;
                 let read = voice.read + speed;
+
                 match params.loop_mode {
                     LoopMode::PlayOnce => {
                         if !voice.finished {
@@ -365,9 +371,7 @@ impl Channel {
             self.voices.remove(j);
         }
 
-        /**
-         * passthru handling
-         */
+        // passthru handling
         {
             // Sample processing
             // 1. Calculate output value based on state
