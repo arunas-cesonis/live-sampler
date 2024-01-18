@@ -444,8 +444,7 @@ impl Sampler {
                 .map(|v| {
                     let start = v.start_percent;
                     let end = (v.start_percent + params.loop_length_percent) % 1.0;
-                    let pos = (v.start_percent * data_len_f32 + v.offset) % data_len_f32;
-                    let pos = if pos < 0.0 { pos + data_len_f32 } else { pos };
+                    let pos = v.offset / data_len_f32;
                     VoiceInfo { start, end, pos }
                 })
                 .collect(),

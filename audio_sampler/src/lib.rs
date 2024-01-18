@@ -29,6 +29,7 @@ pub struct AudioSampler {
     sampler: Sampler,
     peak_meter: Arc<AtomicF32>,
     info_queue: Arc<ArrayQueue<Info>>,
+    debug: Arc<parking_lot::Mutex<String>>,
     peak_meter_decay_weight: f32,
 }
 
@@ -115,6 +116,7 @@ impl Default for AudioSampler {
             sampler: Sampler::new(0, &sampler::Params::default()),
             info_queue: Arc::new(ArrayQueue::new(1)),
             peak_meter: Default::default(), //debug: Arc::new(Mutex::new(None)),
+            debug: Default::default(),
         }
     }
 }
@@ -208,12 +210,15 @@ impl Plugin for AudioSampler {
         // Using vizia as Iced doesn't support drawing bitmap images under OpenGL
         let info_queue = Arc::new(ArrayQueue::new(1));
         self.info_queue = info_queue.clone();
+        self.debug = Default::default();
+        self.debug = Arc::new(parking_lot::Mutex::new(format!("{:?}", self.sampler)));
 
         editor_vizia::create(
             self.params.clone(),
             self.peak_meter.clone(),
             self.params.editor_state.clone(),
             info_queue,
+            self.debug.clone(),
         )
     }
 
@@ -284,6 +289,7 @@ impl Plugin for AudioSampler {
             if self.params.editor_state.is_open() {
                 self.update_peak_meter(&mut frame);
                 let info = self.sampler.get_info(params);
+                *self.debug.lock() = format!("{:?}", info);
                 self.info_queue.force_push(info);
             }
         }
