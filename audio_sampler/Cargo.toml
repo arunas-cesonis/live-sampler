@@ -35,5 +35,7 @@ crossbeam = "0.8"
 crossbeam-queue = "0.3.11"
 #triple_buffer = "7.0.0"
 
+smallvec = "1.12.0"
+
 #iced_baseview = "0.0.1"
 #iced_graphics = "0.2.0"

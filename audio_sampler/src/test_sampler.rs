@@ -1,13 +1,15 @@
 #[cfg(test)]
 mod test {
     use crate::sampler::{LoopMode, Params, Sampler};
+    use nih_plug_vizia::vizia::image::imageops::colorops::huerotate_in_place;
 
     #[derive(Copy, Clone, Debug)]
     enum Cmd {
-        StartPlaying { pos: f32 },
+        StartPlaying { start_percent: f32 },
         StopPlaying,
         StartRecording,
         StopRecording,
+        SetLoopLength { length_percent: f32 },
     }
 
     #[derive(Clone, Debug)]
@@ -16,6 +18,7 @@ mod test {
         params: Params,
         now: usize,
         cmds: Vec<(usize, Cmd)>,
+        //output: Vec<f32>,
     }
     impl Host {
         fn new(params: Params) -> Self {
@@ -24,12 +27,44 @@ mod test {
                 params,
                 now: 0,
                 cmds: vec![],
+                //output: vec![],
             }
         }
 
         fn schedule(&mut self, at: usize, cmd: Cmd) {
             self.cmds.push((at, cmd));
         }
+        //
+        //        fn start_playing(&mut self, pos: f32) {
+        //            self.sampler.start_playing(pos, 11, 1.0, &self.params);
+        //        }
+        //
+        //        fn stop_playing(&mut self, pos: f32) {
+        //            self.sampler.stop_playing(11, &self.params);
+        //        }
+        //
+        //        fn start_recording(&mut self) {
+        //            self.sampler.start_recording(&self.params);
+        //        }
+        //
+        //        fn stop_recording(&mut self) {
+        //            self.sampler.stop_recording(&self.params);
+        //        }
+        //
+        //        fn output(&self) -> &[f32] {
+        //            &self.output
+        //        }
+        //
+        //        fn process_samples<I>(&mut self, input: I)
+        //        where
+        //            I: IntoIterator<Item = f32>,
+        //        {
+        //            for x in input {
+        //                let mut frame = vec![x];
+        //                self.sampler.process_sample(&mut frame, &self.params);
+        //                self.output.push(frame[0]);
+        //            }
+        //        }
 
         fn run_input<I>(&mut self, input: I) -> Vec<f32>
         where
@@ -41,12 +76,15 @@ mod test {
                     let (todo, rem) = self.cmds.iter().partition(|(at, _)| *at == self.now);
                     for (_, x) in todo {
                         match x {
-                            Cmd::StartPlaying { pos } => {
+                            Cmd::StartPlaying { start_percent: pos } => {
                                 self.sampler.start_playing(pos, 11, 1.0, &self.params)
                             }
                             Cmd::StopPlaying => self.sampler.stop_playing(11, &self.params),
                             Cmd::StartRecording => self.sampler.start_recording(&self.params),
                             Cmd::StopRecording => self.sampler.stop_recording(&self.params),
+                            Cmd::SetLoopLength { length_percent } => {
+                                self.params.loop_length_percent = length_percent;
+                            }
                         }
                     }
                     self.cmds = rem;
@@ -122,7 +160,7 @@ mod test {
         });
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying { pos: 0.0 });
+        host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(input.clone());
         assert_eq!(
             output,
@@ -136,7 +174,7 @@ mod test {
         });
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying { pos: 0.0 });
+        host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(input.clone());
         assert_eq!(
             output,
@@ -150,7 +188,7 @@ mod test {
         });
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(12, Cmd::StartPlaying { pos: 0.0 });
+        host.schedule(12, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(input.clone());
         assert_eq!(
             output,
@@ -169,7 +207,7 @@ mod test {
         });
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(12, Cmd::StartPlaying { pos: 0.0 });
+        host.schedule(12, Cmd::StartPlaying { start_percent: 0.0 });
         let tmp = host.clone();
         let output = host.run_input(vec![input.clone(), ten_tens.clone()].concat());
         assert_eq!(
@@ -205,7 +243,7 @@ mod test {
         });
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying { pos: 0.5 });
+        host.schedule(10, Cmd::StartPlaying { start_percent: 0.5 });
         let _tmp = host.clone();
         let output = host.run_input(vec![input.clone(), ten_tens.clone()].concat());
         assert_eq!(
@@ -244,7 +282,7 @@ mod test {
         });
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying { pos: 0.0 });
+        host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(input.clone());
         assert_eq!(
             output,
@@ -258,7 +296,7 @@ mod test {
         });
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying { pos: 0.0 });
+        host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(input.clone());
         assert_eq!(
             output,
@@ -273,7 +311,12 @@ mod test {
         });
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(12, Cmd::StartPlaying { pos: 0.20 });
+        host.schedule(
+            12,
+            Cmd::StartPlaying {
+                start_percent: 0.20,
+            },
+        );
         let output = host.run_input(input.clone());
         assert_eq!(
             output,
@@ -292,7 +335,12 @@ mod test {
         });
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying { pos: 0.80 });
+        host.schedule(
+            10,
+            Cmd::StartPlaying {
+                start_percent: 0.80,
+            },
+        );
         let _tmp = host.clone();
         let output = host.run_input(input.clone());
         assert_eq!(
@@ -301,6 +349,46 @@ mod test {
                 one_to_ten.clone(),
                 vec![9.0, 10.0, 1.0, 2.0, 3.0],
                 vec![9.0, 10.0, 1.0, 2.0, 3.0],
+            ]
+            .concat()
+        );
+    }
+
+    #[test]
+    fn test_dyn_length() {
+        let params = Params {
+            loop_mode: LoopMode::Loop,
+            attack_samples: 0,
+            decay_samples: 0,
+            loop_length_percent: 0.6,
+            speed: -1.0,
+            ..Params::default()
+        };
+        let ten_tens = vec![100.0; 10];
+        let _five_tens = vec![100.0; 5];
+        let one_to_ten = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let _one_to_five = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let input = vec![one_to_ten.clone(), ten_tens.clone()].concat();
+        // record first 10 samples, then play loop length 50% from 80% in reverse
+        let mut host = Host::new(params.clone());
+        host.schedule(0, Cmd::StartRecording);
+        host.schedule(10, Cmd::StopRecording);
+        host.schedule(
+            10,
+            Cmd::StartPlaying {
+                start_percent: 0.50,
+            },
+        );
+        let _tmp = host.clone();
+        let output = host.run_input(input.clone());
+        assert_eq!(
+            output,
+            vec![
+                one_to_ten.clone(),
+                vec![1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
+                vec![1.0, 10.0, 9.0, 8.0],
+                //vec![3.0, 2.0, 1.0, 10.0, 9.0],
+                //vec![3.0, 2.0, 1.0, 10.0, 9.0],
             ]
             .concat()
         );
@@ -328,7 +416,12 @@ mod test {
         });
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying { pos: 0.50 });
+        host.schedule(
+            10,
+            Cmd::StartPlaying {
+                start_percent: 0.50,
+            },
+        );
         let _tmp = host.clone();
         let output = host.run_input(input.clone());
         assert_eq!(
@@ -364,7 +457,7 @@ mod test {
         let mut host = Host::new(params.clone());
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying { pos: 0.0 });
+        host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(input.clone());
         assert_eq!(
             output,
@@ -379,7 +472,7 @@ mod test {
         let mut host = Host::new(params.clone());
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying { pos: 0.0 });
+        host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(vec![input.clone(), ten_tens.clone()].concat());
         assert_eq!(
             output,
@@ -398,7 +491,7 @@ mod test {
         });
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying { pos: 0.0 });
+        host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         host.schedule(20, Cmd::StopPlaying);
         let output = host.run_input(vec![input.clone(), ten_tens.clone()].concat());
         assert_eq!(

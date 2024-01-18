@@ -1,3 +1,4 @@
+use smallvec::SmallVec;
 use std::fmt::Display;
 use std::ops::{Add, Rem};
 
@@ -9,7 +10,7 @@ struct Interval<T> {
 
 #[derive(Debug, Clone, Default)]
 pub struct Intervals<T> {
-    intervals: Vec<Interval<T>>,
+    intervals: SmallVec<[Interval<T>; 4]>,
 }
 
 trait Zero {
@@ -78,6 +79,23 @@ where
         self.intervals.iter().map(|x| x.end - x.start).sum()
     }
 
+    pub fn project1(&self, x: T) -> T {
+        let x = g_wrap_to_positive_offset(x, self.duration());
+        let mut offset = T::zero();
+        for interval in &self.intervals {
+            let s = interval.start;
+            let e = interval.end;
+            let d = e - s;
+            // FIXME: the code below is very susceptible to floating point errors.
+            // this should work fine with 10x or 100x size i64's
+            if x >= offset && x < offset + d {
+                return s + x - offset;
+            }
+            offset += d;
+        }
+        panic!("no intervals contain x")
+    }
+
     pub fn project(&self, x: T) -> Vec<T> {
         let x = g_wrap_to_positive_offset(x, self.duration());
         let mut result = vec![];
@@ -86,17 +104,9 @@ where
             let s = interval.start;
             let e = interval.end;
             let d = e - s;
+            // FIXME: the code below is very susceptible to floating point errors.
+            // this should work fine with 10x or 100x size i64's
             if x >= offset && x < offset + d {
-                //eprintln!(
-                //    "project duration={} x={} d={} s={} offset={} result={}",
-                //    self.duration(),
-                //    x,
-                //    d,
-                //    s,
-                //    offset,
-                //    s + x - offset
-                //);
-                // FIXME: this code fails due to floating point errors
                 result.push(s + x - offset);
             }
             offset += d;

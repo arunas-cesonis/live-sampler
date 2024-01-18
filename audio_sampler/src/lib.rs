@@ -14,7 +14,6 @@ use tikv_jemallocator::Jemalloc;
 static GLOBAL: Jemalloc = Jemalloc;
 
 // mod editor;
-mod clip;
 mod editor_vizia;
 mod intervals;
 mod sampler;
