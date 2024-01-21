@@ -13,31 +13,31 @@ pub struct Intervals<T> {
     intervals: SmallVec<[Interval<T>; 4]>,
 }
 
-trait Zero {
-    fn zero() -> Self;
-}
-
-impl Zero for f32 {
-    fn zero() -> Self {
-        0.0
-    }
-}
-
-impl Zero for i64 {
-    fn zero() -> Self {
-        0
-    }
-}
-
-impl Zero for i32 {
-    fn zero() -> Self {
-        0
-    }
-}
+// trait Zero {
+//     fn zero() -> Self;
+// }
+//
+// impl Zero for f32 {
+//     fn zero() -> Self {
+//         0.0
+//     }
+// }
+//
+// impl Zero for i64 {
+//     fn zero() -> Self {
+//         0
+//     }
+// }
+//
+// impl Zero for i32 {
+//     fn zero() -> Self {
+//         0
+//     }
+// }
 
 pub fn g_wrap_to_positive_offset<T>(x: T, data_len: T) -> T
 where
-    T: Rem<Output = T> + Zero + Add<Output = T> + PartialOrd + Copy,
+    T: Rem<Output = T> + num_traits::Zero + Add<Output = T> + PartialOrd + Copy,
 {
     let x = x % data_len;
     if x < T::zero() {
@@ -59,24 +59,25 @@ pub fn wrap_to_positive_offset(x: f32, data_len: f32) -> f32 {
 impl<T> Intervals<T>
 where
     T: std::ops::Rem<Output = T>
-        + Zero
+        + num_traits::Zero
         + std::ops::Add<Output = T>
         + std::ops::AddAssign
         + std::ops::Sub<Output = T>
+        + num_traits::Signed
         + std::cmp::PartialOrd
         + std::iter::Sum
         + Copy
         + Display,
 {
     pub fn push(&mut self, start: T, end: T) {
-        assert!(start < end, "start = {}, end = {}", start, end);
+        // assert!(start < end, "start = {}, end = {}", start, end);
         assert!(T::zero() <= start, "start = {}", start);
         assert!(T::zero() <= end, "end = {}", end);
         self.intervals.push(Interval { start, end });
     }
 
     pub fn duration(&self) -> T {
-        self.intervals.iter().map(|x| x.end - x.start).sum()
+        self.intervals.iter().map(|x| (x.end - x.start).abs()).sum()
     }
 
     pub fn project(&self, x: T) -> T {
@@ -85,12 +86,16 @@ where
         for interval in &self.intervals {
             let s = interval.start;
             let e = interval.end;
-            let d = e - s;
+            let d = (e - s).abs();
             // FIXME: the code below is very susceptible to floating point errors.
-            // maybe using i64 for offsets would be fine, e.g. subdiving by 1000
-            // this should work fine with 10x or 100x size i64's
-            if x >= offset && x < offset + d {
-                return s + x - offset;
+            // maybe using i64 for offsets would be fine, e.g. with 1000 or so subdivisions per sample
+            let xd = x - offset;
+            if xd >= T::zero() && xd < d {
+                if s < e {
+                    return s + xd;
+                } else {
+                    return s - xd;
+                }
             }
             offset += d;
         }
@@ -104,10 +109,13 @@ where
         for interval in &self.intervals {
             let s = interval.start;
             let e = interval.end;
-            if x >= s && x < e {
+            let d = (e - s).abs();
+            if s <= e && x >= s && x < e {
                 result.push(x - s + offset);
+            } else if s > e && x <= s && x > e {
+                result.push(s - x + offset);
             }
-            offset += e - s;
+            offset += d;
         }
         result
     }
@@ -119,9 +127,34 @@ mod test {
     use super::*;
     #[test]
     fn test_reverse() {
-        //let mut view = Intervals::<i32>::default();
-        //view.push(0, 10);
-        //view.push(10, 0);
+        let mut view = Intervals::<i32>::default();
+        view.push(0, 10);
+        view.push(20, 10);
+        view.push(10, 0);
+        let all = (0..view.duration())
+            .map(|x| view.project(x))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            all,
+            vec![
+                (0..10).collect::<Vec<_>>(),
+                (11..=20).rev().collect::<Vec<_>>(),
+                (1..=10).rev().collect::<Vec<_>>(),
+            ]
+            .concat()
+        );
+        let all = (0..21).map(|x| view.unproject(x, 100)).collect::<Vec<_>>();
+
+        let expected = vec![
+            vec![vec![0]],
+            (1..=9)
+                .zip((11..=29).rev())
+                .map(|(x, y)| vec![x, y])
+                .collect::<Vec<_>>(),
+            (10..=20).rev().map(|x| vec![x]).collect::<Vec<_>>(),
+        ]
+        .concat();
+        assert_eq!(all, expected);
     }
 
     #[test]
