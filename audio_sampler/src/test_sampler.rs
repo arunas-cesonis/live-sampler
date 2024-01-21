@@ -136,7 +136,6 @@ mod test {
         let input: Vec<_> = (0..10).into_iter().map(|x| x as f32).collect();
         input
     }
-
     #[test]
     fn test_play_once() {
         let params = Params {
@@ -502,6 +501,59 @@ mod test {
                 ten_tens.clone(),
             ]
             .concat()
+        );
+    }
+
+    //    #[test]
+    fn test_ping_pong() {
+        let params = Params {
+            loop_mode: LoopMode::PingPong,
+            attack_samples: 0,
+            decay_samples: 0,
+            loop_length_percent: 1.0,
+            ..Params::default()
+        };
+        let ten_tens = vec![100.0; 10];
+        let five_tens = vec![100.0; 5];
+        let one_to_ten = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let one_to_five = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let input = vec![one_to_ten.clone(), ten_tens.clone(), ten_tens.clone()].concat();
+
+        // record first 10 samples, then PingPong
+        let mut host = Host::new(Params { ..params.clone() });
+        host.schedule(0, Cmd::StartRecording);
+        host.schedule(10, Cmd::StopRecording);
+        host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
+        let output = host.run_input(input.clone());
+        assert_eq!(
+            output,
+            vec![
+                one_to_ten.clone(),
+                one_to_ten.clone(),
+                one_to_ten.clone().into_iter().rev().collect()
+            ]
+            .concat(),
+        );
+
+        // record first 10 samples, then PingPong 50%
+        let mut host = Host::new(Params {
+            loop_length_percent: 0.5,
+            ..params.clone()
+        });
+        host.schedule(0, Cmd::StartRecording);
+        host.schedule(10, Cmd::StopRecording);
+        host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
+        let output = host.run_input(input.clone());
+        assert_eq!(
+            output,
+            vec![
+                one_to_ten.clone(),
+                one_to_five.clone(),
+                one_to_five.clone().into_iter().rev().collect(),
+                one_to_five.clone(),
+                one_to_five.clone().into_iter().rev().collect(),
+            ]
+            .concat(),
         );
     }
 }

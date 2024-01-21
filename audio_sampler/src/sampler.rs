@@ -4,6 +4,7 @@ use crate::intervals::Intervals;
 
 use nih_plug::nih_warn;
 use nih_plug::prelude::Enum;
+use nih_plug_vizia::vizia::views::virtual_list_derived_lenses::offset;
 
 use crate::volume::Volume;
 
@@ -56,7 +57,7 @@ struct Channel {
     passthru_volume: Volume,
 }
 
-#[derive(Debug, Enum, PartialEq, Clone)]
+#[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum LoopMode {
     PlayOnce,
     PingPong,
@@ -98,19 +99,43 @@ impl Default for Params {
     }
 }
 
-fn calc_intervals(start_percent: f32, loop_length_percent: f32, data_len: usize) -> Intervals<f32> {
+// fn wrapping_add(x: f32, y: f32, limit: f32) -> f32 {
+//     assert!(limit > 0.0);
+//     let z = x + y;
+//     let z = z % limit;
+//     let z = if z < 0.0 { z + limit } else { z };
+//     z
+// }
+
+#[inline]
+fn push_interval(dest: &mut Intervals<f32>, start: f32, end: f32, len_f32: f32) {
+    if start < end {
+        dest.push(start, end);
+    } else {
+        dest.push(start, len_f32);
+        if end > 0.0 {
+            dest.push(0.0, end);
+        }
+    }
+}
+
+fn calc_intervals(
+    loop_mode: LoopMode,
+    start_percent: f32,
+    loop_length_percent: f32,
+    data_len: usize,
+) -> Intervals<f32> {
     let mut view = Intervals::<f32>::default();
     let len_f32 = data_len as f32;
     let loop_start = start_percent * len_f32;
     let loop_end = ((start_percent + loop_length_percent) % 1.0) * len_f32;
-    if loop_start < loop_end {
-        view.push(loop_start, loop_end);
-    } else {
-        // if loop_start > loop_end {
-        assert!(loop_start >= loop_end);
-        view.push(loop_start, len_f32);
-        if loop_end > 0.0 {
-            view.push(0.0, loop_end);
+    match loop_mode {
+        LoopMode::Loop | LoopMode::PlayOnce => {
+            push_interval(&mut view, loop_start, loop_end, len_f32);
+        }
+        LoopMode::PingPong => {
+            todo!()
+            //if loop_start < loop_end {
         }
     }
     view
@@ -284,6 +309,7 @@ impl Channel {
 
                 // directed_ means playback direction was taken into account
                 let intervals = calc_intervals(
+                    params.loop_mode,
                     voice.start_percent,
                     params.loop_length_percent,
                     self.data.len(),

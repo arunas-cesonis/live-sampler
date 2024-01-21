@@ -49,8 +49,8 @@ where
 {
     pub fn push(&mut self, start: T, end: T) {
         // assert!(start < end, "start = {}, end = {}", start, end);
-        assert!(T::zero() <= start, "start = {}", start);
-        assert!(T::zero() <= end, "end = {}", end);
+        assert!(T::zero() <= start, "start = {} end = {}", start, end);
+        assert!(T::zero() <= end, "start = {} end = {}", start, end);
         self.intervals.push(Interval { start, end });
     }
 
