@@ -1,8 +1,10 @@
+use crossbeam_queue::ArrayQueue;
 use std::sync::Arc;
 
 use nih_plug::prelude::*;
+use nih_plug_vizia::ViziaState;
 
-use crate::sampler::Sampler;
+use crate::sampler::{Info, LoopMode, Sampler};
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -11,7 +13,11 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+// mod editor;
+mod editor_vizia;
+mod intervals;
 mod sampler;
+mod test_sampler;
 mod volume;
 
 type SysEx = ();
@@ -21,7 +27,10 @@ pub struct AudioSampler {
     params: Arc<AudioSamplerParams>,
     sample_rate: f32,
     sampler: Sampler,
-    //    debug: Arc<Mutex<Option<std::fs::File>>>,
+    peak_meter: Arc<AtomicF32>,
+    info_queue: Arc<ArrayQueue<Info>>,
+    debug: Arc<parking_lot::Mutex<String>>,
+    peak_meter_decay_weight: f32,
 }
 
 #[derive(Params)]
@@ -30,13 +39,28 @@ struct AudioSamplerParams {
     pub auto_passthru: BoolParam,
     #[id = "speed"]
     pub speed: FloatParam,
-    #[id = "fade time"]
-    pub fade_time: FloatParam,
+    #[id = "attack"]
+    pub attack: FloatParam,
+    #[id = "decay"]
+    pub decay: FloatParam,
+    #[id = "loop_mode"]
+    pub loop_mode: EnumParam<LoopMode>,
+    #[id = "loop_length"]
+    pub loop_length: FloatParam,
+    #[id = "volume"]
+    pub volume: FloatParam,
+    /// The editor state, saved together with the parameter state so the custom scaling can be
+    /// restored.
+    #[persist = "editor-state"]
+    editor_state: Arc<ViziaState>,
 }
+
+const MILLISECONDS_PARAM_SKEW_FACTOR: f32 = 0.25;
 
 impl Default for AudioSamplerParams {
     fn default() -> Self {
         Self {
+            editor_state: editor_vizia::default_state(),
             auto_passthru: BoolParam::new("Pass through", true),
             speed: FloatParam::new(
                 "Speed",
@@ -46,15 +70,38 @@ impl Default for AudioSamplerParams {
                     max: 2.0,
                 },
             ),
-            fade_time: FloatParam::new(
-                "Fade time",
-                2.0,
-                FloatRange::Linear {
+            attack: FloatParam::new(
+                "Attack",
+                0.1,
+                FloatRange::Skewed {
                     min: 0.0,
                     max: 1000.0,
+                    factor: MILLISECONDS_PARAM_SKEW_FACTOR,
                 },
             )
             .with_unit(" ms"),
+            decay: FloatParam::new(
+                "Decay",
+                0.1,
+                FloatRange::Skewed {
+                    min: 0.0,
+                    max: 1000.0,
+                    factor: MILLISECONDS_PARAM_SKEW_FACTOR,
+                },
+            )
+            .with_unit(" ms"),
+            loop_mode: EnumParam::new("Loop mode", LoopMode::PlayOnce),
+            loop_length: FloatParam::new(
+                "Loop length",
+                1.0,
+                FloatRange::Skewed {
+                    min: 0.001,
+                    max: 1.0,
+                    factor: 0.25,
+                },
+            )
+            .with_unit(" %"),
+            volume: FloatParam::new("Gain", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
         }
     }
 }
@@ -65,8 +112,11 @@ impl Default for AudioSampler {
             audio_io_layout: AudioIOLayout::default(),
             params: Arc::new(AudioSamplerParams::default()),
             sample_rate: -1.0,
+            peak_meter_decay_weight: 1.0,
             sampler: Sampler::new(0, &sampler::Params::default()),
-            //debug: Arc::new(Mutex::new(None)),
+            info_queue: Arc::new(ArrayQueue::new(1)),
+            peak_meter: Default::default(), //debug: Arc::new(Mutex::new(None)),
+            debug: Default::default(),
         }
     }
 }
@@ -93,16 +143,37 @@ impl AudioSampler {
     fn sampler_params(&self) -> sampler::Params {
         let params_speed = self.params.speed.smoothed.next();
         let params_passthru = self.params.auto_passthru.value();
-        let params_fade_time = self.params.fade_time.smoothed.next();
-        let params_fade_samples = (params_fade_time * self.sample_rate / 1000.0) as usize;
+        let attack_millis = self.params.attack.smoothed.next();
+        let attack_samples = (attack_millis * self.sample_rate / 1000.0) as usize;
+        let decay_millis = self.params.decay.smoothed.next();
+        let decay_samples = (decay_millis * self.sample_rate / 1000.0) as usize;
         let params = sampler::Params {
-            fade_samples: params_fade_samples,
             auto_passthru: params_passthru,
+            attack_samples,
+            loop_mode: self.params.loop_mode.value(),
+            loop_length_percent: self.params.loop_length.smoothed.next(),
+            decay_samples,
             speed: params_speed,
         };
         params
     }
+
+    fn update_peak_meter(&mut self, frame: &mut [&mut f32]) {
+        let amplitude = (frame.iter().fold(0.0, |z, x| z + **x) / frame.len() as f32).abs();
+        let current_peak_meter = self.peak_meter.load(std::sync::atomic::Ordering::Relaxed);
+        let new_peak_meter = if amplitude > current_peak_meter {
+            amplitude
+        } else {
+            current_peak_meter * self.peak_meter_decay_weight
+                + amplitude * (1.0 - self.peak_meter_decay_weight)
+        };
+
+        self.peak_meter
+            .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed)
+    }
 }
+
+const PEAK_METER_DECAY_MS: f64 = 150.0;
 
 impl Plugin for AudioSampler {
     const NAME: &'static str = "Audio Sampler";
@@ -135,6 +206,22 @@ impl Plugin for AudioSampler {
         self.params.clone()
     }
 
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        // Using vizia as Iced doesn't support drawing bitmap images under OpenGL
+        let info_queue = Arc::new(ArrayQueue::new(1));
+        self.info_queue = info_queue.clone();
+        self.debug = Default::default();
+        self.debug = Arc::new(parking_lot::Mutex::new(format!("{:?}", self.sampler)));
+
+        editor_vizia::create(
+            self.params.clone(),
+            self.peak_meter.clone(),
+            self.params.editor_state.clone(),
+            info_queue,
+            self.debug.clone(),
+        )
+    }
+
     fn initialize(
         &mut self,
         audio_io_layout: &AudioIOLayout,
@@ -144,6 +231,9 @@ impl Plugin for AudioSampler {
         self.audio_io_layout = audio_io_layout.clone();
         self.sample_rate = buffer_config.sample_rate;
         self.sampler = Sampler::new(self.channel_count(), &self.sampler_params());
+        self.peak_meter_decay_weight = 0.25f64
+            .powf((buffer_config.sample_rate as f64 * PEAK_METER_DECAY_MS / 1000.0).recip())
+            as f32;
         true
     }
 
@@ -190,7 +280,18 @@ impl Plugin for AudioSampler {
                 next_event = context.next_event();
             }
 
-            self.sampler.process_sample(channel_samples, params);
+            let mut frame = channel_samples.into_iter().collect::<Vec<_>>();
+            self.sampler.process_frame(&mut frame, params);
+
+            //for sample in channel_samples {
+            //    amplitude += *sample;
+            //}
+            if self.params.editor_state.is_open() {
+                self.update_peak_meter(&mut frame);
+                let info = self.sampler.get_info(params);
+                *self.debug.lock() = format!("{:?}", info);
+                self.info_queue.force_push(info);
+            }
         }
 
         ProcessStatus::Normal
