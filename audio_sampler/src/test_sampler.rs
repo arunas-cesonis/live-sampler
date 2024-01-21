@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod test {
     use crate::sampler::{LoopMode, Params, Sampler};
-    use nih_plug_vizia::vizia::image::imageops::colorops::huerotate_in_place;
 
     #[derive(Copy, Clone, Debug)]
     enum Cmd {

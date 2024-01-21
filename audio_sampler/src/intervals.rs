@@ -1,6 +1,6 @@
 use smallvec::SmallVec;
 use std::fmt::Display;
-use std::ops::{Add, Rem};
+use std::ops::{Add, AddAssign, Rem, Sub};
 
 #[derive(Debug, Clone)]
 struct Interval<T> {
@@ -36,14 +36,14 @@ pub fn wrap_to_positive_offset(x: f32, data_len: f32) -> f32 {
 
 impl<T> Intervals<T>
 where
-    T: std::ops::Rem<Output = T>
-        + num_traits::Zero
-        + std::ops::Add<Output = T>
-        + std::ops::AddAssign
-        + std::ops::Sub<Output = T>
-        + num_traits::Signed
-        + std::cmp::PartialOrd
+    T: Rem<Output = T>
+        + Add<Output = T>
+        + AddAssign
+        + Sub<Output = T>
+        + PartialOrd
         + std::iter::Sum
+        + num_traits::Zero
+        + num_traits::Signed
         + Copy
         + Display,
 {
