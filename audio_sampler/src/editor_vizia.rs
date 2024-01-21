@@ -15,13 +15,20 @@ use std::cell::Cell;
 use std::sync::Arc;
 
 use crate::sampler::Info;
+
 use crate::AudioSamplerParams;
 
-#[derive(Lens)]
-struct Data {
-    params: Arc<AudioSamplerParams>,
-    peak_meter: Arc<AtomicF32>,
-    debug: Arc<parking_lot::Mutex<String>>,
+#[derive(Clone, Default)]
+pub struct DebugData {
+    pub(crate) info: Info,
+}
+
+#[derive(Clone, Lens)]
+pub struct Data {
+    pub(crate) params: Arc<AudioSamplerParams>,
+    pub(crate) peak_meter: Arc<AtomicF32>,
+    pub(crate) debug: Arc<parking_lot::Mutex<String>>,
+    pub(crate) debug_data_out: Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>,
 }
 
 impl Model for Data {
@@ -36,15 +43,16 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
 }
 
 struct WaveformView {
-    info_queue: Arc<ArrayQueue<Info>>,
-    current: Cell<Info>,
+    debug_data: Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>,
 }
 
 impl WaveformView {
-    pub fn new(cx: &mut Context, info_queue: Arc<ArrayQueue<Info>>) -> Handle<Self> {
+    pub fn new<LDebugData>(cx: &mut Context, debug_data_lens: LDebugData) -> Handle<Self>
+    where
+        LDebugData: Lens<Target = Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>>,
+    {
         Self {
-            info_queue,
-            current: Cell::new(Info::default()),
+            debug_data: debug_data_lens.get(cx),
         }
         .build(cx, |_| {})
     }
@@ -115,11 +123,8 @@ impl View for WaveformView {
         let color = Color::rgb(200, 100, 100);
         let pos_paint = Paint::color(color.into());
 
-        let info = if let Some(info) = self.info_queue.pop() {
-            info
-        } else {
-            self.current.take()
-        };
+        let debug_data = &mut self.debug_data.lock();
+        let info = &debug_data.read().info;
 
         for v in &info.voices {
             if v.start < v.end {
@@ -147,28 +152,15 @@ impl View for WaveformView {
             canvas.fill_path(&path, &pos_paint);
         }
         self.draw_image(cx, canvas);
-
-        self.current.set(info);
     }
 }
 
-pub(crate) fn create(
-    params: Arc<AudioSamplerParams>,
-    peak_meter: Arc<AtomicF32>,
-    editor_state: Arc<ViziaState>,
-    info_queue: Arc<ArrayQueue<Info>>,
-    debug: Arc<parking_lot::Mutex<String>>,
-) -> Option<Box<dyn Editor>> {
+pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         assets::register_noto_sans_light(cx);
         assets::register_noto_sans_thin(cx);
 
-        Data {
-            params: params.clone(),
-            peak_meter: peak_meter.clone(),
-            debug: debug.clone(),
-        }
-        .build(cx);
+        data.clone().build(cx);
 
         VStack::new(cx, |cx| {
             Label::new(cx, "Audio Sampler")
@@ -218,7 +210,7 @@ pub(crate) fn create(
                 //Element::new(cx).background_color(Color::rgb(255, 0, 0));
                 // Element::new(cx);
             });
-            WaveformView::new(cx, info_queue.clone()).height(Pixels(50.0));
+            WaveformView::new(cx, Data::debug_data_out).height(Pixels(50.0));
         })
         .border_width(Pixels(10.0));
 

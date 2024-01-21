@@ -39,6 +39,9 @@ struct Voice {
     speed: f32,
     speed_ping_pong: f32,
     finished: bool,
+    // this is only used by the UI to show loop points
+    // its hack/workaround for not having loop information easily available
+    last_sample_index: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -154,6 +157,7 @@ impl Channel {
             speed: 1.0,
             speed_ping_pong: 1.0,
             finished: false,
+            last_sample_index: 0,
         };
         voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
@@ -312,6 +316,9 @@ impl Channel {
                 // advance the variable that is used to track distance played from starting position
                 voice.played += speed;
 
+                // update this hacky member so UI can show playback position
+                voice.last_sample_index = index;
+
                 match params.loop_mode {
                     LoopMode::PlayOnce => {
                         if !voice.finished {
@@ -438,7 +445,7 @@ impl Sampler {
                 .map(|v| {
                     let start = v.start_percent;
                     let end = (v.start_percent + params.loop_length_percent) % 1.0;
-                    let pos = v.offset / data_len_f32;
+                    let pos = v.last_sample_index as f32 / data_len_f32;
                     VoiceInfo { start, end, pos }
                 })
                 .collect(),
