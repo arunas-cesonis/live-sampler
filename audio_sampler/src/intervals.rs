@@ -79,7 +79,7 @@ where
         self.intervals.iter().map(|x| x.end - x.start).sum()
     }
 
-    pub fn project1(&self, x: T) -> T {
+    pub fn project(&self, x: T) -> T {
         let x = g_wrap_to_positive_offset(x, self.duration());
         let mut offset = T::zero();
         for interval in &self.intervals {
@@ -95,24 +95,6 @@ where
             offset += d;
         }
         panic!("no intervals contain x")
-    }
-
-    pub fn project(&self, x: T) -> Vec<T> {
-        let x = g_wrap_to_positive_offset(x, self.duration());
-        let mut result = vec![];
-        let mut offset = T::zero();
-        for interval in &self.intervals {
-            let s = interval.start;
-            let e = interval.end;
-            let d = e - s;
-            // FIXME: the code below is very susceptible to floating point errors.
-            // this should work fine with 10x or 100x size i64's
-            if x >= offset && x < offset + d {
-                result.push(s + x - offset);
-            }
-            offset += d;
-        }
-        result
     }
 
     pub fn unproject(&self, x: T, data_len: T) -> Vec<T> {
@@ -133,8 +115,15 @@ where
 
 #[cfg(test)]
 mod test {
+
     use super::*;
     #[test]
+    fn test_reverse() {
+        //let mut view = Intervals::<i32>::default();
+        //view.push(0, 10);
+        //view.push(10, 0);
+    }
+
     #[test]
     fn test_fp_error() {
         let mut view = Intervals::<i32>::default();
@@ -142,7 +131,7 @@ mod test {
         view.push(0, 3);
         let mut x: i32 = 0;
         while x.abs() < view.duration() * 2 {
-            let y = view.project(x)[0];
+            let y = view.project(x);
             let y = y % 10;
             let y = if y < 0 { y + 10 } else { y };
             eprintln!("i32 {} {}", x, y);
@@ -154,7 +143,7 @@ mod test {
         view.push(0.0, 2.9999995);
         let mut x: f32 = 0.0;
         while x.abs() < view.duration() * 2.0 {
-            let y = view.project(x)[0];
+            let y = view.project(x);
             let y = (y.round() as i64) % 10;
             let y = if y < 0 { y + 10 } else { y };
             eprintln!("f32 {} {}", x, y);
@@ -173,17 +162,16 @@ mod test {
         assert_eq!(view.unproject(21, 100), vec![11]);
         assert_eq!(view.unproject(10, 100), Vec::<i64>::new());
 
-        assert_eq!(vec![5], view.project(5));
-        assert_eq!(vec![20], view.project(10));
-        assert_eq!(vec![21], view.project(11));
-        assert_eq!(vec![25], view.project(15));
+        assert_eq!(5, view.project(5));
+        assert_eq!(20, view.project(10));
+        assert_eq!(21, view.project(11));
+        assert_eq!(25, view.project(15));
 
         let mut pos = 0;
         let mut out = vec![];
         while pos < view.duration() {
             let value = view.project(pos);
-            assert!(value.len() <= 1);
-            out.push(value[0]);
+            out.push(value);
             pos += 1;
         }
         let expected: Vec<i64> = vec![
@@ -212,8 +200,7 @@ mod test {
         let mut out = vec![];
         while pos < view.duration() {
             let value = view.project(pos);
-            assert!(value.len() <= 1);
-            out.push(value[0]);
+            out.push(value);
             pos += 1;
         }
         let expected: Vec<_> =
