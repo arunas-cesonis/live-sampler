@@ -87,6 +87,7 @@ where
             let e = interval.end;
             let d = e - s;
             // FIXME: the code below is very susceptible to floating point errors.
+            // maybe using i64 for offsets would be fine, e.g. subdiving by 1000
             // this should work fine with 10x or 100x size i64's
             if x >= offset && x < offset + d {
                 return s + x - offset;

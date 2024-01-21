@@ -59,6 +59,7 @@ struct Channel {
 #[derive(Debug, Enum, PartialEq, Clone)]
 pub enum LoopMode {
     PlayOnce,
+    PingPong,
     Loop,
 }
 
@@ -452,9 +453,3 @@ impl Sampler {
         }
     }
 }
-
-//struct ProcessIter<'a, I> {
-//    sampler: &'a mut Sampler,
-//    iter: I,
-//    params: &'a Params,
-//}
