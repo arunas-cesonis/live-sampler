@@ -100,7 +100,7 @@ impl Default for AudioSamplerParams {
                 FloatRange::Skewed {
                     min: 0.001,
                     max: 1.0,
-                    factor: 0.25,
+                    factor: 0.5,
                 },
             )
             .with_unit(" %"),
