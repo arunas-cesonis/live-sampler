@@ -6,6 +6,7 @@ use nih_plug_vizia::ViziaState;
 
 use crate::sampler::{Info, LoopMode, Sampler};
 
+use crate::editor_vizia::DebugData;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
@@ -30,11 +31,13 @@ pub struct AudioSampler {
     peak_meter: Arc<AtomicF32>,
     info_queue: Arc<ArrayQueue<Info>>,
     debug: Arc<parking_lot::Mutex<String>>,
+    debug_data_in: Arc<parking_lot::Mutex<triple_buffer::Input<DebugData>>>,
+    debug_data_out: Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>,
     peak_meter_decay_weight: f32,
 }
 
 #[derive(Params)]
-struct AudioSamplerParams {
+pub struct AudioSamplerParams {
     #[id = "auto_passthru"]
     pub auto_passthru: BoolParam,
     #[id = "speed"]
@@ -108,6 +111,7 @@ impl Default for AudioSamplerParams {
 
 impl Default for AudioSampler {
     fn default() -> Self {
+        let (debug_data_in, debug_data_out) = triple_buffer::TripleBuffer::default().split();
         Self {
             audio_io_layout: AudioIOLayout::default(),
             params: Arc::new(AudioSamplerParams::default()),
@@ -117,6 +121,8 @@ impl Default for AudioSampler {
             info_queue: Arc::new(ArrayQueue::new(1)),
             peak_meter: Default::default(), //debug: Arc::new(Mutex::new(None)),
             debug: Default::default(),
+            debug_data_in: Arc::new(parking_lot::Mutex::new(debug_data_in)),
+            debug_data_out: Arc::new(parking_lot::Mutex::new(debug_data_out)),
         }
     }
 }
@@ -213,13 +219,14 @@ impl Plugin for AudioSampler {
         self.debug = Default::default();
         self.debug = Arc::new(parking_lot::Mutex::new(format!("{:?}", self.sampler)));
 
-        editor_vizia::create(
-            self.params.clone(),
-            self.peak_meter.clone(),
-            self.params.editor_state.clone(),
-            info_queue,
-            self.debug.clone(),
-        )
+        let data = editor_vizia::Data {
+            params: self.params.clone(),
+            peak_meter: self.peak_meter.clone(),
+            debug: self.debug.clone(),
+            debug_data_out: self.debug_data_out.clone(),
+        };
+
+        editor_vizia::create(self.params.editor_state.clone(), data)
     }
 
     fn initialize(
@@ -289,8 +296,7 @@ impl Plugin for AudioSampler {
             if self.params.editor_state.is_open() {
                 self.update_peak_meter(&mut frame);
                 let info = self.sampler.get_info(params);
-                *self.debug.lock() = format!("{:?}", info);
-                self.info_queue.force_push(info);
+                self.debug_data_in.lock().write(DebugData { info });
             }
         }
 
