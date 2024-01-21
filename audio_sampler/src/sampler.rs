@@ -99,21 +99,15 @@ fn calc_intervals(start_percent: f32, loop_length_percent: f32, data_len: usize)
     let len_f32 = data_len as f32;
     let loop_start = start_percent * len_f32;
     let loop_end = ((start_percent + loop_length_percent) % 1.0) * len_f32;
-    let loop_length = loop_length_percent * len_f32;
     if loop_start < loop_end {
         view.push(loop_start, loop_end);
-    } else if loop_start > loop_end {
-        //  eprintln!("voice={:#?} params={:#?}", voice, params);
+    } else {
+        // if loop_start > loop_end {
+        assert!(loop_start >= loop_end);
         view.push(loop_start, len_f32);
         if loop_end > 0.0 {
-            // end is 0.0 when its percentage is 1.0
             view.push(0.0, loop_end);
         }
-    } else if loop_start > 0.0 {
-        view.push(loop_start, len_f32);
-        view.push(0.0, loop_start);
-    } else {
-        view.push(0.0, len_f32);
     }
     view
 }

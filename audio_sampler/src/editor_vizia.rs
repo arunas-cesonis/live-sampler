@@ -146,6 +146,7 @@ impl View for WaveformView {
             let path = rectangle_path(x, bounds.y, width, bounds.h);
             canvas.fill_path(&path, &pos_paint);
         }
+        self.draw_image(cx, canvas);
 
         self.current.set(info);
     }
@@ -213,6 +214,9 @@ pub(crate) fn create(
                     .width(Percentage(100.0))
                     .height(Percentage(100.0));
                 });
+
+                //Element::new(cx).background_color(Color::rgb(255, 0, 0));
+                // Element::new(cx);
             });
             WaveformView::new(cx, info_queue.clone()).height(Pixels(50.0));
         })
