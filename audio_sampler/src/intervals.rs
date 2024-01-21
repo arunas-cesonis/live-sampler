@@ -13,28 +13,6 @@ pub struct Intervals<T> {
     intervals: SmallVec<[Interval<T>; 4]>,
 }
 
-// trait Zero {
-//     fn zero() -> Self;
-// }
-//
-// impl Zero for f32 {
-//     fn zero() -> Self {
-//         0.0
-//     }
-// }
-//
-// impl Zero for i64 {
-//     fn zero() -> Self {
-//         0
-//     }
-// }
-//
-// impl Zero for i32 {
-//     fn zero() -> Self {
-//         0
-//     }
-// }
-
 pub fn g_wrap_to_positive_offset<T>(x: T, data_len: T) -> T
 where
     T: Rem<Output = T> + num_traits::Zero + Add<Output = T> + PartialOrd + Copy,
