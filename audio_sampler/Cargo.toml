@@ -38,6 +38,7 @@ crossbeam-queue = "0.3.11"
 smallvec = "1.12.0"
 parking_lot = "0.12.1"
 triple_buffer = "7.0.0"
+num-traits = "0.2.17"
 
 #iced_baseview = "0.0.1"
 #iced_graphics = "0.2.0"
