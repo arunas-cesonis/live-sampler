@@ -303,7 +303,7 @@ impl Channel {
                     voice.offset - 1.0
                 };
 
-                let data_offset = intervals.project1(directed_offset);
+                let data_offset = intervals.project(directed_offset);
                 let index = (data_offset.round() as usize) % self.data.len();
                 let value = self.data[index];
                 output += value * voice.volume.value(self.now);
