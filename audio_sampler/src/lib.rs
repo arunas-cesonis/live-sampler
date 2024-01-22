@@ -16,9 +16,10 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 // mod editor;
 mod editor_vizia;
-mod intervals;
+mod loop_mode;
 mod sampler;
 mod test_sampler;
+mod voice;
 mod volume;
 
 type SysEx = ();

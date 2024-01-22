@@ -1,7 +1,8 @@
 use std::fmt::Debug;
 
-use crate::intervals::Intervals;
-
+pub use crate::loop_mode::LoopMode;
+use crate::voice;
+use crate::voice::{CalcSampleIndexParams, Voice};
 use nih_plug::nih_warn;
 use nih_plug::prelude::Enum;
 use nih_plug_vizia::vizia::views::virtual_list_derived_lenses::offset;
@@ -30,21 +31,6 @@ fn calc_sample_index(data_len: usize, read: f32, reverse: bool) -> usize {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-struct Voice {
-    note: u8,
-    offset: f32,
-    played: f32,
-    volume: Volume,
-    start_percent: f32,
-    speed: f32,
-    speed_ping_pong: f32,
-    finished: bool,
-    // this is only used by the UI to show loop points
-    // its hack/workaround for not having loop information easily available
-    last_sample_index: usize,
-}
-
 #[derive(Clone, Debug)]
 struct Channel {
     data: Vec<f32>,
@@ -55,13 +41,6 @@ struct Channel {
     now: usize,
     passthru_on: bool,
     passthru_volume: Volume,
-}
-
-#[derive(Debug, Enum, PartialEq, Clone, Copy)]
-pub enum LoopMode {
-    PlayOnce,
-    PingPong,
-    Loop,
 }
 
 #[derive(Debug, Clone)]
@@ -99,46 +78,12 @@ impl Default for Params {
     }
 }
 
-// fn wrapping_add(x: f32, y: f32, limit: f32) -> f32 {
-//     assert!(limit > 0.0);
-//     let z = x + y;
-//     let z = z % limit;
-//     let z = if z < 0.0 { z + limit } else { z };
-//     z
-// }
-
-#[inline]
-fn push_interval(dest: &mut Intervals<f32>, start: f32, end: f32, len_f32: f32) {
-    if start < end {
-        dest.push(start, end);
-    } else {
-        dest.push(start, len_f32);
-        if end > 0.0 {
-            dest.push(0.0, end);
-        }
-    }
-}
-
-fn calc_intervals(
-    loop_mode: LoopMode,
-    start_percent: f32,
-    loop_length_percent: f32,
-    data_len: usize,
-) -> Intervals<f32> {
-    let mut view = Intervals::<f32>::default();
-    let len_f32 = data_len as f32;
-    let loop_start = start_percent * len_f32;
-    let loop_end = ((start_percent + loop_length_percent) % 1.0) * len_f32;
-    match loop_mode {
-        LoopMode::Loop | LoopMode::PlayOnce => {
-            push_interval(&mut view, loop_start, loop_end, len_f32);
-        }
-        LoopMode::PingPong => {
-            todo!()
-            //if loop_start < loop_end {
-        }
-    }
-    view
+fn add_mod(x: f32, y: f32, limit: f32) -> f32 {
+    assert!(limit > 0.0);
+    let z = x + y;
+    let z = z % limit;
+    let z = if z < 0.0 { z + limit } else { z };
+    z
 }
 
 impl Channel {
@@ -176,12 +121,10 @@ impl Channel {
         assert!(pos >= 0.0 && pos <= 1.0);
         let mut voice = Voice {
             note,
-            start_percent: pos,
+            loop_start_percent: pos,
             offset: 0.0,
             played: 0.0,
             volume: Volume::new(0.0),
-            speed: 1.0,
-            speed_ping_pong: 1.0,
             finished: false,
             last_sample_index: 0,
         };
@@ -305,39 +248,29 @@ impl Channel {
                 //} else {
                 //    view.push(0.0, len_f32);
                 //}
-                let speed = voice.speed * self.reverse_speed * params.speed * voice.speed_ping_pong;
+                let speed = self.reverse_speed * params.speed;
 
-                // directed_ means playback direction was taken into account
-                let intervals = calc_intervals(
-                    params.loop_mode,
-                    voice.start_percent,
-                    params.loop_length_percent,
-                    self.data.len(),
-                );
-
-                // start from the beginning if loop length has changed to smaller than before
-                // and offset was in the part that was removed
-                if voice.offset > intervals.duration() {
-                    voice.offset = 0.0;
-                }
-
-                // when playing in reverse, read sample which is behind, not ahead
-                // so, e.g. if offset == 0.0 then sample to be played is data[data.len() - 1]
-                let directed_offset = if speed > 0.0 {
-                    voice.offset
-                } else {
-                    voice.offset - 1.0
-                };
-
-                let data_offset = intervals.project(directed_offset);
-                let index = (data_offset.round() as usize) % self.data.len();
+                let index = voice::calc_sample_index1(&CalcSampleIndexParams {
+                    loop_mode: params.loop_mode,
+                    offset: voice.offset,
+                    speed: speed,
+                    loop_start_percent: voice.loop_start_percent,
+                    loop_length_percent: params.loop_length_percent,
+                    data_len: self.data.len(),
+                });
+                let loop_length = params.loop_length_percent * (self.data.len() as f32);
+                assert_eq!(index, index);
                 let value = self.data[index];
                 output += value * voice.volume.value(self.now);
+                eprintln!(
+                    "speed={} voice.offset={} index={}",
+                    speed, voice.offset, index,
+                );
 
                 // advance the offset
-                voice.offset = (voice.offset + speed) % intervals.duration();
+                voice.offset = (voice.offset + speed) % loop_length;
                 if voice.offset < 0.0 {
-                    voice.offset += intervals.duration();
+                    voice.offset += loop_length;
                 }
 
                 // advance the variable that is used to track distance played from starting position
@@ -349,7 +282,7 @@ impl Channel {
                 match params.loop_mode {
                     LoopMode::PlayOnce => {
                         if !voice.finished {
-                            if voice.played.abs() >= intervals.duration() {
+                            if voice.played.abs() >= loop_length {
                                 finished.push(i);
                             }
                         }
@@ -470,8 +403,8 @@ impl Sampler {
                 .voices
                 .iter()
                 .map(|v| {
-                    let start = v.start_percent;
-                    let end = (v.start_percent + params.loop_length_percent) % 1.0;
+                    let start = v.loop_start_percent;
+                    let end = (v.loop_start_percent + params.loop_length_percent) % 1.0;
                     let pos = v.last_sample_index as f32 / data_len_f32;
                     VoiceInfo { start, end, pos }
                 })
