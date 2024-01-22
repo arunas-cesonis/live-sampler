@@ -4,8 +4,6 @@ pub use crate::loop_mode::LoopMode;
 use crate::voice;
 use crate::voice::{CalcSampleIndexParams, Voice};
 use nih_plug::nih_warn;
-use nih_plug::prelude::Enum;
-use nih_plug_vizia::vizia::views::virtual_list_derived_lenses::offset;
 
 use crate::volume::Volume;
 
@@ -268,11 +266,11 @@ impl Channel {
                 );
 
                 // advance the offset
-                voice.offset = (voice.offset + speed) % loop_length;
-                if voice.offset < 0.0 {
-                    voice.offset += loop_length;
-                }
-
+                voice.offset = (voice.offset + speed);
+                //                if voice.offset < 0.0 {
+                //                    voice.offset += loop_length;
+                //                }
+                //
                 // advance the variable that is used to track distance played from starting position
                 voice.played += speed;
 
