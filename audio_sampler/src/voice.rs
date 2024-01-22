@@ -96,7 +96,6 @@ pub fn calc_sample_index(
     assert!(loop_length_percent > 0.0 && loop_length_percent <= 1.0);
     assert!(loop_start_percent >= 0.0 && loop_start_percent < 1.0);
     assert!(data_len > 0);
-    assert!(data_len > 0);
     let len_f32 = data_len as f32;
     let loop_length = loop_length_percent * len_f32;
     let start = loop_start_percent * len_f32;
