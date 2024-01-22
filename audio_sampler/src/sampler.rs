@@ -159,16 +159,6 @@ impl Channel {
         }
     }
 
-    fn record_sample(&mut self, value: f32) {
-        assert!(self.recording && self.write <= self.data.len());
-        if self.write == self.data.len() {
-            self.data.push(value);
-        } else {
-            self.data[self.write] = value;
-        }
-        self.write += 1;
-    }
-
     pub fn process_sample<'a>(&mut self, sample: &mut f32, params: &Params) {
         let value = *sample;
 
@@ -190,7 +180,7 @@ impl Channel {
                 let index = voice::calc_sample_index1(&CalcSampleIndexParams {
                     loop_mode: params.loop_mode,
                     offset: voice.offset,
-                    speed: speed,
+                    speed,
                     loop_start_percent: voice.loop_start_percent,
                     loop_length_percent: params.loop_length_percent,
                     data_len: self.data.len(),
@@ -199,10 +189,6 @@ impl Channel {
                 assert_eq!(index, index);
                 let value = self.data[index];
                 output += value * voice.volume.value(self.now);
-                eprintln!(
-                    "speed={} voice.offset={} index={}",
-                    speed, voice.offset, index,
-                );
 
                 // advance the offset
                 voice.offset += speed;

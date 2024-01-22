@@ -184,10 +184,4 @@ mod test {
             5
         );
     }
-
-    fn test_calc_sample_index_ping_pong() {
-        let _voice = Voice::new(0, 0.0);
-        let _mode = LoopMode::PingPong;
-        let _data = (0..5).collect::<Vec<_>>();
-    }
 }
