@@ -1,3 +1,4 @@
+#![allow(unused)]
 use crossbeam_queue::ArrayQueue;
 use std::sync::Arc;
 

@@ -63,39 +63,11 @@ mod test {
         }
     }
 
-    fn run_sampler(
-        input: &[f32],
-        note_on_index: usize,
-        start_percent: f32,
-        params: &Params,
-    ) -> Vec<f32> {
-        let mut sampler = Sampler::new(1, &params);
-        sampler.start_recording(&params);
-        input.iter().for_each(|x| {
-            sampler.process_sample(&mut [*x], &params);
-        });
-        sampler.stop_recording(&params);
-
-        let buffer = vec![0.0; 10];
-        let output: Vec<_> = buffer
-            .into_iter()
-            .enumerate()
-            .map(|(index, x)| {
-                if index == note_on_index {
-                    sampler.start_playing(start_percent, 11, 1.0, &params);
-                }
-                let mut frame = vec![x];
-                sampler.process_sample(&mut frame, &params);
-                frame[0]
-            })
-            .collect();
-        sampler.stop_playing(11, &params);
-        output
-    }
     fn simple_input() -> Vec<f32> {
         let input: Vec<_> = (0..10).into_iter().map(|x| x as f32).collect();
         input
     }
+
     #[test]
     fn test_play_once() {
         let params = Params {
@@ -158,7 +130,6 @@ mod test {
         );
 
         // record first 10 samples, then wait for 2 samples and PlayOnce with loop length 100%
-        eprintln!("************************************************************");
         let mut host = Host::new(Params {
             loop_length_percent: 1.0,
             ..params.clone()
@@ -193,7 +164,6 @@ mod test {
         );
 
         // backwards crossing data boundary
-        eprintln!("************************************************************");
         let mut host = Host::new(Params {
             loop_length_percent: 1.0,
             speed: -1.0,
@@ -213,9 +183,6 @@ mod test {
             ]
             .concat()
         );
-
-        eprintln!("{:?}", host.sampler);
-        eprintln!("{:?}", output);
     }
 
     #[test]
