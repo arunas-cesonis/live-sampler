@@ -17,7 +17,6 @@ mod test {
         params: Params,
         now: usize,
         cmds: Vec<(usize, Cmd)>,
-        //output: Vec<f32>,
     }
     impl Host {
         fn new(params: Params) -> Self {
@@ -26,44 +25,12 @@ mod test {
                 params,
                 now: 0,
                 cmds: vec![],
-                //output: vec![],
             }
         }
 
         fn schedule(&mut self, at: usize, cmd: Cmd) {
             self.cmds.push((at, cmd));
         }
-        //
-        //        fn start_playing(&mut self, pos: f32) {
-        //            self.sampler.start_playing(pos, 11, 1.0, &self.params);
-        //        }
-        //
-        //        fn stop_playing(&mut self, pos: f32) {
-        //            self.sampler.stop_playing(11, &self.params);
-        //        }
-        //
-        //        fn start_recording(&mut self) {
-        //            self.sampler.start_recording(&self.params);
-        //        }
-        //
-        //        fn stop_recording(&mut self) {
-        //            self.sampler.stop_recording(&self.params);
-        //        }
-        //
-        //        fn output(&self) -> &[f32] {
-        //            &self.output
-        //        }
-        //
-        //        fn process_samples<I>(&mut self, input: I)
-        //        where
-        //            I: IntoIterator<Item = f32>,
-        //        {
-        //            for x in input {
-        //                let mut frame = vec![x];
-        //                self.sampler.process_sample(&mut frame, &self.params);
-        //                self.output.push(frame[0]);
-        //            }
-        //        }
 
         fn run_input<I>(&mut self, input: I) -> Vec<f32>
         where
@@ -102,13 +69,6 @@ mod test {
         start_percent: f32,
         params: &Params,
     ) -> Vec<f32> {
-        //let params = Params {
-        //    loop_mode: LoopMode::Loop,
-        //    attack_samples: 0,
-        //    decay_samples: 0,
-        //    loop_length_percent: 0.5,
-        //    ..Params::default()
-        //};
         let mut sampler = Sampler::new(1, &params);
         sampler.start_recording(&params);
         input.iter().for_each(|x| {
@@ -385,8 +345,6 @@ mod test {
                 one_to_ten.clone(),
                 vec![1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
                 vec![1.0, 10.0, 9.0, 8.0],
-                //vec![3.0, 2.0, 1.0, 10.0, 9.0],
-                //vec![3.0, 2.0, 1.0, 10.0, 9.0],
             ]
             .concat()
         );
@@ -428,8 +386,6 @@ mod test {
                 one_to_ten.clone(),
                 vec![1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
                 vec![1.0, 10.0, 9.0, 8.0],
-                //vec![3.0, 2.0, 1.0, 10.0, 9.0],
-                //vec![3.0, 2.0, 1.0, 10.0, 9.0],
             ]
             .concat()
         );
