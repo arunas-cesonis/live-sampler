@@ -539,7 +539,7 @@ mod test {
             ..Params::default()
         };
         let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
-        let one_to_five: Vec<_> = (0..5).map(|x| x as f32).collect();
+        let _one_to_five: Vec<_> = (0..5).map(|x| x as f32).collect();
         let ten_tens = vec![777.0; 10];
         let input = vec![one_to_ten.clone(), ten_tens.clone(), ten_tens.clone()].concat();
 
@@ -551,7 +551,7 @@ mod test {
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
         //
-        let tmp = host.clone();
+        let _tmp = host.clone();
         host.params.speed = -1.0;
         host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(input.clone());

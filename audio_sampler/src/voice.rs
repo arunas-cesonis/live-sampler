@@ -139,7 +139,7 @@ mod test {
 
     #[test]
     fn test_calc_sample_index_loop() {
-        let mut params = CalcSampleIndexParams {
+        let params = CalcSampleIndexParams {
             loop_mode: LoopMode::Loop,
             offset: 0.0,
             speed: 1.0,
@@ -186,8 +186,8 @@ mod test {
     }
 
     fn test_calc_sample_index_ping_pong() {
-        let voice = Voice::new(0, 0.0);
-        let mode = LoopMode::PingPong;
-        let data = (0..5).collect::<Vec<_>>();
+        let _voice = Voice::new(0, 0.0);
+        let _mode = LoopMode::PingPong;
+        let _data = (0..5).collect::<Vec<_>>();
     }
 }
