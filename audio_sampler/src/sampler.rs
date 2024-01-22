@@ -7,28 +7,6 @@ use nih_plug::nih_warn;
 
 use crate::volume::Volume;
 
-fn calc_sample_index_f32(len_f32: f32, read: f32) -> f32 {
-    let i = read % len_f32;
-    let i = if i < 0.0 { i + len_f32 } else { i };
-    i
-}
-
-/**
- * calculate sample index from read position and read direction
- */
-fn calc_sample_index(data_len: usize, read: f32, reverse: bool) -> usize {
-    let index = calc_sample_index_f32(data_len as f32, read) as usize;
-    if reverse {
-        if index > 0 {
-            index - 1
-        } else {
-            data_len - 1
-        }
-    } else {
-        calc_sample_index_f32(data_len as f32, read) as usize
-    }
-}
-
 #[derive(Clone, Debug)]
 struct Channel {
     data: Vec<f32>,
@@ -76,14 +54,6 @@ impl Default for Params {
     }
 }
 
-fn add_mod(x: f32, y: f32, limit: f32) -> f32 {
-    assert!(limit > 0.0);
-    let z = x + y;
-    let z = z % limit;
-    let z = if z < 0.0 { z + limit } else { z };
-    z
-}
-
 impl Channel {
     fn new(params: &Params) -> Self {
         Channel {
@@ -117,15 +87,7 @@ impl Channel {
 
     pub fn start_playing(&mut self, pos: f32, note: u8, velocity: f32, params: &Params) {
         assert!(pos >= 0.0 && pos <= 1.0);
-        let mut voice = Voice {
-            note,
-            loop_start_percent: pos,
-            offset: 0.0,
-            played: 0.0,
-            volume: Volume::new(0.0),
-            finished: false,
-            last_sample_index: 0,
-        };
+        let mut voice = Voice::new(note, pos);
         voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
         self.handle_passthru(params);
@@ -224,30 +186,7 @@ impl Channel {
         let mut finished: Vec<usize> = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
             if !self.data.is_empty() {
-                //let len_f32 = self.data.len() as f32;
-                //let loop_start = voice.start_percent * len_f32;
-                //let loop_end = ((voice.start_percent + params.loop_length_percent) % 1.0) * len_f32;
-                //let loop_length = params.loop_length_percent * len_f32;
-                //// calculate playback speed
-
-                //let mut view = Intervals::<f32>::default();
-                //if loop_start < loop_end {
-                //    view.push(loop_start, loop_end);
-                //} else if loop_start > loop_end {
-                //    //  eprintln!("voice={:#?} params={:#?}", voice, params);
-                //    view.push(loop_start, len_f32);
-                //    if loop_end > 0.0 {
-                //        // end is 0.0 when its percentage is 1.0
-                //        view.push(0.0, loop_end);
-                //    }
-                //} else if loop_start > 0.0 {
-                //    view.push(loop_start, len_f32);
-                //    view.push(0.0, loop_start);
-                //} else {
-                //    view.push(0.0, len_f32);
-                //}
                 let speed = self.reverse_speed * params.speed;
-
                 let index = voice::calc_sample_index1(&CalcSampleIndexParams {
                     loop_mode: params.loop_mode,
                     offset: voice.offset,
@@ -266,11 +205,8 @@ impl Channel {
                 );
 
                 // advance the offset
-                voice.offset = (voice.offset + speed);
-                //                if voice.offset < 0.0 {
-                //                    voice.offset += loop_length;
-                //                }
-                //
+                voice.offset += speed;
+
                 // advance the variable that is used to track distance played from starting position
                 voice.played += speed;
 
@@ -325,10 +261,6 @@ impl Channel {
 
             // update state
             self.handle_passthru(params);
-            //eprintln!(
-            //    "now={} passthru_on={} passthru={:?} passhtru_value={:.2} output={:.2}",
-            //    self.now, self.passthru_on, self.passthru_volume, passhtru_value, output
-            //);
         }
 
         self.now += 1;

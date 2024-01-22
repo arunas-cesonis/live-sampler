@@ -28,15 +28,6 @@ impl Voice {
     }
 }
 
-fn ensure_range(x: f32, n: f32) -> f32 {
-    let x = x % n;
-    if x < 0.0 {
-        x + n
-    } else {
-        x
-    }
-}
-
 #[derive(Copy, Clone, Debug)]
 pub struct CalcSampleIndexParams {
     pub loop_mode: LoopMode,
@@ -119,7 +110,7 @@ pub fn calc_sample_index(
             x as usize
         }
         LoopMode::PingPong => {
-            let x = offset + if speed < 0.0 { -1.0 } else { 0.0 };
+            let x = offset + if speed < 0.0 { -1.0 - loop_length } else { 0.0 };
             let x = x % (2.0 * loop_length);
             let x = if x < 0.0 { x + 2.0 * loop_length } else { x };
             let x = if x < loop_length {
