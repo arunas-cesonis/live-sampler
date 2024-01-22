@@ -119,16 +119,17 @@ pub fn calc_sample_index(
             x as usize
         }
         LoopMode::PingPong => {
-            todo!();
-            //let offset = voice.offset % (loop_length * 2.0);
-            //let offset = offset + if speed < 0.0 { -1.0 } else { 0.0 };
-            //let offset = if offset >= loop_length {
-            //    offset - loop_length
-            //} else {
-            //    offset
-            //};
-            //let index = ((start + offset).round() as usize) % data_len;
-            //index
+            let x = offset + if speed < 0.0 { -1.0 } else { 0.0 };
+            let x = x % (2.0 * loop_length);
+            let x = if x < 0.0 { x + 2.0 * loop_length } else { x };
+            let x = if x < loop_length {
+                x
+            } else {
+                2.0 * loop_length - x - 1.0
+            };
+            let x = (start + x).round() % len_f32;
+            let x = if x < 0.0 { x + loop_length } else { x };
+            x as usize
         }
         LoopMode::PlayOnce => {
             let x = offset + if speed < 0.0 { -1.0 } else { 0.0 };

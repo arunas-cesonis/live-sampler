@@ -504,7 +504,7 @@ mod test {
         );
     }
 
-    // #[test]
+    #[test]
     fn test_ping_pong() {
         let params = Params {
             loop_mode: LoopMode::PingPong,
@@ -573,7 +573,7 @@ mod test {
         );
     }
 
-    // #[test]
+    #[test]
     fn test_ping_pong_rev() {
         let params = Params {
             loop_mode: LoopMode::PingPong,
