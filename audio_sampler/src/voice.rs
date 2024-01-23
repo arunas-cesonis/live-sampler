@@ -85,6 +85,12 @@ pub fn calc_sample_index1(params: &CalcSampleIndexParams) -> usize {
     )
 }
 
+fn normalize_offset(offset: f32, n: f32) -> f32 {
+    let x = offset % n;
+    let x = if x < 0.0 { x + n } else { x };
+    x
+}
+
 pub fn calc_sample_index(
     loop_mode: LoopMode,
     offset: f32,
@@ -102,32 +108,34 @@ pub fn calc_sample_index(
     let start = loop_start_percent * len_f32;
     match loop_mode {
         LoopMode::Loop => {
+            // adjust offset to face the direction of speed
             let x = offset + if speed < 0.0 { -1.0 } else { 0.0 };
-            let x = x % loop_length;
-            let x = if x < 0.0 { x + loop_length } else { x };
+            // wrap it to be a positive value within loop's length
+            let x = normalize_offset(x, loop_length);
+            // add start to get the absolute offset
             let x = (start + x).round() % len_f32;
-            let x = if x < 0.0 { x + loop_length } else { x };
             x as usize
         }
         LoopMode::PingPong => {
+            // adjust offset to face the direction of speed
+            // subtracting loop_length in addition to 1.0
             let x = offset + if speed < 0.0 { -1.0 - loop_length } else { 0.0 };
-            let x = x % (2.0 * loop_length);
-            let x = if x < 0.0 { x + 2.0 * loop_length } else { x };
+            // normalize offset to be within 0..2*loop_length
+            let x = normalize_offset(x, 2.0 * loop_length);
+            // undo the mirroring effectc
             let x = if x < loop_length {
                 x
             } else {
                 2.0 * loop_length - x - 1.0
             };
             let x = (start + x).round() % len_f32;
-            let x = if x < 0.0 { x + loop_length } else { x };
             x as usize
         }
         LoopMode::PlayOnce => {
+            // play once does not bound the offset by loop length
             let x = offset + if speed < 0.0 { -1.0 } else { 0.0 };
-            // let x = x % loop_length;
             let x = if x < 0.0 { x + loop_length } else { x };
             let x = (start + x).round() % len_f32;
-            let x = if x < 0.0 { x + loop_length } else { x };
             x as usize
         }
     }
