@@ -64,6 +64,12 @@ fn starting_offset(loop_start_percent: f32, data_len: usize) -> f32 {
     start
 }
 
+fn loop_length(loop_length_percent: f32, data_len: usize) -> f32 {
+    let len_f32 = data_len as f32;
+    let start = loop_length_percent * len_f32;
+    start
+}
+
 fn calc_intervals(loop_start_percent: f32, loop_length_percent: f32, data_len: usize) -> Intervals {
     let len_f32 = data_len as f32;
     let start = loop_start_percent * len_f32;
@@ -73,7 +79,7 @@ fn calc_intervals(loop_start_percent: f32, loop_length_percent: f32, data_len: u
         view.push(start, end);
     } else {
         view.push(start, len_f32);
-        if end != start {
+        if start > 0.0 {
             view.push(0.0, end);
         }
     }
@@ -237,18 +243,8 @@ impl Channel {
                 );
 
                 voice.position.make_valid(&view.as_slice());
+                eprintln!("{:?}", voice.position);
 
-                //let offset = if view.contains(voice.offset) {
-                //    voice.offset
-                //} else {
-                //    starting_offset(voice.loop_start_percent, self.data.len())
-                //};
-                //let directed_offset = if speed < 0.0 {
-                //    view.wrapped_global(view.first_local(offset).unwrap() - 1.0)
-                //        .unwrap()
-                //} else {
-                //    offset
-                //};
                 let index = voice.position.to_data_index(
                     &view.as_slice(),
                     speed,
@@ -261,58 +257,23 @@ impl Channel {
                     .position
                     .advance(&view.as_slice(), speed, params.loop_mode);
                 output += value * voice.volume.value(self.now);
-                //voice.offset = view
-                //    .wrapped_global(view.first_local(offset).unwrap() + speed)
-                //    .unwrap();
 
-                voice.last_sample_index = index;
-
-                //match params.loop_mode {
-                //    LoopMode::PlayOnce => {
-                //        if !voice.finished {
-                //            if voice.played.abs() >= loop_length {
-                //                finished.push(i);
-                //            }
-                //        }
-                //    }
-                //    _ => (),
-                //};
-
-                /*
-                let index = CalcSampleIndexParams {
-                    loop_mode: params.loop_mode,
-                    offset: voice.offset,
-                    speed,
-                    loop_start_percent: voice.loop_start_percent,
-                    loop_length_percent: params.loop_length_percent,
-                    data_len: self.data.len(),
-                }
-                .to_result();
-                let loop_length = params.loop_length_percent * (self.data.len() as f32);
-                assert_eq!(index, index);
-                let value = self.data[index];
-                output += value * voice.volume.value(self.now);
-
-                // advance the offset
-                voice.offset += speed;
-
-                // advance the variable that is used to track distance played from starting position
                 voice.played += speed;
 
-                // update this hacky member so UI can show playback position
                 voice.last_sample_index = index;
 
                 match params.loop_mode {
                     LoopMode::PlayOnce => {
                         if !voice.finished {
-                            if voice.played.abs() >= loop_length {
+                            if voice.played.abs()
+                                >= loop_length(params.loop_length_percent, self.data.len())
+                            {
                                 finished.push(i);
                             }
                         }
                     }
                     _ => (),
                 };
-                */
             };
         }
 
