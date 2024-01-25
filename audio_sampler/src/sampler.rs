@@ -1,9 +1,13 @@
 use std::fmt::Debug;
 
+use crate::clip::{Intervals, Position};
 pub use crate::loop_mode::LoopMode;
+use crate::utils::normalize_offset;
 use crate::voice;
 use crate::voice::{CalcSampleIndexParams, Voice};
 use nih_plug::nih_warn;
+use nih_plug::wrapper::vst3::vst3_sys::vst::ChannelPluginLocation::kUsedAsPanner;
+use nih_plug_vizia::vizia::style::LengthValue::In;
 
 use crate::volume::Volume;
 
@@ -54,6 +58,28 @@ impl Default for Params {
     }
 }
 
+fn starting_offset(loop_start_percent: f32, data_len: usize) -> f32 {
+    let len_f32 = data_len as f32;
+    let start = loop_start_percent * len_f32;
+    start
+}
+
+fn calc_intervals(loop_start_percent: f32, loop_length_percent: f32, data_len: usize) -> Intervals {
+    let len_f32 = data_len as f32;
+    let start = loop_start_percent * len_f32;
+    let end = (start + loop_length_percent * len_f32) % len_f32;
+    let mut view = Intervals::default();
+    if start < end {
+        view.push(start, end);
+    } else {
+        view.push(start, len_f32);
+        if end != start {
+            view.push(0.0, end);
+        }
+    }
+    view
+}
+
 impl Channel {
     fn new(params: &Params) -> Self {
         Channel {
@@ -85,9 +111,32 @@ impl Channel {
         voice.finished = true;
     }
 
-    pub fn start_playing(&mut self, pos: f32, note: u8, velocity: f32, params: &Params) {
-        assert!(pos >= 0.0 && pos <= 1.0);
-        let mut voice = Voice::new(note, pos);
+    pub fn start_playing(
+        &mut self,
+        loop_start_percent: f32,
+        note: u8,
+        velocity: f32,
+        params: &Params,
+    ) {
+        assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
+        let position = Position::start(
+            &calc_intervals(
+                loop_start_percent,
+                params.loop_length_percent,
+                self.data.len(),
+            )
+            .as_slice(),
+        );
+        let mut voice = Voice {
+            note,
+            loop_start_percent,
+            position,
+            offset: starting_offset(loop_start_percent, self.data.len()),
+            played: 0.0,
+            volume: Volume::new(0.0),
+            finished: false,
+            last_sample_index: 0,
+        };
         voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
         self.handle_passthru(params);
@@ -177,6 +226,53 @@ impl Channel {
         for (i, voice) in self.voices.iter_mut().enumerate() {
             if !self.data.is_empty() {
                 let speed = self.reverse_speed * params.speed;
+                /* ------ */
+                /* ------ */
+                /* ------ */
+
+                let view = calc_intervals(
+                    voice.loop_start_percent,
+                    params.loop_length_percent,
+                    self.data.len(),
+                );
+
+                let pos = voice.position.get_valid(&view.as_slice());
+
+                //let offset = if view.contains(voice.offset) {
+                //    voice.offset
+                //} else {
+                //    starting_offset(voice.loop_start_percent, self.data.len())
+                //};
+                //let directed_offset = if speed < 0.0 {
+                //    view.wrapped_global(view.first_local(offset).unwrap() - 1.0)
+                //        .unwrap()
+                //} else {
+                //    offset
+                //};
+                let index = pos.to_data_index(&view.as_slice(), speed, self.data.len());
+                let value = self.data[index];
+
+                let pos = pos.advance(&view.as_slice(), speed);
+                voice.position = pos;
+                output += value * voice.volume.value(self.now);
+                //voice.offset = view
+                //    .wrapped_global(view.first_local(offset).unwrap() + speed)
+                //    .unwrap();
+
+                voice.last_sample_index = index;
+
+                //match params.loop_mode {
+                //    LoopMode::PlayOnce => {
+                //        if !voice.finished {
+                //            if voice.played.abs() >= loop_length {
+                //                finished.push(i);
+                //            }
+                //        }
+                //    }
+                //    _ => (),
+                //};
+
+                /*
                 let index = CalcSampleIndexParams {
                     loop_mode: params.loop_mode,
                     offset: voice.offset,
@@ -210,6 +306,7 @@ impl Channel {
                     }
                     _ => (),
                 };
+                */
             };
         }
 
