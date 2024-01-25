@@ -30,13 +30,10 @@ impl Position {
         }
     }
 
-    pub fn get_valid(&self, v: &[Interval]) -> Self {
+    pub fn make_valid(&mut self, v: &[Interval]) {
         let (mut index, mut offset) = self.get_valid_index_offset(v);
-        Self {
-            index,
-            offset,
-            direction: self.direction,
-        }
+        self.index = index;
+        self.offset = offset;
     }
 
     pub fn to_data_index(
@@ -49,67 +46,58 @@ impl Position {
         let offset = if self.direction * speed >= 0.0 {
             self.offset
         } else {
-            self.advance(&v, -1.0, loop_mode).offset
+            let mut tmp = self.clone();
+            tmp.advance(&v, -1.0, loop_mode);
+            tmp.offset
         };
         (offset.round() as usize) % data_len
     }
 
-    fn step(
-        mut index: usize,
-        mut offset: f32,
-        v: &[Interval],
-        mut amount: f32,
-        loop_mode: LoopMode,
-    ) -> (usize, f32, f32) {
+    fn step(&mut self, v: &[Interval], mut amount: f32, loop_mode: LoopMode) -> f32 {
         if amount < 0.0 {
-            assert!(v[index].contains(offset) || v[index].at_the_end(offset));
-            let rem = offset - v[index].start;
+            assert!(v[self.index].contains(self.offset) || v[self.index].at_the_end(self.offset));
+            let rem = self.offset - v[self.index].start;
             if rem == 0.0 {
-                index = (index + v.len() - 1) % v.len();
-                offset = v[index].end;
-                return (index, offset, amount);
+                self.index = (self.index + v.len() - 1) % v.len();
+                self.offset = v[self.index].end;
+                return amount;
             }
             if rem > -amount {
-                offset += amount;
+                self.offset += amount;
                 amount = 0.0;
             } else {
                 amount += rem;
-                index = (index + v.len() - 1) % v.len();
-                offset = v[index].end;
+                self.index = (self.index + v.len() - 1) % v.len();
+                self.offset = v[self.index].end;
             }
         } else if amount > 0.0 {
-            assert!(v[index].contains(offset));
-            let rem = v[index].end - offset;
+            assert!(v[self.index].contains(self.offset));
+            let rem = v[self.index].end - self.offset;
             if rem > amount {
-                offset += amount;
+                self.offset += amount;
                 amount = 0.0;
             } else {
                 amount -= rem;
-                index = (index + 1) % v.len();
-                offset = v[index].start;
+                self.index = (self.index + 1) % v.len();
+                self.offset = v[self.index].start;
             }
         }
-        (index, offset, amount)
+        amount
     }
 
-    pub fn advance(&self, v: &[Interval], mut amount: f32, loop_mode: LoopMode) -> Self {
+    pub fn advance(&mut self, v: &[Interval], mut amount: f32, loop_mode: LoopMode) {
         let (mut index, mut offset) = self.get_valid_index_offset(v);
+        self.index = index;
+        self.offset = offset;
         loop {
-            let tmp = Self::step(index, offset, v, amount, loop_mode);
-            index = tmp.0;
-            offset = tmp.1;
-            if !(tmp.2.abs() > 0.0) {
+            amount = self.step(v, amount, loop_mode);
+            if !(amount.abs() > 0.0) {
                 break;
             }
         }
-        if v[index].at_the_end(offset) {
-            index = (index + 1) % v.len();
-            offset = v[index].start;
-        }
-        Position {
-            index,
-            offset,
-            direction: self.direction,
+        if v[self.index].at_the_end(self.offset) {
+            self.index = (self.index + 1) % v.len();
+            self.offset = v[self.index].start;
         }
     }
 }
@@ -248,12 +236,12 @@ mod test {
     fn test_intervals() {
         let mut view = Intervals::default();
         view.push(10.0, 20.0);
-        let pos = Position::start(view.as_slice());
+        let mut pos = Position::start(view.as_slice());
 
         //view.push(100.0, 190.0);
-        let mut pos = pos.advance(view.as_slice(), 5.0, LoopMode::Loop);
+        pos.advance(view.as_slice(), 5.0, LoopMode::Loop);
         for _ in 0..100 {
-            pos = pos.advance(view.as_slice(), -1.3, LoopMode::Loop);
+            pos.advance(view.as_slice(), -1.3, LoopMode::Loop);
             eprintln!("{:?}", pos);
         }
     }
