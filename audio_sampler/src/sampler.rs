@@ -249,10 +249,11 @@ impl Channel {
                 //} else {
                 //    offset
                 //};
-                let index = pos.to_data_index(&view.as_slice(), speed, self.data.len());
+                let index =
+                    pos.to_data_index(&view.as_slice(), speed, self.data.len(), params.loop_mode);
                 let value = self.data[index];
 
-                let pos = pos.advance(&view.as_slice(), speed);
+                let pos = pos.advance(&view.as_slice(), speed, params.loop_mode);
                 voice.position = pos;
                 output += value * voice.volume.value(self.now);
                 //voice.offset = view

@@ -1,3 +1,4 @@
+use crate::sampler::LoopMode;
 use smallvec::SmallVec;
 use std::cmp::Ordering;
 
@@ -38,24 +39,35 @@ impl Position {
         }
     }
 
-    pub fn to_data_index(&self, v: &[Interval], speed: f32, data_len: usize) -> usize {
+    pub fn to_data_index(
+        &self,
+        v: &[Interval],
+        speed: f32,
+        data_len: usize,
+        loop_mode: LoopMode,
+    ) -> usize {
         let offset = if self.direction * speed >= 0.0 {
             self.offset
         } else {
-            self.advance(&v, -1.0).offset
+            self.advance(&v, -1.0, loop_mode).offset
         };
         (offset.round() as usize) % data_len
     }
 
-    pub fn advance(&self, v: &[Interval], mut amount: f32) -> Self {
-        let (mut index, mut offset) = self.get_valid_index_offset(v);
-        while amount < 0.0 {
+    fn step(
+        mut index: usize,
+        mut offset: f32,
+        v: &[Interval],
+        mut amount: f32,
+        loop_mode: LoopMode,
+    ) -> (usize, f32, f32) {
+        if amount < 0.0 {
             assert!(v[index].contains(offset) || v[index].at_the_end(offset));
             let rem = offset - v[index].start;
             if rem == 0.0 {
                 index = (index + v.len() - 1) % v.len();
                 offset = v[index].end;
-                continue;
+                return (index, offset, amount);
             }
             if rem > -amount {
                 offset += amount;
@@ -65,8 +77,7 @@ impl Position {
                 index = (index + v.len() - 1) % v.len();
                 offset = v[index].end;
             }
-        }
-        while amount > 0.0 {
+        } else if amount > 0.0 {
             assert!(v[index].contains(offset));
             let rem = v[index].end - offset;
             if rem > amount {
@@ -76,6 +87,19 @@ impl Position {
                 amount -= rem;
                 index = (index + 1) % v.len();
                 offset = v[index].start;
+            }
+        }
+        (index, offset, amount)
+    }
+
+    pub fn advance(&self, v: &[Interval], mut amount: f32, loop_mode: LoopMode) -> Self {
+        let (mut index, mut offset) = self.get_valid_index_offset(v);
+        loop {
+            let tmp = Self::step(index, offset, v, amount, loop_mode);
+            index = tmp.0;
+            offset = tmp.1;
+            if !(tmp.2.abs() > 0.0) {
+                break;
             }
         }
         if v[index].at_the_end(offset) {
@@ -227,9 +251,9 @@ mod test {
         let pos = Position::start(view.as_slice());
 
         //view.push(100.0, 190.0);
-        let mut pos = pos.advance(view.as_slice(), 5.0);
+        let mut pos = pos.advance(view.as_slice(), 5.0, LoopMode::Loop);
         for _ in 0..100 {
-            pos = pos.advance(view.as_slice(), -1.3);
+            pos = pos.advance(view.as_slice(), -1.3, LoopMode::Loop);
             eprintln!("{:?}", pos);
         }
     }
