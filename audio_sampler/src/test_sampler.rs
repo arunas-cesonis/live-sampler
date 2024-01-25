@@ -57,7 +57,6 @@ mod test {
                     let mut frame = vec![x];
                     self.sampler.process_sample(&mut frame, &self.params);
                     self.now += 1;
-                    eprintln!("{} -> {} {:?}", x, frame[0], todo);
                     frame[0]
                 })
                 .collect::<Vec<_>>()
@@ -163,6 +162,22 @@ mod test {
             ]
             .concat()
         );
+    }
+
+    #[test]
+    fn test_play_once_reverese_crossing_boundary() {
+        let params = Params {
+            loop_mode: LoopMode::PlayOnce,
+            attack_samples: 0,
+            decay_samples: 0,
+            loop_length_percent: 1.0,
+            ..Params::default()
+        };
+        let ten_tens = vec![100.0; 10];
+        let five_tens = vec![100.0; 5];
+        let one_to_ten = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let one_to_five = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let input = vec![one_to_ten.clone(), ten_tens.clone()].concat();
 
         // backwards crossing data boundary
         let mut host = Host::new(Params {
@@ -596,6 +611,5 @@ mod test {
             },
         );
         let output = host.run_input(input.clone());
-        eprintln!("output={:?}", output);
     }
 }

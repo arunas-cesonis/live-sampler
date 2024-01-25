@@ -1,3 +1,4 @@
+use crate::loop_mode;
 use crate::sampler::LoopMode;
 use smallvec::SmallVec;
 use std::cmp::Ordering;
@@ -46,6 +47,8 @@ impl Position {
         let offset = if self.direction * speed >= 0.0 {
             self.offset
         } else {
+            // when playing backwards need to read sample behind current offset
+            // as that's direction the playback is mov'facing'
             let mut tmp = self.clone();
             tmp.advance(&v, -1.0, loop_mode);
             tmp.offset
@@ -53,13 +56,28 @@ impl Position {
         (offset.round() as usize) % data_len
     }
 
+    fn set_next_index(&mut self, v: &[Interval], loop_mode: LoopMode) {
+        if loop_mode == LoopMode::PingPong && self.index + 1 == v.len() {
+            self.direction = -1.0 * self.direction;
+        }
+        self.index = (self.index + 1) % v.len();
+        self.offset = v[self.index].start;
+    }
+
+    fn set_prev_index(&mut self, v: &[Interval], loop_mode: LoopMode) {
+        if loop_mode == LoopMode::PingPong && self.index == 0 {
+            self.direction = -1.0 * self.direction;
+        }
+        self.index = (self.index + v.len() - 1) % v.len();
+        self.offset = v[self.index].end;
+    }
+
     fn step(&mut self, v: &[Interval], mut amount: f32, loop_mode: LoopMode) -> f32 {
         if amount < 0.0 {
             assert!(v[self.index].contains(self.offset) || v[self.index].at_the_end(self.offset));
             let rem = self.offset - v[self.index].start;
             if rem == 0.0 {
-                self.index = (self.index + v.len() - 1) % v.len();
-                self.offset = v[self.index].end;
+                self.set_prev_index(&v, loop_mode);
                 return amount;
             }
             if rem > -amount {
@@ -67,8 +85,7 @@ impl Position {
                 amount = 0.0;
             } else {
                 amount += rem;
-                self.index = (self.index + v.len() - 1) % v.len();
-                self.offset = v[self.index].end;
+                self.set_prev_index(&v, loop_mode);
             }
         } else if amount > 0.0 {
             assert!(v[self.index].contains(self.offset));
@@ -78,8 +95,7 @@ impl Position {
                 amount = 0.0;
             } else {
                 amount -= rem;
-                self.index = (self.index + 1) % v.len();
-                self.offset = v[self.index].start;
+                self.set_next_index(v, loop_mode);
             }
         }
         amount
@@ -90,6 +106,8 @@ impl Position {
         self.index = index;
         self.offset = offset;
         loop {
+            //let amount_sign = amount.signum();
+            //let tmp = amount * self.direction;
             amount = self.step(v, amount, loop_mode);
             if !(amount.abs() > 0.0) {
                 break;
