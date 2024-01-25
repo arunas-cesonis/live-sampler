@@ -177,14 +177,15 @@ impl Channel {
         for (i, voice) in self.voices.iter_mut().enumerate() {
             if !self.data.is_empty() {
                 let speed = self.reverse_speed * params.speed;
-                let index = voice::calc_sample_index1(&CalcSampleIndexParams {
+                let index = CalcSampleIndexParams {
                     loop_mode: params.loop_mode,
                     offset: voice.offset,
                     speed,
                     loop_start_percent: voice.loop_start_percent,
                     loop_length_percent: params.loop_length_percent,
                     data_len: self.data.len(),
-                });
+                }
+                .to_result();
                 let loop_length = params.loop_length_percent * (self.data.len() as f32);
                 assert_eq!(index, index);
                 let value = self.data[index];

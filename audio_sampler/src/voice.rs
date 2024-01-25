@@ -1,4 +1,5 @@
 use crate::sampler::LoopMode;
+use crate::utils;
 use crate::volume::Volume;
 
 #[derive(Clone, Debug)]
@@ -70,25 +71,15 @@ impl CalcSampleIndexParams {
     }
 
     pub fn to_result(&self) -> usize {
-        calc_sample_index1(&self)
+        calc_sample_index(
+            self.loop_mode,
+            self.offset,
+            self.speed,
+            self.loop_start_percent,
+            self.loop_length_percent,
+            self.data_len,
+        )
     }
-}
-
-pub fn calc_sample_index1(params: &CalcSampleIndexParams) -> usize {
-    calc_sample_index(
-        params.loop_mode,
-        params.offset,
-        params.speed,
-        params.loop_start_percent,
-        params.loop_length_percent,
-        params.data_len,
-    )
-}
-
-fn normalize_offset(offset: f32, n: f32) -> f32 {
-    let x = offset % n;
-    let x = if x < 0.0 { x + n } else { x };
-    x
 }
 
 pub fn calc_sample_index(
@@ -110,7 +101,7 @@ pub fn calc_sample_index(
             // adjust offset to face the direction of speed
             let x = offset + if speed < 0.0 { -1.0 } else { 0.0 };
             // wrap it to be a positive value within loop's length
-            let x = normalize_offset(x, loop_length);
+            let x = utils::normalize_offset(x, loop_length);
             // add start to get the absolute offset
             let x = (start + x).round() % len_f32;
             x as usize
@@ -120,7 +111,7 @@ pub fn calc_sample_index(
             // subtracting loop_length in addition to 1.0
             let x = offset + if speed < 0.0 { -1.0 - loop_length } else { 0.0 };
             // normalize offset to be within 0..2*loop_length
-            let x = normalize_offset(x, 2.0 * loop_length);
+            let x = utils::normalize_offset(x, 2.0 * loop_length);
             // undo the mirroring effectc
             let x = if x < loop_length {
                 x

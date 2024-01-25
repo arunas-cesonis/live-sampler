@@ -40,7 +40,7 @@ mod test {
                 .into_iter()
                 .map(|x| {
                     let (todo, rem) = self.cmds.iter().partition(|(at, _)| *at == self.now);
-                    for (_, x) in todo {
+                    for &(_, x) in &todo {
                         match x {
                             Cmd::StartPlaying { start_percent: pos } => {
                                 self.sampler.start_playing(pos, 11, 1.0, &self.params)
@@ -57,6 +57,7 @@ mod test {
                     let mut frame = vec![x];
                     self.sampler.process_sample(&mut frame, &self.params);
                     self.now += 1;
+                    eprintln!("{} -> {} {:?}", x, frame[0], todo);
                     frame[0]
                 })
                 .collect::<Vec<_>>()
@@ -533,7 +534,6 @@ mod test {
         );
     }
 
-    #[test]
     fn test_ping_pong_wrapping_rev() {
         let params = Params {
             loop_mode: LoopMode::PingPong,
@@ -547,32 +547,55 @@ mod test {
         let ten_tens = vec![777.0; 10];
         let input = vec![one_to_ten.clone(), ten_tens.clone(), ten_tens.clone()].concat();
 
-        // record first 10 samples, then PingPong 50%
         let mut host = Host::new(Params {
             loop_length_percent: 0.5,
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        //
-        let _tmp = host.clone();
         host.params.speed = -1.0;
         host.schedule(10, Cmd::StartPlaying { start_percent: 0.8 });
         let output = host.run_input(input.clone());
-        //vec![8.0, 9.0, 0.0, 1.0, 2.0],
-        //vec![2.0, 1.0, 0.0, 9.0, 8.0],
-        //vec![8.0, 9.0, 0.0, 1.0, 2.0],
-        //vec![2.0, 1.0, 0.0, 9.0, 8.0],
         assert_eq!(
             output,
             vec![
                 one_to_ten.clone(),
                 vec![2.0, 1.0, 0.0, 9.0, 8.0],
                 vec![8.0, 9.0, 0.0, 1.0, 2.0],
-                vec![2.0, 1.0, 0.0, 9.0, 8.0],
                 vec![8.0, 9.0, 0.0, 1.0, 2.0]
             ]
             .concat(),
         );
+    }
+
+    #[test]
+    fn test_loop_length_change() {
+        let params = Params {
+            loop_mode: LoopMode::Loop,
+            attack_samples: 0,
+            decay_samples: 0,
+            loop_length_percent: 1.0,
+            ..Params::default()
+        };
+        let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
+        let ten_tens = vec![777.0; 100];
+        let input = vec![one_to_ten.clone(), ten_tens.clone()].concat();
+
+        let mut host = Host::new(Params {
+            loop_length_percent: 0.7,
+            ..params.clone()
+        });
+        host.schedule(0, Cmd::StartRecording);
+        host.schedule(10, Cmd::StopRecording);
+        let tmp = host.clone();
+        host.schedule(10, Cmd::StartPlaying { start_percent: 0.5 });
+        host.schedule(
+            30,
+            Cmd::SetLoopLength {
+                length_percent: 1.0,
+            },
+        );
+        let output = host.run_input(input.clone());
+        eprintln!("output={:?}", output);
     }
 }

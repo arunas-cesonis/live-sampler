@@ -21,6 +21,7 @@ mod editor_vizia;
 mod loop_mode;
 mod sampler;
 mod test_sampler;
+mod utils;
 mod voice;
 mod volume;
 
