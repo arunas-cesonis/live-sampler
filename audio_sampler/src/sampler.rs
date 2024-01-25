@@ -236,7 +236,7 @@ impl Channel {
                     self.data.len(),
                 );
 
-                let pos = voice.position.get_valid(&view.as_slice());
+                voice.position.make_valid(&view.as_slice());
 
                 //let offset = if view.contains(voice.offset) {
                 //    voice.offset
@@ -249,12 +249,17 @@ impl Channel {
                 //} else {
                 //    offset
                 //};
-                let index =
-                    pos.to_data_index(&view.as_slice(), speed, self.data.len(), params.loop_mode);
+                let index = voice.position.to_data_index(
+                    &view.as_slice(),
+                    speed,
+                    self.data.len(),
+                    params.loop_mode,
+                );
                 let value = self.data[index];
 
-                let pos = pos.advance(&view.as_slice(), speed, params.loop_mode);
-                voice.position = pos;
+                voice
+                    .position
+                    .advance(&view.as_slice(), speed, params.loop_mode);
                 output += value * voice.volume.value(self.now);
                 //voice.offset = view
                 //    .wrapped_global(view.first_local(offset).unwrap() + speed)
