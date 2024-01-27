@@ -1,6 +1,5 @@
 use atomic_float::AtomicF32;
 
-
 use nih_plug::prelude::Editor;
 
 use nih_plug_vizia::vizia::prelude::*;
@@ -11,14 +10,13 @@ use nih_plug_vizia::vizia::vg::{ImageFlags, ImageSource, Paint, Path, PixelForma
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
-
 use std::sync::Arc;
 
 use crate::sampler::Info;
 
 use crate::AudioSamplerParams;
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct DebugData {
     pub(crate) info: Info,
 }
@@ -126,7 +124,7 @@ impl View for WaveformView {
         let debug_data = &mut self.debug_data.lock();
         let info = &debug_data.read().info;
 
-        for v in &info.voices {
+        for v in &info.info {
             if v.start < v.end {
                 let start = v.start * bounds.w + bounds.x;
                 let end = v.end * bounds.w + bounds.x;
@@ -151,7 +149,7 @@ impl View for WaveformView {
             let path = rectangle_path(x, bounds.y, width, bounds.h);
             canvas.fill_path(&path, &pos_paint);
         }
-        self.draw_image(cx, canvas);
+        //self.draw_image(cx, canvas);
     }
 }
 
@@ -197,9 +195,9 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     Label::new(cx, "Debug").top(Pixels(10.0));
                     Textbox::new_multiline(
                         cx,
-                        Data::debug.map(|x| {
-                            let m = x.lock();
-                            m.to_string()
+                        Data::debug_data_out.map(|x| {
+                            let mut m = x.lock();
+                            format!("{:#?}", m.read())
                         }),
                         true,
                     )

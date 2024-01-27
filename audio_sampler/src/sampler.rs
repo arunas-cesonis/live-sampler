@@ -1,10 +1,9 @@
 use std::fmt::Debug;
 
-use crate::clip::{Intervals, Position};
 pub use crate::loop_mode::LoopMode;
-use crate::utils::normalize_offset;
-use crate::voice;
+use crate::utils::{normalize_offset, LoopConfig};
 use crate::voice::{CalcSampleIndexParams, Voice};
+use crate::{utils, voice};
 use nih_plug::nih_warn;
 use nih_plug::wrapper::vst3::vst3_sys::vst::ChannelPluginLocation::kUsedAsPanner;
 use nih_plug_vizia::vizia::style::LengthValue::In;
@@ -42,7 +41,8 @@ pub struct VoiceInfo {
 
 #[derive(Clone, Default, Debug)]
 pub struct Info {
-    pub voices: Vec<VoiceInfo>,
+    pub info: Vec<VoiceInfo>,
+    pub voices: Vec<Voice>,
 }
 
 impl Default for Params {
@@ -68,22 +68,6 @@ fn loop_length(loop_length_percent: f32, data_len: usize) -> f32 {
     let len_f32 = data_len as f32;
     let start = loop_length_percent * len_f32;
     start
-}
-
-fn calc_intervals(loop_start_percent: f32, loop_length_percent: f32, data_len: usize) -> Intervals {
-    let len_f32 = data_len as f32;
-    let start = loop_start_percent * len_f32;
-    let end = (start + loop_length_percent * len_f32) % len_f32;
-    let mut view = Intervals::default();
-    if start < end {
-        view.push(start, end);
-    } else {
-        view.push(start, len_f32);
-        if start > 0.0 {
-            view.push(0.0, end);
-        }
-    }
-    view
 }
 
 impl Channel {
@@ -125,23 +109,25 @@ impl Channel {
         params: &Params,
     ) {
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
-        let position = Position::start(
-            &calc_intervals(
-                loop_start_percent,
-                params.loop_length_percent,
-                self.data.len(),
-            )
-            .as_slice(),
-        );
         let mut voice = Voice {
             note,
             loop_start_percent,
-            position,
-            offset: starting_offset(loop_start_percent, self.data.len()),
+            offset: if !self.data.is_empty() {
+                LoopConfig::new(
+                    loop_start_percent,
+                    params.loop_length_percent,
+                    self.data.len(),
+                )
+                .loop_start()
+            } else {
+                0.0
+            },
+
             played: 0.0,
             volume: Volume::new(0.0),
             finished: false,
             last_sample_index: 0,
+            ping_pong_speed: 1.0,
         };
         voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
@@ -231,36 +217,34 @@ impl Channel {
         let mut finished: Vec<usize> = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
             if !self.data.is_empty() {
-                let speed = self.reverse_speed * params.speed;
-                /* ------ */
-                /* ------ */
+                let speed = self.reverse_speed * params.speed * voice.ping_pong_speed;
                 /* ------ */
 
-                let view = calc_intervals(
+                let config = LoopConfig::new(
                     voice.loop_start_percent,
                     params.loop_length_percent,
                     self.data.len(),
                 );
+                let offset = if config.contains_buffer_offset(voice.offset) {
+                    voice.offset
+                } else {
+                    config.loop_start()
+                };
 
-                voice.position.make_valid(&view.as_slice());
-                eprintln!("{:?}", voice.position);
-
-                let index = voice.position.to_data_index(
-                    &view.as_slice(),
-                    speed,
-                    self.data.len(),
-                    params.loop_mode,
-                );
+                let index_offset = if speed < 0.0 {
+                    config.translate_wrapping_around(offset, -1.0).unwrap()
+                } else {
+                    offset
+                };
+                let index = (index_offset.round() as usize) % self.data.len();
+                voice.last_sample_index = index;
                 let value = self.data[index];
-
-                voice
-                    .position
-                    .advance(&view.as_slice(), speed, params.loop_mode);
                 output += value * voice.volume.value(self.now);
 
-                voice.played += speed;
+                let new_offset = config.translate_wrapping_around(offset, speed).unwrap();
 
-                voice.last_sample_index = index;
+                voice.offset = new_offset;
+                voice.played += speed;
 
                 match params.loop_mode {
                     LoopMode::PlayOnce => {
@@ -380,7 +364,8 @@ impl Sampler {
     pub fn get_info(&self, params: &Params) -> Info {
         let data_len_f32 = self.channels[0].data.len() as f32;
         Info {
-            voices: self.channels[0]
+            voices: self.channels[0].voices.clone(),
+            info: self.channels[0]
                 .voices
                 .iter()
                 .map(|v| {
