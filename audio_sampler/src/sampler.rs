@@ -1,9 +1,10 @@
+use log::warn;
 use std::fmt::Debug;
 
 pub use crate::loop_mode::LoopMode;
 use crate::utils::{normalize_offset, LoopConfig};
 use crate::voice::{CalcSampleIndexParams, Voice};
-use crate::{utils, voice};
+use crate::{bundleEntry, utils, voice};
 use nih_plug::nih_warn;
 use nih_plug::wrapper::vst3::vst3_sys::vst::ChannelPluginLocation::kUsedAsPanner;
 use nih_plug_vizia::vizia::style::LengthValue::In;
@@ -232,7 +233,7 @@ impl Channel {
                 };
 
                 let index_offset = if speed < 0.0 {
-                    config.translate_wrapping_around(offset, -1.0).unwrap()
+                    config.translate_wrapping(offset, -1.0).unwrap()
                 } else {
                     offset
                 };
@@ -241,8 +242,7 @@ impl Channel {
                 let value = self.data[index];
                 output += value * voice.volume.value(self.now);
 
-                let new_offset = config.translate_wrapping_around(offset, speed).unwrap();
-
+                let new_offset = config.translate_wrapping(offset, speed).unwrap();
                 voice.offset = new_offset;
                 voice.played += speed;
 
