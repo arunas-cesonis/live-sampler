@@ -1,5 +1,6 @@
 use nih_plug::nih_warn;
 
+#[inline]
 pub fn normalize_offset<T>(offset: T, n: T) -> T
 where
     T: std::ops::Rem<Output = T>
@@ -94,7 +95,7 @@ impl LoopConfig {
         }
     }
 
-    pub fn translate_wrapping_around(&self, offset: f32, delta: f32) -> Option<f32> {
+    pub fn translate_wrapping(&self, offset: f32, delta: f32) -> Option<f32> {
         let x = self.buffer_to_loop(offset)? + delta;
         let x = normalize_offset(x, self.loop_length());
         self.loop_to_buffer(x)
@@ -107,6 +108,21 @@ impl LoopConfig {
         let x = if x >= l { 2.0 * l - x } else { x };
         self.loop_to_buffer(normalize_offset(x, l))
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum TranslateToBoundaryResult {
+    ReachedStart {
+        remaining_delta: f32,
+        new_offset: f32,
+    },
+    ReachedEnd {
+        remaining_delta: f32,
+        new_offset: f32,
+    },
+    Uneventful {
+        new_offset: f32,
+    },
 }
 
 #[cfg(test)]
@@ -156,9 +172,9 @@ mod test {
         assert_eq!(None, config.buffer_to_loop(-20.0));
         assert_eq!(config.loop_start(), 40.0);
         assert_eq!(config.loop_end(), 20.0);
-        let r = config.translate_wrapping_around(40.0, config.loop_length() - 10.0);
+        let r = config.translate_wrapping(40.0, config.loop_length() - 10.0);
         eprintln!("{:?}", r);
-        let r = config.translate_wrapping_around(40.0, config.loop_length() - 10.0);
+        let r = config.translate_wrapping(40.0, config.loop_length() - 10.0);
         eprintln!("{:?}", r);
     }
 
@@ -184,10 +200,10 @@ mod test {
     fn test_reflect_more() {
         let config = LoopConfig::new(0.5, 0.7, 100);
         assert_eq!(Some(51.0), config.translate_reflecting(50.0, 1.0));
-        assert_eq!(Some(51.0), config.translate_wrapping_around(50.0, 1.0));
-        assert_eq!(Some(19.0), config.translate_wrapping_around(50.0, -1.0));
+        assert_eq!(Some(51.0), config.translate_wrapping(50.0, 1.0));
+        assert_eq!(Some(19.0), config.translate_wrapping(50.0, -1.0));
         assert_eq!(Some(60.0), config.translate_reflecting(60.0, -20.0));
-        assert_eq!(Some(00.0), config.translate_wrapping_around(99.0, 1.0));
+        assert_eq!(Some(00.0), config.translate_wrapping(99.0, 1.0));
     }
 
     #[test]
@@ -201,4 +217,7 @@ mod test {
         assert!(!LoopConfig::new(0.5, 0.7, 100).contains_buffer_offset(100.0));
         assert!(!LoopConfig::new(0.5, 0.7, 100).contains_buffer_offset(30.0));
     }
+
+    #[test]
+    fn test_reflected_direction() {}
 }

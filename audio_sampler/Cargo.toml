@@ -11,9 +11,6 @@ path = "src/lib.rs"
 name = "audio-sampler"
 path = "src/main.rs"
 
-[dev-dependencies]
-rand = "0.8.5"
-rand_chacha = "0.3.0"
 
 [dependencies.nih_plug]
 git = "https://github.com/robbert-vdh/nih-plug"
