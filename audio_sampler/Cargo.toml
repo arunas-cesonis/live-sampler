@@ -11,6 +11,10 @@ path = "src/lib.rs"
 name = "audio-sampler"
 path = "src/main.rs"
 
+[dev-dependencies]
+rand = "0.8.5"
+rand_chacha = "0.3.0"
+
 [dependencies.nih_plug]
 git = "https://github.com/robbert-vdh/nih-plug"
 features = ["standalone", "vst3"]
@@ -42,3 +46,4 @@ num-traits = "0.2.17"
 
 #iced_baseview = "0.0.1"
 #iced_graphics = "0.2.0"
+

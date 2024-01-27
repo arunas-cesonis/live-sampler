@@ -1,6 +1,6 @@
-use crate::clip::Position;
 use crate::sampler::LoopMode;
 use crate::utils;
+use crate::utils::normalize_offset;
 use crate::volume::Volume;
 
 #[derive(Clone, Debug)]
@@ -9,68 +9,12 @@ pub struct Voice {
     pub loop_start_percent: f32,
     pub offset: f32,
     pub played: f32,
-    pub position: Position,
     pub volume: Volume,
     pub finished: bool,
     // this is only used by the UI to show loop points
     // its hack/workaround for not having loop information easily available
     pub last_sample_index: usize,
-}
-
-impl Voice {
-    //    pub fn new(note: u8, loop_start_percent: f32) -> Self {
-    //        Self {
-    //            note,
-    //            loop_start_percent,
-    //            offset: 0.0,
-    //            played: 0.0,
-    //            volume: Volume::new(0.0),
-    //            finished: false,
-    //            last_sample_index: 0,
-    //        }
-    //    }
-}
-
-pub fn calc_current_offset(
-    offset: f32,
-    loop_start_percent: f32,
-    loop_length_percent: f32,
-    data_len: usize,
-) -> f32 {
-    let len_f32 = data_len as f32;
-    let start = loop_start_percent * len_f32;
-    let end = (start + loop_length_percent * len_f32) % len_f32;
-    if start < end {
-        if start <= offset && offset < end {
-            offset
-        } else {
-            end
-        }
-    } else if end < start {
-        if (0.0 <= offset && offset < end) || (start <= offset && offset < len_f32) {
-            offset
-        } else {
-            start
-        }
-    } else {
-        offset
-    }
-}
-
-pub fn calc_next_offset(
-    offset: f32,
-    loop_start_percent: f32,
-    loop_length_percent: f32,
-    data_len: usize,
-    speed: f32,
-    loop_mode: LoopMode,
-) -> f32 {
-    let offset = calc_current_offset(offset, loop_start_percent, loop_length_percent, data_len);
-    let len_f32 = data_len as f32;
-    let start = loop_start_percent * len_f32;
-    let end = (start + loop_length_percent * len_f32) % len_f32;
-    let next = offset + speed;
-    0.0
+    pub ping_pong_speed: f32,
 }
 
 #[derive(Copy, Clone, Debug)]

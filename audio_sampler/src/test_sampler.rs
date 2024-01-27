@@ -165,7 +165,7 @@ mod test {
     }
 
     #[test]
-    fn test_play_once_reverese_crossing_boundary() {
+    fn test_play_once_reverse_crossing_boundary() {
         let params = Params {
             loop_mode: LoopMode::PlayOnce,
             attack_samples: 0,
@@ -584,9 +584,9 @@ mod test {
     }
 
     #[test]
-    fn test_loop_length_change() {
+    fn test_ping_pong_2() {
         let params = Params {
-            loop_mode: LoopMode::Loop,
+            loop_mode: LoopMode::PingPong,
             attack_samples: 0,
             decay_samples: 0,
             loop_length_percent: 1.0,
@@ -594,22 +594,17 @@ mod test {
         };
         let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
         let ten_tens = vec![777.0; 100];
-        let input = vec![one_to_ten.clone(), ten_tens.clone()].concat();
+        let input = vec![one_to_ten.clone(), ten_tens.clone(), ten_tens.clone()].concat();
 
         let mut host = Host::new(Params {
-            loop_length_percent: 0.7,
+            loop_length_percent: 1.0,
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
         let tmp = host.clone();
-        host.schedule(10, Cmd::StartPlaying { start_percent: 0.5 });
-        host.schedule(
-            30,
-            Cmd::SetLoopLength {
-                length_percent: 1.0,
-            },
-        );
+        host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(input.clone());
+        eprintln!("{:?}", output);
     }
 }
