@@ -7,8 +7,8 @@ use nih_plug_vizia::ViziaState;
 
 use crate::sampler::{Info, LoopMode, Sampler};
 
+use crate::common_types::{LoopModeParam, Params as SamplerParams};
 use crate::editor_vizia::DebugData;
-use crate::loop_mode::LoopModeParam;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
@@ -17,8 +17,8 @@ use tikv_jemallocator::Jemalloc;
 static GLOBAL: Jemalloc = Jemalloc;
 
 // mod editor;
+mod common_types;
 mod editor_vizia;
-mod loop_mode;
 mod sampler;
 mod test_sampler;
 mod utils;
@@ -121,7 +121,7 @@ impl Default for AudioSampler {
             params: Arc::new(AudioSamplerParams::default()),
             sample_rate: -1.0,
             peak_meter_decay_weight: 1.0,
-            sampler: Sampler::new(0, &sampler::Params::default()),
+            sampler: Sampler::new(0, &SamplerParams::default()),
             info_queue: Arc::new(ArrayQueue::new(1)),
             peak_meter: Default::default(), //debug: Arc::new(Mutex::new(None)),
             debug: Default::default(),
@@ -150,14 +150,14 @@ impl AudioSampler {
     //    file.write(&[b'\n']).unwrap();
     //    file.flush().unwrap();
     //}
-    fn sampler_params(&self) -> sampler::Params {
+    fn sampler_params(&self) -> SamplerParams {
         let params_speed = self.params.speed.smoothed.next();
         let params_passthru = self.params.auto_passthru.value();
         let attack_millis = self.params.attack.smoothed.next();
         let attack_samples = (attack_millis * self.sample_rate / 1000.0) as usize;
         let decay_millis = self.params.decay.smoothed.next();
         let decay_samples = (decay_millis * self.sample_rate / 1000.0) as usize;
-        let params = sampler::Params {
+        let params = SamplerParams {
             auto_passthru: params_passthru,
             attack_samples,
             loop_mode: LoopMode::from_param(self.params.loop_mode.value()),

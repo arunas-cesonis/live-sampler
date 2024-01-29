@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod test {
-    use crate::sampler::{LoopMode, Params, Sampler};
+    use crate::common_types::Params;
+    use crate::sampler::{LoopMode, Sampler};
 
     #[derive(Copy, Clone, Debug)]
     enum Cmd {
