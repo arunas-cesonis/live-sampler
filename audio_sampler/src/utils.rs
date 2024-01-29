@@ -4,31 +4,6 @@ use nih_plug_vizia::vizia::views::combo_box_derived_lenses::p;
 use num_traits::real::Real;
 use std::io::stdout;
 
-pub fn ping_pong<T>(x: T, n: T, delta: T) -> (T, T)
-where
-    T: std::ops::Rem<Output = T>
-        + std::ops::Add<Output = T>
-        + std::ops::Sub<Output = T>
-        + PartialOrd
-        + std::ops::Neg<Output = T>
-        + num_traits::Zero
-        + Real
-        + Copy,
-{
-    assert!(x < n);
-    let xd = x + delta;
-    if xd >= T::zero() && xd < n {
-        (xd, T::one())
-    } else {
-        let y = normalize_offset(xd, n + n);
-        if y < n {
-            (y, T::one())
-        } else {
-            (n + n - y - T::one(), -T::one())
-        }
-    }
-}
-
 pub fn ping_pong2<T>(x: T, n: T) -> (T, T)
 where
     T: std::ops::Rem<Output = T>
