@@ -2,8 +2,8 @@ use log::warn;
 use std::fmt::Debug;
 
 pub use crate::loop_mode::LoopMode;
-use crate::utils::{normalize_offset, LoopConfig};
-use crate::voice::{CalcSampleIndexParams, Voice};
+use crate::utils::normalize_offset;
+use crate::voice::{calc_sample_index, CalcSampleIndexParams, Voice};
 use crate::{bundleEntry, utils, voice};
 use nih_plug::nih_warn;
 use nih_plug::wrapper::vst3::vst3_sys::vst::ChannelPluginLocation::kUsedAsPanner;
@@ -113,17 +113,7 @@ impl Channel {
         let mut voice = Voice {
             note,
             loop_start_percent,
-            offset: if !self.data.is_empty() {
-                LoopConfig::new(
-                    loop_start_percent,
-                    params.loop_length_percent,
-                    self.data.len(),
-                )
-                .loop_start()
-            } else {
-                0.0
-            },
-
+            offset: 0.0,
             played: 0.0,
             volume: Volume::new(0.0),
             finished: false,
@@ -201,64 +191,37 @@ impl Channel {
         }
     }
 
-    pub fn process_sample<'a>(&mut self, sample: &mut f32, params: &Params) {
-        let value = *sample;
-
-        if self.recording {
-            assert!(self.write <= self.data.len());
-            if self.write == self.data.len() {
-                self.data.push(value);
-            } else {
-                self.data[self.write] = value;
-            }
-            self.write += 1;
-        }
-
+    fn play_voices(&mut self, params: &Params) -> f32 {
         let mut output = 0.0;
         let mut finished: Vec<usize> = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
-            if !self.data.is_empty() {
-                let speed = self.reverse_speed * params.speed * voice.ping_pong_speed;
-                /* ------ */
+            let speed = self.reverse_speed * params.speed * voice.ping_pong_speed;
 
-                let config = LoopConfig::new(
-                    voice.loop_start_percent,
-                    params.loop_length_percent,
-                    self.data.len(),
-                );
-                let offset = if config.contains_buffer_offset(voice.offset) {
-                    voice.offset
-                } else {
-                    config.loop_start()
-                };
+            let (index, speed_change) = calc_sample_index(
+                params.loop_mode,
+                voice.offset,
+                speed,
+                voice.loop_start_percent,
+                params.loop_length_percent,
+                self.data.len(),
+            );
 
-                let index_offset = if speed < 0.0 {
-                    config.translate_wrapping(offset, -1.0).unwrap()
-                } else {
-                    offset
-                };
-                let index = (index_offset.round() as usize) % self.data.len();
-                voice.last_sample_index = index;
-                let value = self.data[index];
-                output += value * voice.volume.value(self.now);
+            let speed = speed * speed_change;
+            let loop_length = params.loop_length_percent * self.data.len() as f32;
+            let value = self.data[index] * voice.volume.value(self.now);
+            let next_offset = normalize_offset(voice.offset + speed, loop_length);
 
-                let new_offset = config.translate_wrapping(offset, speed).unwrap();
-                voice.offset = new_offset;
-                voice.played += speed;
-
-                match params.loop_mode {
-                    LoopMode::PlayOnce => {
-                        if !voice.finished {
-                            if voice.played.abs()
-                                >= loop_length(params.loop_length_percent, self.data.len())
-                            {
-                                finished.push(i);
-                            }
-                        }
-                    }
-                    _ => (),
-                };
-            };
+            output += value;
+            voice.ping_pong_speed *= speed_change;
+            voice.played += speed;
+            voice.offset = next_offset;
+            //
+            if !voice.finished
+                && params.loop_mode == LoopMode::PlayOnce
+                && voice.played.abs() >= loop_length
+            {
+                finished.push(i);
+            }
         }
 
         // remove voices that are finished and mute
@@ -279,6 +242,24 @@ impl Channel {
         while let Some(j) = removed.pop() {
             self.voices.remove(j);
         }
+        output
+    }
+
+    pub fn process_sample<'a>(&mut self, sample: &mut f32, params: &Params) {
+        let value = *sample;
+
+        if self.recording {
+            assert!(self.write <= self.data.len());
+            if self.write == self.data.len() {
+                self.data.push(value);
+            } else {
+                self.data[self.write] = value;
+            }
+            self.write += 1;
+        }
+
+        let mut output = 0.0;
+        output += self.play_voices(params);
 
         // passthru handling
         {

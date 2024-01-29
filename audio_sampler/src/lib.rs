@@ -8,6 +8,7 @@ use nih_plug_vizia::ViziaState;
 use crate::sampler::{Info, LoopMode, Sampler};
 
 use crate::editor_vizia::DebugData;
+use crate::loop_mode::LoopModeParam;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
@@ -16,6 +17,7 @@ use tikv_jemallocator::Jemalloc;
 static GLOBAL: Jemalloc = Jemalloc;
 
 // mod editor;
+mod calc_sample;
 mod editor_vizia;
 mod loop_mode;
 mod sampler;
@@ -50,7 +52,7 @@ pub struct AudioSamplerParams {
     #[id = "decay"]
     pub decay: FloatParam,
     #[id = "loop_mode"]
-    pub loop_mode: EnumParam<LoopMode>,
+    pub loop_mode: EnumParam<LoopModeParam>,
     #[id = "loop_length"]
     pub loop_length: FloatParam,
     #[id = "volume"]
@@ -96,7 +98,7 @@ impl Default for AudioSamplerParams {
                 },
             )
             .with_unit(" ms"),
-            loop_mode: EnumParam::new("Loop mode", LoopMode::PlayOnce),
+            loop_mode: EnumParam::new("Loop mode", LoopModeParam::PlayOnce),
             loop_length: FloatParam::new(
                 "Loop length",
                 1.0,
@@ -159,7 +161,7 @@ impl AudioSampler {
         let params = sampler::Params {
             auto_passthru: params_passthru,
             attack_samples,
-            loop_mode: self.params.loop_mode.value(),
+            loop_mode: LoopMode::from_param(self.params.loop_mode.value()),
             loop_length_percent: self.params.loop_length.smoothed.next(),
             decay_samples,
             speed: params_speed,

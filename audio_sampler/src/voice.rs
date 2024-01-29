@@ -58,7 +58,7 @@ impl CalcSampleIndexParams {
         Self { loop_mode, ..self }
     }
 
-    pub fn to_result(&self) -> usize {
+    pub fn to_result(&self) -> (usize, f32) {
         calc_sample_index(
             self.loop_mode,
             self.offset,
@@ -77,7 +77,7 @@ pub fn calc_sample_index(
     loop_start_percent: f32,
     loop_length_percent: f32,
     data_len: usize,
-) -> usize {
+) -> (usize, f32) {
     assert!(loop_length_percent > 0.0 && loop_length_percent <= 1.0);
     assert!(loop_start_percent >= 0.0 && loop_start_percent < 1.0);
     assert!(data_len > 0);
@@ -92,7 +92,7 @@ pub fn calc_sample_index(
             let x = utils::normalize_offset(x, loop_length);
             // add start to get the absolute offset
             let x = (start + x).round() % len_f32;
-            x as usize
+            (x as usize, 1.0)
         }
         LoopMode::PingPong => {
             // adjust offset to face the direction of speed
@@ -101,20 +101,20 @@ pub fn calc_sample_index(
             // normalize offset to be within 0..2*loop_length
             let x = utils::normalize_offset(x, 2.0 * loop_length);
             // undo the mirroring effectc
-            let x = if x < loop_length {
-                x
+            let (x, change) = if x < loop_length {
+                (x, -1.0)
             } else {
-                2.0 * loop_length - x - 1.0
+                (2.0 * loop_length - x - 1.0, 1.0)
             };
             let x = (start + x).round() % len_f32;
-            x as usize
+            (x as usize, change)
         }
         LoopMode::PlayOnce => {
             // play once does not bound the offset by loop length
             let x = offset + if speed < 0.0 { -1.0 } else { 0.0 };
             let x = if x < 0.0 { x + loop_length } else { x };
             let x = (start + x).round() % len_f32;
-            x as usize
+            (x as usize, 1.0)
         }
     }
 }
@@ -133,24 +133,26 @@ mod test {
             loop_length_percent: 1.0,
             data_len: 100,
         };
-        assert_eq!(params.to_result(), 0);
-        assert_eq!(params.with_speed(-1.0).to_result(), 99);
-        assert_eq!(params.with_loop_length_percent(0.75).to_result(), 0);
+        assert_eq!(params.to_result().0, 0);
+        assert_eq!(params.with_speed(-1.0).to_result().0, 99);
+        assert_eq!(params.with_loop_length_percent(0.75).to_result().0, 0);
         assert_eq!(
             params
                 .with_speed(-1.0)
                 .with_loop_length_percent(0.75)
-                .to_result(),
+                .to_result()
+                .0,
             74
         );
-        assert_eq!(params.with_offset(25.0).to_result(), 25);
-        assert_eq!(params.with_offset(25.0).with_speed(-1.0).to_result(), 24);
+        assert_eq!(params.with_offset(25.0).to_result().0, 25);
+        assert_eq!(params.with_offset(25.0).with_speed(-1.0).to_result().0, 24);
         assert_eq!(
             params
                 .with_offset(30.0)
                 .with_loop_start_percent(0.75)
                 .with_loop_length_percent(0.5)
-                .to_result(),
+                .to_result()
+                .0,
             5
         );
         assert_eq!(
@@ -158,7 +160,8 @@ mod test {
                 .with_offset(30.0)
                 .with_loop_start_percent(0.75)
                 .with_loop_length_percent(0.5)
-                .to_result(),
+                .to_result()
+                .0,
             5
         );
         assert_eq!(
@@ -166,7 +169,8 @@ mod test {
                 .with_offset(30.0)
                 .with_loop_start_percent(0.75)
                 .with_loop_length_percent(0.5)
-                .to_result(),
+                .to_result()
+                .0,
             5
         );
     }
