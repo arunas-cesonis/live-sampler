@@ -204,6 +204,8 @@ impl Channel {
                 voice.offset.round() as usize
             };
 
+            voice.last_sample_index = index;
+
             let value = self.data[index] * voice.volume.value(self.now);
 
             output += value;
