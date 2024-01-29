@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 pub use crate::loop_mode::LoopMode;
 use crate::utils::normalize_offset;
-use crate::voice::{calc_sample_index, CalcSampleIndexParams, Voice};
+use crate::voice::Voice;
 use crate::{bundleEntry, utils, voice};
 use nih_plug::nih_warn;
 use nih_plug::wrapper::vst3::vst3_sys::vst::ChannelPluginLocation::kUsedAsPanner;
@@ -118,7 +118,6 @@ impl Channel {
             volume: Volume::new(0.0),
             finished: false,
             last_sample_index: 0,
-            ping_pong_speed: 1.0,
         };
         voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
@@ -195,33 +194,20 @@ impl Channel {
         let mut output = 0.0;
         let mut finished: Vec<usize> = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
-            let speed = self.reverse_speed * params.speed * voice.ping_pong_speed;
+            todo!()
+            // let speed = self.reverse_speed * params.speed * voice.ping_pong_speed;
+            // let value = self.data[index] * voice.volume.value(self.now);
 
-            let (index, speed_change) = calc_sample_index(
-                params.loop_mode,
-                voice.offset,
-                speed,
-                voice.loop_start_percent,
-                params.loop_length_percent,
-                self.data.len(),
-            );
-
-            let speed = speed * speed_change;
-            let loop_length = params.loop_length_percent * self.data.len() as f32;
-            let value = self.data[index] * voice.volume.value(self.now);
-            let next_offset = normalize_offset(voice.offset + speed, loop_length);
-
-            output += value;
-            voice.ping_pong_speed *= speed_change;
-            voice.played += speed;
-            voice.offset = next_offset;
-            //
-            if !voice.finished
-                && params.loop_mode == LoopMode::PlayOnce
-                && voice.played.abs() >= loop_length
-            {
-                finished.push(i);
-            }
+            //output += value;
+            //voice.played += speed;
+            //voice.offset = todo!();
+            ////
+            //if !voice.finished
+            //    && params.loop_mode == LoopMode::PlayOnce
+            //    && voice.played.abs() >= loop_length
+            //{
+            //    finished.push(i);
+            //}
         }
 
         // remove voices that are finished and mute
