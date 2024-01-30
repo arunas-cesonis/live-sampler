@@ -17,6 +17,7 @@ use tikv_jemallocator::Jemalloc;
 static GLOBAL: Jemalloc = Jemalloc;
 
 // mod editor;
+mod clip;
 mod common_types;
 mod editor_vizia;
 mod sampler;
