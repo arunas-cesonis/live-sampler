@@ -16,6 +16,7 @@ pub struct Voice {
     pub played: f32,
     pub volume: Volume,
     pub finished: bool,
+    pub ping_pong_speed: f32,
     // this is only used by the UI to show loop points
     // its hack/workaround for not having loop information easily available
     pub last_sample_index: usize,
@@ -124,12 +125,12 @@ impl Position {
 
 #[derive(Debug, Clone)]
 pub struct Sequence {
-    v: SmallVec<[Clip; 4]>,
+    v: SmallVec<[OldClip; 4]>,
     index: usize,
 }
 
 impl Sequence {
-    pub fn new(v: SmallVec<[Clip; 4]>) -> Self {
+    pub fn new(v: SmallVec<[OldClip; 4]>) -> Self {
         assert!(!v.is_empty());
         Self { v, index: 0 }
     }
@@ -264,13 +265,13 @@ impl Sequence {
 }
 
 #[derive(Debug, Clone)]
-pub struct Clip {
+pub struct OldClip {
     start: f32,
     end: f32,
     position: f32,
 }
 
-impl Clip {
+impl OldClip {
     pub fn new(start: f32, end: f32) -> Self {
         assert!(start <= end);
         Self {
@@ -339,13 +340,13 @@ impl Clip {
 
 #[cfg(test)]
 mod test {
-    use crate::voice::{advance_loop, Clip, Position, Sequence};
+    use crate::voice::{advance_loop, OldClip, Position, Sequence};
     use serde::de::Unexpected::Seq;
     use smallvec::smallvec;
 
     #[test]
     fn test_position() {
-        let seq = Sequence::new(smallvec![Clip::new(0.0, 3.0), Clip::new(5.0, 7.00)]);
+        let seq = Sequence::new(smallvec![OldClip::new(0.0, 3.0), OldClip::new(5.0, 7.00)]);
         let mut pos = Position::start(&seq);
         // let mut seq = Sequence::new(smallvec![Clip::new(0.0, 3.0)]);
         while !pos.is_at_end(&seq) {

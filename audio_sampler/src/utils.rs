@@ -27,6 +27,21 @@ where
     }
 }
 
+#[cfg(test)]
+mod test_ping_pong2 {
+    use crate::utils::ping_pong2;
+
+    #[test]
+    fn test_ping_pong2() {
+        for i in -30..30 {
+            let i = i as f32;
+            eprintln!("({}, {}) = {:?}", i, 10.0, ping_pong2(i, 10.0));
+        }
+        assert_eq!(ping_pong2(0.0, 5.0), (0.0, 1.0));
+        assert_eq!(ping_pong2(6.0, 5.0), (3.0, -1.0));
+    }
+}
+
 #[inline]
 pub fn normalize_offset<T>(offset: T, n: T) -> T
 where
