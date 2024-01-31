@@ -2,6 +2,7 @@ use log::{debug, warn};
 use std::fmt::Debug;
 use std::pin::pin;
 
+use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
 use crate::common_types::Params;
 use crate::utils::{normalize_offset, ping_pong2};
@@ -89,11 +90,14 @@ impl Channel {
         params: &Params,
     ) {
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
+        let offset = loop_start_percent * self.data.len() as f32;
+        let length = params.loop_length_percent * self.data.len() as f32;
         let mut voice = Voice {
             note,
             loop_start_percent,
-            offset: loop_start_percent * self.data.len() as f32,
+            offset,
             played: 0.0,
+            clip: Clip::new(self.now, offset as usize, length as usize, 0, params.speed),
             ping_pong_speed: 1.0,
             volume: Volume::new(0.0),
             finished: false,
@@ -175,78 +179,23 @@ impl Channel {
         let mut finished: Vec<usize> = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
             let speed = self.reverse_speed * params.speed;
-            let speed = if params.loop_mode == LoopMode::PingPong {
-                speed * voice.ping_pong_speed
-            } else {
-                speed
-            };
 
             let len_f32 = self.data.len() as f32;
-            let s = voice.loop_start_percent * len_f32;
-            let l = params.loop_length_percent * len_f32;
-            let e = (s + l) % len_f32;
 
-            let offset = voice.offset;
-            let clamped_offset = if s < e {
-                if s <= offset && offset < e {
-                    offset
-                } else {
-                    s
-                }
-            } else {
-                if (s <= offset && offset < len_f32) || (0.0 <= offset && offset < e) {
-                    offset
-                } else {
-                    s
-                }
-            };
-
-            let index = if speed < 0.0 {
-                let x = clamped_offset;
-                let x = normalize_offset(x - s, len_f32);
-                let x = normalize_offset(x - 1.0, l);
-                let x = normalize_offset(x + s, len_f32);
-                x.round() as usize
-            } else {
-                clamped_offset.round() as usize
-            };
-            let index = clamped_offset.round() as usize;
-
+            voice.clip.update_speed(self.now, speed);
+            voice
+                .clip
+                .update_length(self.now, (len_f32 * params.loop_length_percent) as usize);
+            let index = voice.clip.data_index(self.now, self.data.len());
             let value = self.data[index] * voice.volume.value(self.now);
 
-            let loop_offset = normalize_offset(clamped_offset - s, len_f32);
-            let (new_loop_offset, change) = {
-                match params.loop_mode {
-                    LoopMode::Loop | LoopMode::PlayOnce => {
-                        let x = loop_offset + speed;
-                        let x = if x >= l {
-                            x - l
-                        } else if x < 0.0 {
-                            x + l
-                        } else {
-                            x
-                        };
-                        (x, 1.0)
-                    }
-                    LoopMode::PingPong => {
-                        //let x = loop_offset + speed;
-                        ping_pong2(loop_offset + speed, l)
-                    }
-                }
-            };
-            let new_offset = normalize_offset(new_loop_offset + s, len_f32);
-
-            eprintln!(
-                "{:?} voice.offset={} new_offset={} loop_offset={}",
-                params.loop_mode, voice.offset, new_offset, loop_offset
-            );
             output += value;
             voice.played += speed;
             voice.last_sample_index = index;
-            voice.offset = new_offset;
-            voice.ping_pong_speed *= change;
 
-            if !voice.finished && params.loop_mode == LoopMode::PlayOnce && voice.played.abs() >= l
+            if !voice.finished
+                && params.loop_mode == LoopMode::PlayOnce
+                && voice.played.abs() >= voice.clip.length() as f32
             {
                 finished.push(i);
             }

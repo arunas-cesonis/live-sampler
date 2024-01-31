@@ -1,66 +1,84 @@
 use crate::sampler::LoopMode;
-use crate::utils::ping_pong2;
+use crate::utils::{normalize_offset, ping_pong2, ping_pong3};
 use log::log_enabled;
 
 #[derive(Debug, Clone)]
 pub struct Clip {
-    offset: f32,
-    length: f32,
-    ping_pong: f32,
+    offset: usize,
+    length: usize,
+    local_adjustment: usize,
+    updated_at: usize,
+    speed: f32,
 }
 
 impl Clip {
-    pub fn advance(&mut self, loop_mode: LoopMode, amount: f32) -> f32 {
-        match loop_mode {
-            LoopMode::PlayOnce => {
-                let new_offset = self.offset + amount * self.ping_pong;
-                if new_offset >= self.length {
-                    self.offset = self.length - 1.0;
-                    new_offset - self.offset
-                } else if new_offset < 0.0 {
-                    self.offset = 0.0;
-                    -new_offset
-                } else {
-                    self.offset = new_offset;
-                    0.0
-                }
-            }
-            LoopMode::Loop => {
-                let new_offset = self.offset + amount * self.ping_pong;
-                if new_offset >= self.length {
-                    self.offset = new_offset - self.length;
-                    0.0
-                } else if new_offset < 0.0 {
-                    self.offset = self.length + new_offset;
-                    0.0
-                } else {
-                    self.offset = new_offset;
-                    0.0
-                }
-            }
-            LoopMode::PingPong => {
-                let (new_offset, speed_change) =
-                    ping_pong2(self.offset + amount * self.ping_pong, self.length);
-                self.offset = new_offset;
-                self.ping_pong *= speed_change;
-                0.0
-
-                //let speed = amount * self.ping_pong;
-                //let new_offset = self.offset + speed;
-                //if new_offset >= self.length - 1.0 {
-                //    self.offset = self.length - (new_offset - self.length) - 2.0;
-                //    self.ping_pong = -self.ping_pong;
-                //    0.0
-                //} else if new_offset < 0.0 {
-                //    self.offset = -new_offset;
-                //    self.ping_pong = -self.ping_pong;
-                //    0.0
-                //} else {
-                //    self.offset = new_offset;
-                //    0.0
-                //}
-            }
+    pub fn new(
+        now: usize,
+        offset: usize,
+        length: usize,
+        offset_adjustment: usize,
+        speed: f32,
+    ) -> Self {
+        Self {
+            updated_at: now,
+            offset,
+            length,
+            local_adjustment: offset_adjustment,
+            speed,
         }
+    }
+
+    fn local_offset(&self, now: usize, adjust: f32) -> usize {
+        let elapsed = (now - self.updated_at) as f32;
+        let elapsed_scaled = elapsed * self.speed;
+
+        let local_offset = elapsed_scaled + self.local_adjustment as f32 + adjust;
+
+        // Alternative way to calculate ping pong
+        //
+        // let times = (local_offset / self.length as f32).floor() as usize;
+        // eprintln!("now={} times={} local_offset={}", now, times, local_offset);
+        //
+
+        // This does ping pong but sort of breaks reversing
+        ///
+        // (local_offset, _) = ping_pong3(local_offset, self.length as f32, self.speed);
+        let local_offset = normalize_offset(local_offset, self.length as f32);
+        debug_assert!(local_offset >= 0.0, "local_offset={}", local_offset);
+        local_offset.abs().floor() as usize
+    }
+
+    pub fn length(&self) -> usize {
+        self.length
+    }
+
+    pub fn update_speed(&mut self, now: usize, new_speed: f32) {
+        if self.speed == new_speed {
+            return;
+        }
+        self.local_adjustment = self.local_offset(now, 0.0);
+        self.updated_at = now;
+        self.speed = new_speed;
+    }
+
+    pub fn update_length(&mut self, now: usize, new_length: usize) {
+        if self.length == new_length {
+            return;
+        }
+        let offset_adjustment = self.local_offset(now, 0.0);
+        if offset_adjustment < new_length {
+            self.local_adjustment = offset_adjustment;
+        } else {
+            self.local_adjustment = 0;
+        }
+        self.updated_at = now;
+        self.length = new_length;
+    }
+
+    pub fn data_index(&self, now: usize, data_len: usize) -> usize {
+        let reverse_adjust = if self.speed < 0.0 { -1.0 } else { 0.0 };
+        let data_index = (self.local_offset(now, reverse_adjust) + self.offset) % data_len;
+        data_index
     }
 }
 
@@ -69,21 +87,6 @@ mod test {
     use super::*;
     use crate::utils::ping_pong2;
     use std::time::Instant;
-
-    fn advance_n(
-        clip: &mut Clip,
-        loop_mode: LoopMode,
-        times: usize,
-        amount: f32,
-    ) -> Vec<(f32, Clip)> {
-        std::iter::repeat_with(|| {
-            let tmp = clip.clone();
-            let r = clip.advance(loop_mode, amount);
-            (r, tmp)
-        })
-        .take(times)
-        .collect()
-    }
 
     fn print_lines<A>(v: Vec<A>, per_line: usize) -> String
     where
@@ -101,17 +104,24 @@ mod test {
 
     #[test]
     fn test_clip() {
-        let mut clip = Clip {
-            length: 5.0,
-            offset: 0.0,
-            ping_pong: 1.0,
-        };
-        let mut speed = 1.0;
-        let mut out = vec![];
-        for i in 0..100 {
-            out.push(clip.offset);
-            clip.advance(LoopMode::PingPong, 1.0);
+        let mut now = 0;
+        let mut clip = Clip::new(now, 0, 10, 0, -1.0);
+        //now: usize,
+        //offset: usize,
+        //length: usize,
+        //offset_adjustment: usize,
+        //speed: f32,
+        let mut out: Vec<f32> = Vec::new();
+        let data: Vec<_> = (0..100).map(|x| x as f32).collect();
+        while now < 65 {
+            out.push(data[clip.data_index(now, data.len())]);
+            now += 1;
         }
-        eprintln!("{}", print_lines(out, 5));
+        clip.update_length(now, 3);
+        while now < 100 {
+            out.push(data[clip.data_index(now, data.len())]);
+            now += 1;
+        }
+        eprintln!("{}", print_lines(out, 10));
     }
 }

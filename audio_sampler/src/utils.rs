@@ -2,7 +2,31 @@ use crate::sampler::LoopMode;
 use nih_plug::nih_warn;
 use nih_plug_vizia::vizia::views::combo_box_derived_lenses::p;
 use num_traits::real::Real;
+use num_traits::Float;
 use std::io::stdout;
+
+pub fn ping_pong3<T>(x: T, n: T, step: T) -> (T, T)
+where
+    T: std::ops::Rem<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Sub<Output = T>
+        + PartialOrd
+        + std::ops::Neg<Output = T>
+        + num_traits::Zero
+        + Real
+        + Copy,
+{
+    if x >= T::zero() && x < n {
+        (x, T::one())
+    } else {
+        let y = normalize_offset(x, n + n);
+        if y < n {
+            (y, T::one())
+        } else {
+            (n + n - y - step, -T::one())
+        }
+    }
+}
 
 pub fn ping_pong2<T>(x: T, n: T) -> (T, T)
 where
@@ -49,9 +73,9 @@ where
         + std::ops::Add<Output = T>
         + std::ops::Sub<Output = T>
         + PartialOrd
+        + Real
         + std::ops::Neg<Output = T>
         + num_traits::Zero
-        + Real
         + Copy,
 {
     let x = offset % n;
