@@ -1,4 +1,5 @@
 use atomic_float::AtomicF32;
+use std::cell::Cell;
 
 use nih_plug::prelude::Editor;
 
@@ -6,12 +7,13 @@ use nih_plug_vizia::vizia::prelude::*;
 
 use nih_plug_vizia::vizia::vg::imgref::Img;
 use nih_plug_vizia::vizia::vg::rgb::RGBA8;
-use nih_plug_vizia::vizia::vg::Color;
+use nih_plug_vizia::vizia::vg::{Color, ImageId};
 use nih_plug_vizia::vizia::vg::{ImageFlags, ImageSource, Paint, Path, PixelFormat, RenderTarget};
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
 use nih_plug_vizia::assets::register_noto_sans_bold;
+use nih_plug_vizia::vizia::vg;
 use std::sync::Arc;
 
 use crate::sampler::Info;
@@ -44,6 +46,7 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
 
 struct WaveformView {
     debug_data: Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>,
+    image: Cell<Option<ImageId>>,
 }
 
 impl WaveformView {
@@ -53,42 +56,74 @@ impl WaveformView {
     {
         Self {
             debug_data: debug_data_lens.get(cx),
+            image: Cell::new(None),
         }
         .build(cx, |_| {})
     }
 
-    // The below prints this in stdout:
-    // UNSUPPORTED (log once): POSSIBLE ISSUE: unit 0 GLD_TEXTURE_INDEX_2D is unloadable and bound to sampler type (Float) - using zero texture because texture unloadable
-    // It may be Apple M1 specific, as quick search reveals
-    // TODO: check on linux, try loading image file, also check how Vizia renders fonts
-    // - macOS; displays black rectangle with above message
-    // - windows; displays black rectangle, not sure if message is printed
-    fn draw_image(&self, _cx: &mut DrawContext, canvas: &mut Canvas) {
-        let w = 32;
-        let h = 32;
+    fn get_image(&self, canvas: &mut Canvas) -> ImageId {
+        if let Some(image_id) = self.image.get() {
+            return image_id;
+        }
+        let grid_size: usize = 16;
         let image_id = canvas
-            .create_image_empty(w, h, PixelFormat::Rgba8, ImageFlags::empty())
+            .create_image_empty(
+                32 * grid_size + 1,
+                26 * grid_size + 1,
+                PixelFormat::Rgba8,
+                ImageFlags::empty(),
+            )
             .unwrap();
-
         canvas.save();
         canvas.reset();
         if let Ok(size) = canvas.image_size(image_id) {
+            eprintln!("{:?}", size);
+        }
+        if let Ok(size) = canvas.image_size(image_id) {
             canvas.set_render_target(RenderTarget::Image(image_id));
-            canvas.clear_rect(0, 0, size.0 as u32, size.1 as u32, Color::rgb(255, 255, 0));
-            canvas.set_render_target(RenderTarget::Screen);
+            canvas.clear_rect(0, 0, size.0 as u32, size.1 as u32, vg::Color::rgb(0, 0, 0));
+            let x_max = (size.0 / grid_size) - 1;
+            let y_max = (size.1 / grid_size) - 1;
+            for x in 0..(size.0 / grid_size) {
+                for y in 0..(size.1 / grid_size) {
+                    canvas.clear_rect(
+                        (x * grid_size + 1) as u32,
+                        (y * grid_size + 1) as u32,
+                        (grid_size - 1) as u32,
+                        (grid_size - 1) as u32,
+                        if x == 0 || y == 0 || x == x_max || y == y_max {
+                            vg::Color::rgb(40, 80, 40)
+                        } else {
+                            match (x % 2, y % 2) {
+                                (0, 0) => vg::Color::rgb(125, 125, 125),
+                                (1, 0) => vg::Color::rgb(155, 155, 155),
+                                (0, 1) => vg::Color::rgb(155, 155, 155),
+                                (1, 1) => vg::Color::rgb(105, 105, 155),
+                                _ => vg::Color::rgb(255, 0, 255),
+                            }
+                        },
+                    );
+                }
+            }
         }
         canvas.restore();
-        canvas.delete_image(image_id);
-        //let data = vec![RGBA8::new(255u8, 0u8, 0u8, 255u8); w * h];
-        //let data = vec![RGBA8::new(255u8, 0u8, 0u8, 255u8); w * h];
-        //let img = Img::new(data.as_slice(), w, h);
-        //let img = ImageSource::from(img);
-        //canvas.update_image(image_id, img, 0, 0).unwrap();
+        self.image.set(Some(image_id));
+        image_id
+    }
 
-        //let image_paint = Paint::image(image_id, 0.0, 0.0, w as f32, h as f32, 0.0, 1.0);
-        //let path = rectangle_path(0.0, 0.0, w as f32, h as f32);
-        //canvas.fill_path(&path, &image_paint);
-        //canvas.delete_image(image_id);
+    fn draw_image(&self, _cx: &mut DrawContext, canvas: &mut Canvas) {
+        let mut path = Path::new();
+        let width = 100.0;
+        let height = 100.0;
+        let x = 10.0;
+        let y = 10.0;
+        path.rect(x - width / 2.0, y - height / 2.0, width, height);
+        let img = self.get_image(canvas);
+        canvas.fill_path(
+            &path,
+            //&Paint::color(vg::Color::rgba(255, 0, 0, 128)),
+            &Paint::image(img, 0.0, 0.0, 100.0, 100.0, 0f32, 1f32),
+        );
     }
 }
 

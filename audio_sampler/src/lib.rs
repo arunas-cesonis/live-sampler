@@ -34,7 +34,6 @@ pub struct AudioSampler {
     sample_rate: f32,
     sampler: Sampler,
     peak_meter: Arc<AtomicF32>,
-    info_queue: Arc<ArrayQueue<Info>>,
     debug: Arc<parking_lot::Mutex<String>>,
     debug_data_in: Arc<parking_lot::Mutex<triple_buffer::Input<DebugData>>>,
     debug_data_out: Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>,
@@ -123,7 +122,6 @@ impl Default for AudioSampler {
             sample_rate: -1.0,
             peak_meter_decay_weight: 1.0,
             sampler: Sampler::new(0, &SamplerParams::default()),
-            info_queue: Arc::new(ArrayQueue::new(1)),
             peak_meter: Default::default(), //debug: Arc::new(Mutex::new(None)),
             debug: Default::default(),
             debug_data_in: Arc::new(parking_lot::Mutex::new(debug_data_in)),
@@ -219,8 +217,6 @@ impl Plugin for AudioSampler {
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         // Using vizia as Iced doesn't support drawing bitmap images under OpenGL
-        let info_queue = Arc::new(ArrayQueue::new(1));
-        self.info_queue = info_queue.clone();
         self.debug = Default::default();
         self.debug = Arc::new(parking_lot::Mutex::new(format!("{:?}", self.sampler)));
 
