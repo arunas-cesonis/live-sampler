@@ -6,10 +6,12 @@ use nih_plug_vizia::vizia::prelude::*;
 
 use nih_plug_vizia::vizia::vg::imgref::Img;
 use nih_plug_vizia::vizia::vg::rgb::RGBA8;
-use nih_plug_vizia::vizia::vg::{ImageFlags, ImageSource, Paint, Path, PixelFormat};
+use nih_plug_vizia::vizia::vg::Color;
+use nih_plug_vizia::vizia::vg::{ImageFlags, ImageSource, Paint, Path, PixelFormat, RenderTarget};
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
+use nih_plug_vizia::assets::register_noto_sans_bold;
 use std::sync::Arc;
 
 use crate::sampler::Info;
@@ -62,22 +64,31 @@ impl WaveformView {
     // - macOS; displays black rectangle with above message
     // - windows; displays black rectangle, not sure if message is printed
     fn draw_image(&self, _cx: &mut DrawContext, canvas: &mut Canvas) {
-        let w = 50;
-        let h = 20;
+        let w = 32;
+        let h = 32;
         let image_id = canvas
             .create_image_empty(w, h, PixelFormat::Rgba8, ImageFlags::empty())
             .unwrap();
 
-        //let data = vec![RGBA8::new(255u8, 0u8, 0u8, 255u8); w * h];
-        let data = vec![RGBA8::new(255u8, 0u8, 0u8, 255u8); w * h];
-        let img = Img::new(data.as_slice(), w, h);
-        let img = ImageSource::from(img);
-        canvas.update_image(image_id, img, 0, 0).unwrap();
-
-        let image_paint = Paint::image(image_id, 0.0, 0.0, w as f32, h as f32, 0.0, 1.0);
-        let path = rectangle_path(0.0, 0.0, w as f32, h as f32);
-        canvas.fill_path(&path, &image_paint);
+        canvas.save();
+        canvas.reset();
+        if let Ok(size) = canvas.image_size(image_id) {
+            canvas.set_render_target(RenderTarget::Image(image_id));
+            canvas.clear_rect(0, 0, size.0 as u32, size.1 as u32, Color::rgb(255, 255, 0));
+            canvas.set_render_target(RenderTarget::Screen);
+        }
+        canvas.restore();
         canvas.delete_image(image_id);
+        //let data = vec![RGBA8::new(255u8, 0u8, 0u8, 255u8); w * h];
+        //let data = vec![RGBA8::new(255u8, 0u8, 0u8, 255u8); w * h];
+        //let img = Img::new(data.as_slice(), w, h);
+        //let img = ImageSource::from(img);
+        //canvas.update_image(image_id, img, 0, 0).unwrap();
+
+        //let image_paint = Paint::image(image_id, 0.0, 0.0, w as f32, h as f32, 0.0, 1.0);
+        //let path = rectangle_path(0.0, 0.0, w as f32, h as f32);
+        //canvas.fill_path(&path, &image_paint);
+        //canvas.delete_image(image_id);
     }
 }
 
@@ -118,7 +129,7 @@ impl View for WaveformView {
         // loop
         let color = Color::rgb(100, 100, 150);
         let loop_paint = Paint::color(color.into());
-        let color = Color::rgb(200, 100, 100);
+        let color = Color::rgb(26, 165, 89);
         let pos_paint = Paint::color(color.into());
 
         let debug_data = &mut self.debug_data.lock();
@@ -149,14 +160,15 @@ impl View for WaveformView {
             let path = rectangle_path(x, bounds.y, width, bounds.h);
             canvas.fill_path(&path, &pos_paint);
         }
-        //self.draw_image(cx, canvas);
+        self.draw_image(cx, canvas);
     }
 }
 
 pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
-        assets::register_noto_sans_light(cx);
-        assets::register_noto_sans_thin(cx);
+        register_noto_sans_bold(cx);
+        // assets::register_noto_sans_light(cx);
+        //        assets::register_noto_sans_thin(cx);
 
         data.clone().build(cx);
 
@@ -201,6 +213,7 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                         }),
                         true,
                     )
+                    .font_size(16.0)
                     .width(Percentage(100.0))
                     .height(Percentage(100.0));
                 });
