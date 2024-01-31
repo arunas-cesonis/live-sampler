@@ -1,6 +1,9 @@
 use log::{debug, warn};
+use nih_plug::formatters::v2s_f32_hz_then_khz_with_note_name;
+use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::pin::pin;
+use std::sync::Arc;
 
 use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
@@ -10,6 +13,7 @@ use crate::voice::Voice;
 use crate::{bundleEntry, utils, voice};
 use nih_plug::nih_warn;
 use nih_plug::wrapper::vst3::vst3_sys::vst::ChannelPluginLocation::kUsedAsPanner;
+use nih_plug::wrapper::vst3::vst3_sys::vst::IProcessContextRequirementsFlags::kNeedProjectTimeMusic;
 use nih_plug_vizia::vizia::style::LengthValue::In;
 
 use crate::volume::Volume;
@@ -37,6 +41,7 @@ pub struct VoiceInfo {
 pub struct Info {
     pub info: Vec<VoiceInfo>,
     pub voices: Vec<Voice>,
+    pub waveform_summary: Vec<f32>,
 }
 
 fn starting_offset(loop_start_percent: f32, data_len: usize) -> f32 {
@@ -319,8 +324,41 @@ impl Sampler {
         }
     }
 
+    pub fn get_waveform_summary(&self, max_len: usize) -> Vec<f32> {
+        let data = &self.channels[0].data;
+        let ratio = data.len() as f32 / max_len as f32;
+        if ratio < 1.0 {
+            return data.clone();
+        }
+        //let mut smooth = vec![0.0; data.len()];
+        //let mut acc = 0.0;
+        //let mut count = 0;
+        //let window_size = 8;
+        //for i in 0..data.len() + window_size {
+        //    if i < data.len() {
+        //        acc += data[i];
+        //        count += 1;
+        //    }
+        //    if i >= window_size * 2 {
+        //        acc -= data[i - window_size * 2];
+        //        count -= 1;
+        //    }
+        //    if i >= window_size {
+        //        smooth[i - window_size] = acc / count as f32;
+        //    }
+        //}
+        let mut out = vec![];
+        let smooth = &data;
+        for i in 0..max_len {
+            let index = (i as f32 * ratio).floor() as usize;
+            out.push(smooth[index]);
+        }
+        out
+    }
+
     pub fn get_info(&self, params: &Params) -> Info {
         let data_len_f32 = self.channels[0].data.len() as f32;
+
         Info {
             voices: self.channels[0].voices.clone(),
             info: self.channels[0]
@@ -333,6 +371,7 @@ impl Sampler {
                     VoiceInfo { start, end, pos }
                 })
                 .collect(),
+            waveform_summary: self.get_waveform_summary(940),
         }
     }
 }

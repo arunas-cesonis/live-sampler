@@ -34,6 +34,10 @@ mod test {
             self.cmds.push((at, cmd));
         }
 
+        fn sampler(&self) -> &Sampler {
+            &self.sampler
+        }
+
         fn run_input<I>(&mut self, input: I) -> Vec<f32>
         where
             I: IntoIterator<Item = f32>,
@@ -570,5 +574,34 @@ mod test {
         host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(input.clone());
         eprintln!("{:?}", output);
+    }
+
+    #[test]
+    fn test_waveform_info() {
+        let params = Params {
+            loop_mode: LoopMode::PingPong,
+            attack_samples: 0,
+            decay_samples: 0,
+            loop_length_percent: 1.0,
+            ..Params::default()
+        };
+        let input = (0..44100)
+            .map(|x| ((x as f32) / 44100.0).sin())
+            .collect::<Vec<_>>();
+
+        //let input = (0..44100).map(|x| x as f32).collect::<Vec<_>>();
+
+        let mut host = Host::new(Params {
+            loop_length_percent: 1.0,
+            ..params.clone()
+        });
+        host.schedule(0, Cmd::StartRecording);
+        host.schedule(input.len(), Cmd::StopRecording);
+        host.run_input(input);
+
+        let wave = host.sampler().get_waveform_summary(500);
+        for (i, x) in wave.iter().take(100).enumerate() {
+            eprintln!("{:<4}: {:?}", i, x);
+        }
     }
 }
