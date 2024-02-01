@@ -144,6 +144,8 @@ impl View for WaveformView {
         let mut path = Path::new();
         let bounds = cx.bounds();
         let border_width = cx.border_width();
+
+        // 940.0 x 50.0
         {
             let x = bounds.x + border_width / 2.0;
             let y = bounds.y + border_width / 2.0;
