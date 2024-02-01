@@ -37,13 +37,6 @@ pub struct VoiceInfo {
     pub pos: f32,
 }
 
-#[derive(Clone, Default, Debug)]
-pub struct Info {
-    pub info: Vec<VoiceInfo>,
-    pub voices: Vec<Voice>,
-    pub waveform_summary: Vec<f32>,
-}
-
 fn starting_offset(loop_start_percent: f32, data_len: usize) -> f32 {
     let len_f32 = data_len as f32;
     let start = loop_start_percent * len_f32;
@@ -272,6 +265,40 @@ pub struct Sampler {
 }
 
 impl Sampler {
+    pub fn get_waveform_summary(&mut self, max_len: usize) -> Vec<f32> {
+        //let mut smooth = vec![0.0; data.len()];
+        //let mut acc = 0.0;
+        //let mut count = 0;
+        //let window_size = 8;
+        //for i in 0..data.len() + window_size {
+        //    if i < data.len() {
+        //        acc += data[i];
+        //        count += 1;
+        //    }
+        //    if i >= window_size * 2 {
+        //        acc -= data[i - window_size * 2];
+        //        count -= 1;
+        //    }
+        //    if i >= window_size {
+        //        smooth[i - window_size] = acc / count as f32;
+        //    }
+        //}
+        let data = &self.channels[0].data;
+        let ratio = data.len() as f32 / max_len as f32;
+        let out = if ratio < 1.0 {
+            data.clone()
+        } else {
+            let mut out = vec![];
+            let smooth = &data;
+            for i in 0..max_len {
+                let index = (i as f32 * ratio).floor() as usize;
+                out.push(smooth[index]);
+            }
+            out
+        };
+        out
+    }
+
     pub fn new(channel_count: usize, params: &Params) -> Self {
         Self {
             channels: vec![Channel::new(&params); channel_count],
@@ -305,7 +332,7 @@ impl Sampler {
     }
 
     pub fn stop_recording(&mut self, params: &Params) {
-        self.each(|ch| Channel::stop_recording(ch, params))
+        self.each(|ch| Channel::stop_recording(ch, params));
     }
 
     pub fn process_sample<'a>(
@@ -324,54 +351,18 @@ impl Sampler {
         }
     }
 
-    pub fn get_waveform_summary(&self, max_len: usize) -> Vec<f32> {
-        let data = &self.channels[0].data;
-        let ratio = data.len() as f32 / max_len as f32;
-        if ratio < 1.0 {
-            return data.clone();
-        }
-        //let mut smooth = vec![0.0; data.len()];
-        //let mut acc = 0.0;
-        //let mut count = 0;
-        //let window_size = 8;
-        //for i in 0..data.len() + window_size {
-        //    if i < data.len() {
-        //        acc += data[i];
-        //        count += 1;
-        //    }
-        //    if i >= window_size * 2 {
-        //        acc -= data[i - window_size * 2];
-        //        count -= 1;
-        //    }
-        //    if i >= window_size {
-        //        smooth[i - window_size] = acc / count as f32;
-        //    }
-        //}
-        let mut out = vec![];
-        let smooth = &data;
-        for i in 0..max_len {
-            let index = (i as f32 * ratio).floor() as usize;
-            out.push(smooth[index]);
-        }
-        out
-    }
-
-    pub fn get_info(&self, params: &Params) -> Info {
+    pub fn get_voice_info(&self, params: &Params) -> Vec<VoiceInfo> {
         let data_len_f32 = self.channels[0].data.len() as f32;
 
-        Info {
-            voices: self.channels[0].voices.clone(),
-            info: self.channels[0]
-                .voices
-                .iter()
-                .map(|v| {
-                    let start = v.loop_start_percent;
-                    let end = (v.loop_start_percent + params.loop_length_percent) % 1.0;
-                    let pos = v.last_sample_index as f32 / data_len_f32;
-                    VoiceInfo { start, end, pos }
-                })
-                .collect(),
-            waveform_summary: self.get_waveform_summary(940),
-        }
+        self.channels[0]
+            .voices
+            .iter()
+            .map(|v| {
+                let start = v.loop_start_percent;
+                let end = (v.loop_start_percent + params.loop_length_percent) % 1.0;
+                let pos = v.last_sample_index as f32 / data_len_f32;
+                VoiceInfo { start, end, pos }
+            })
+            .collect()
     }
 }

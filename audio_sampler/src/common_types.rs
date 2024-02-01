@@ -1,4 +1,6 @@
+use crate::sampler::VoiceInfo;
 use nih_plug::prelude::Enum;
+use std::sync::Arc;
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum LoopMode {
@@ -43,4 +45,16 @@ impl Default for Params {
             speed: 1.0,
         }
     }
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct WaveformSummary {
+    pub version: usize,
+    pub data: Vec<f32>,
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct Info {
+    pub voices: Vec<VoiceInfo>,
+    pub waveform_summary: Arc<WaveformSummary>,
 }
