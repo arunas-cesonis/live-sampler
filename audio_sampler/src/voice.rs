@@ -11,7 +11,6 @@ use std::ops::Index;
 pub struct Voice {
     pub note: u8,
     pub loop_start_percent: f32,
-    pub offset: f32,
     pub played: f32,
     pub volume: Volume,
     pub finished: bool,

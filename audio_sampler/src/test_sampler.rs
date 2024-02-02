@@ -2,6 +2,7 @@
 mod test {
     use crate::common_types::Params;
     use crate::sampler::{LoopMode, Sampler};
+    use std::f32::consts::PI;
 
     #[derive(Copy, Clone, Debug)]
     enum Cmd {
@@ -552,6 +553,30 @@ mod test {
     }
 
     #[test]
+    fn test_empty_data() {
+        let params = Params {
+            loop_mode: LoopMode::PingPong,
+            attack_samples: 0,
+            decay_samples: 0,
+            loop_length_percent: 1.0,
+            ..Params::default()
+        };
+        let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
+        let ten_zeros = vec![0.0; 10];
+        let input = vec![one_to_ten.clone(), ten_zeros.clone(), ten_zeros.clone()].concat();
+
+        let mut host = Host::new(Params {
+            loop_length_percent: 1.0,
+            ..params.clone()
+        });
+        let tmp = host.clone();
+        host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
+        let output = host.run_input(input.clone());
+        assert_eq!(input, output);
+        eprintln!("{:?}", output);
+    }
+
+    #[test]
     fn test_ping_pong_2() {
         let params = Params {
             loop_mode: LoopMode::PingPong,
@@ -586,7 +611,11 @@ mod test {
             ..Params::default()
         };
         let input = (0..44100)
-            .map(|x| ((x as f32) / 44100.0).sin())
+            .map(|x| {
+                let t = ((x as f32) / 44100.0);
+                let r = t * (180.0 / PI);
+                r.cos()
+            })
             .collect::<Vec<_>>();
 
         //let input = (0..44100).map(|x| x as f32).collect::<Vec<_>>();
@@ -599,8 +628,8 @@ mod test {
         host.schedule(input.len(), Cmd::StopRecording);
         host.run_input(input);
 
-        let wave = host.sampler().get_waveform_summary(500);
-        for (i, x) in wave.iter().take(100).enumerate() {
+        let wave = host.sampler().get_waveform_summary(20);
+        for (i, x) in wave.data.iter().take(20).enumerate() {
             eprintln!("{:<4}: {:?}", i, x);
         }
     }

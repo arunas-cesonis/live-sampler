@@ -8,7 +8,7 @@ use nih_plug_vizia::ViziaState;
 
 use crate::sampler::{LoopMode, Sampler};
 
-use crate::common_types::{Info, LoopModeParam, Params as SamplerParams, WaveformSummary};
+use crate::common_types::{Info, LoopModeParam, Params as SamplerParams, VersionedWaveformSummary};
 use crate::editor_vizia::DebugData;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -38,7 +38,7 @@ pub struct AudioSampler {
     debug_data_in: Arc<parking_lot::Mutex<triple_buffer::Input<DebugData>>>,
     debug_data_out: Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>,
     peak_meter_decay_weight: f32,
-    waveform_summary: Arc<WaveformSummary>,
+    waveform_summary: Arc<VersionedWaveformSummary>,
 }
 
 #[derive(Params)]
@@ -55,6 +55,8 @@ pub struct AudioSamplerParams {
     pub loop_mode: EnumParam<LoopModeParam>,
     #[id = "loop_length"]
     pub loop_length: FloatParam,
+    #[id = "start_offset"]
+    pub start_offset: FloatParam,
     #[id = "volume"]
     pub volume: FloatParam,
     /// The editor state, saved together with the parameter state so the custom scaling can be
@@ -63,7 +65,8 @@ pub struct AudioSamplerParams {
     editor_state: Arc<ViziaState>,
 }
 
-const MILLISECONDS_PARAM_SKEW_FACTOR: f32 = 0.25;
+const ATTACK_DECAY_SKEW_FACTOR: f32 = 0.25;
+const LOOP_LENGTH_SKEW_FACTOR: f32 = 0.5;
 
 impl Default for AudioSamplerParams {
     fn default() -> Self {
@@ -84,7 +87,7 @@ impl Default for AudioSamplerParams {
                 FloatRange::Skewed {
                     min: 0.0,
                     max: 1000.0,
-                    factor: MILLISECONDS_PARAM_SKEW_FACTOR,
+                    factor: ATTACK_DECAY_SKEW_FACTOR,
                 },
             )
             .with_unit(" ms"),
@@ -94,7 +97,7 @@ impl Default for AudioSamplerParams {
                 FloatRange::Skewed {
                     min: 0.0,
                     max: 1000.0,
-                    factor: MILLISECONDS_PARAM_SKEW_FACTOR,
+                    factor: ATTACK_DECAY_SKEW_FACTOR,
                 },
             )
             .with_unit(" ms"),
@@ -105,8 +108,14 @@ impl Default for AudioSamplerParams {
                 FloatRange::Skewed {
                     min: 0.001,
                     max: 1.0,
-                    factor: 0.5,
+                    factor: LOOP_LENGTH_SKEW_FACTOR,
                 },
+            )
+            .with_unit(" %"),
+            start_offset: FloatParam::new(
+                "Start offset",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
             )
             .with_unit(" %"),
             volume: FloatParam::new("Gain", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
@@ -126,7 +135,7 @@ impl Default for AudioSampler {
             peak_meter: Default::default(), //debug: Arc::new(Mutex::new(None)),
             debug_data_in: Arc::new(parking_lot::Mutex::new(debug_data_in)),
             debug_data_out: Arc::new(parking_lot::Mutex::new(debug_data_out)),
-            waveform_summary: Arc::new(WaveformSummary::default()),
+            waveform_summary: Arc::new(VersionedWaveformSummary::default()),
         }
     }
 }
@@ -155,6 +164,7 @@ impl AudioSampler {
             attack_samples,
             loop_mode: LoopMode::from_param(self.params.loop_mode.value()),
             loop_length_percent: self.params.loop_length.smoothed.next(),
+            start_offset_percent: self.params.start_offset.value(),
             decay_samples,
             speed: params_speed,
         };
@@ -274,9 +284,9 @@ impl Plugin for AudioSampler {
                     NoteEvent::NoteOff { note, .. } => match note {
                         0 => {
                             self.sampler.stop_recording(params);
-                            self.waveform_summary = Arc::new(WaveformSummary {
+                            self.waveform_summary = Arc::new(VersionedWaveformSummary {
                                 version: self.waveform_summary.version + 1,
-                                data: self.sampler.get_waveform_summary(940),
+                                waveform_summary: self.sampler.get_waveform_summary(940),
                             });
                         }
                         1 => self.sampler.unreverse(params),

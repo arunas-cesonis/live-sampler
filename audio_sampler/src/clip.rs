@@ -61,6 +61,10 @@ impl Clip {
         self.speed = new_speed;
     }
 
+    pub fn update_offset(&mut self, new_offset: usize) {
+        self.offset = new_offset;
+    }
+
     pub fn update_length(&mut self, now: usize, new_length: usize) {
         if self.length == new_length {
             return;
@@ -75,7 +79,7 @@ impl Clip {
         self.length = new_length;
     }
 
-    pub fn data_index(&self, now: usize, data_len: usize) -> usize {
+    pub fn sample_index(&self, now: usize, data_len: usize) -> usize {
         let reverse_adjust = if self.speed < 0.0 { -1.0 } else { 0.0 };
         let data_index = (self.local_offset(now, reverse_adjust) + self.offset) % data_len;
         data_index
@@ -114,12 +118,12 @@ mod test {
         let mut out: Vec<f32> = Vec::new();
         let data: Vec<_> = (0..100).map(|x| x as f32).collect();
         while now < 65 {
-            out.push(data[clip.data_index(now, data.len())]);
+            out.push(data[clip.sample_index(now, data.len())]);
             now += 1;
         }
         clip.update_length(now, 3);
         while now < 100 {
-            out.push(data[clip.data_index(now, data.len())]);
+            out.push(data[clip.sample_index(now, data.len())]);
             now += 1;
         }
         eprintln!("{}", print_lines(out, 10));

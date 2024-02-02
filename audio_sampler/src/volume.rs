@@ -36,8 +36,23 @@ impl Volume {
         match self {
             Volume::Linear { time, value } => {
                 let t = (now - time.start) as f32 / (time.end - time.start) as f32;
-                assert!(t >= 0.0);
-                assert!(t <= 1.0);
+                debug_assert!(
+                    t >= 0.0,
+                    "t >= 0.0: t={} time={:?} now={} self={:?}",
+                    t,
+                    time,
+                    now,
+                    self
+                );
+                debug_assert!(
+                    t <= 1.0,
+                    "t <= 1.0: t={} time={:?} now={} self={:?}",
+                    t,
+                    time,
+                    now,
+                    self
+                );
+                let t = t.max(0.0).min(1.0);
                 value.start + (value.end - value.start) * t
             }
             Volume::Static(value) => *value,

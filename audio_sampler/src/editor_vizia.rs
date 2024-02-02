@@ -10,9 +10,11 @@ use nih_plug_vizia::vizia::vg::rgb::RGBA8;
 use nih_plug_vizia::vizia::vg::{Color, ImageId};
 use nih_plug_vizia::vizia::vg::{ImageFlags, ImageSource, Paint, Path, PixelFormat, RenderTarget};
 use nih_plug_vizia::widgets::*;
-use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
+use nih_plug_vizia::{assets, create_vizia_editor, vizia, ViziaState, ViziaTheming};
 
+use log::warn;
 use nih_plug::nih_warn;
+use nih_plug::wrapper::vst3::vst3_sys::vst::get_red;
 use nih_plug_vizia::assets::register_noto_sans_bold;
 use nih_plug_vizia::vizia::vg;
 use std::sync::Arc;
@@ -50,7 +52,7 @@ impl Model for Data {
     }
 }
 
-const WINDOW_SIZE: (u32, u32) = (640 + 320, 370);
+const WINDOW_SIZE: (u32, u32) = (640 + 320, 400);
 const WINDOW_SIZEF: (f32, f32) = (WINDOW_SIZE.0 as f32, WINDOW_SIZE.1 as f32);
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
@@ -62,6 +64,33 @@ struct WaveformView<X> {
     debug_data: Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>,
     x_lens: X,
     image: Cell<Option<(usize, ImageId)>>,
+}
+
+const NOTES: [&str; 12] = [
+    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+];
+
+fn display_notes(cx: &mut Context) {
+    let c = vizia::style::Color::red();
+    let g = vizia::style::Color::green();
+    HStack::new(cx, |cx| {
+        for i in 0..16 {
+            let ocatve = (i as i32 / 12) - 2;
+            let note = NOTES[i % 12].to_string() + ocatve.to_string().as_str();
+
+            Label::new(cx, &note)
+                //.background_color(c)
+                .text_align(TextAlign::Center)
+                .width(Percentage(100.0 / 16.0));
+        }
+    })
+    //    .background_color(g)
+    .child_left(Stretch(1.0))
+    .child_right(Stretch(1.0))
+    .child_top(Pixels(-20.0))
+    //.child_space(Stretch(1.0))
+    .width(Percentage(100.0))
+    .height(Percentage(100.0));
 }
 
 impl<X> WaveformView<X>
@@ -77,7 +106,9 @@ where
             x_lens: x,
             image: Cell::new(None),
         }
-        .build(cx, |_| {})
+        .build(cx, |cx| {
+            display_notes(cx);
+        })
     }
 
     fn get_image(&self, canvas: &mut Canvas, info: &Info) -> ImageId {
@@ -107,19 +138,34 @@ where
         canvas.update_image(image_id, ImageSource::Rgba(image), 0, 0);
         canvas.save();
         canvas.reset();
+        let summary = &info.waveform_summary.waveform_summary;
         if let Ok(size) = canvas.image_size(image_id) {
             canvas.set_render_target(RenderTarget::Image(image_id));
-            for (i, value) in info.waveform_summary.data.iter().take(size.0).enumerate() {
+            let max_abs = summary.max.abs().max(summary.min.abs());
+            let max_abs_sensible = if max_abs < 0.001 { 1.0 } else { max_abs };
+            let scale = 1.0 / max_abs_sensible;
+            for (i, value) in info
+                .waveform_summary
+                .waveform_summary
+                .data
+                .iter()
+                .take(size.0)
+                .enumerate()
+            {
                 let (h, y) = {
-                    if *value >= 0.0 {
-                        let h = 0.5 * value.abs() * height as f32;
-                        let y = 0.5 * height as f32;
-                        (h, y)
-                    } else {
-                        let y = 0.5 * height as f32 + value * height as f32 * 0.5;
-                        let h = 0.5 * value.abs() * height as f32;
-                        (h, y)
-                    }
+                    let value = value.abs() * scale;
+                    let h = 1.0 * value.abs() * height as f32;
+                    let y = 0.0;
+                    //if value >= 0.0 {
+                    (h, y)
+                    //    let h = 0.5 * value.abs() * height as f32;
+                    //    let y = 0.5 * height as f32;
+                    //    (h, y)
+                    //} else {
+                    //    let y = 0.5 * height as f32 + value * height as f32 * 0.5;
+                    //    let h = 0.5 * value.abs() * height as f32;
+                    //    (h, y)
+                    //}
                 };
                 canvas.clear_rect(
                     i as u32,
@@ -218,33 +264,34 @@ where
         //{canvas.fill_path(&background_path, &paint);
 
         // loop
-        let color = Color::rgba(100, 100, 150, 128);
+        let color = Color::rgb(26, 165, 89);
         let loop_paint = Paint::color(color.into());
         let color = Color::rgb(26, 165, 89);
         let pos_paint = Paint::color(color.into());
+        let color = Color::rgba(255, 165, 89, 128);
+        let slice_paint = Paint::color(color.into());
+
+        canvas.fill_text(0.0, 0.0, "HELLO", &Paint::color(Color::rgb(0, 255, 0)));
+
+        for i in 0..16 {
+            let width = 5.0;
+            let x = i as f32 * (bounds.w / 16.0) + bounds.x;
+            let path = rectangle_path(x, bounds.y, width, bounds.h);
+            canvas.fill_path(&path, &slice_paint);
+        }
 
         for v in &info.voices {
-            if v.start < v.end {
-                let start = v.start * bounds.w + bounds.x;
-                let end = v.end * bounds.w + bounds.x;
-                let width = end - start;
-                let path = rectangle_path(start, bounds.y, width, bounds.h);
-                canvas.fill_path(&path, &loop_paint);
-            } else {
-                let start = v.start * bounds.w + bounds.x;
-                let end = bounds.w + bounds.x;
-                let width = end - start;
-                let path = rectangle_path(start, bounds.y, width, bounds.h);
-                canvas.fill_path(&path, &loop_paint);
-
-                let start = bounds.x;
-                let end = v.end * bounds.w + bounds.x;
-                let width = end - start;
-                let path = rectangle_path(start, bounds.y, width, bounds.h);
-                canvas.fill_path(&path, &loop_paint);
-            }
-            let x = v.pos * bounds.w + bounds.x;
             let width = 5.0;
+
+            let x = v.start * bounds.w + bounds.x;
+            let path = rectangle_path(x, bounds.y, width, bounds.h);
+            canvas.fill_path(&path, &loop_paint);
+
+            let x = v.end * bounds.w + bounds.x;
+            let path = rectangle_path(x, bounds.y, width, bounds.h);
+            canvas.fill_path(&path, &loop_paint);
+
+            let x = v.pos * bounds.w + bounds.x;
             let path = rectangle_path(x, bounds.y, width, bounds.h);
             canvas.fill_path(&path, &pos_paint);
         }
@@ -289,6 +336,8 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                 VStack::new(cx, |cx| {
                     Label::new(cx, "Speed").top(Pixels(10.0));
                     ParamSlider::new(cx, Data::params, |params| &params.speed);
+                    Label::new(cx, "Start offset").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.start_offset);
                     Label::new(cx, "Loop length").top(Pixels(10.0));
                     ParamSlider::new(cx, Data::params, |params| &params.loop_length);
                     Label::new(cx, "Loop mode").top(Pixels(10.0));
