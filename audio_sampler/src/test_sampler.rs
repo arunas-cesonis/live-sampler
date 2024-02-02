@@ -1,8 +1,9 @@
 #[cfg(test)]
 mod test {
+    use std::f32::consts::PI;
+
     use crate::common_types::Params;
     use crate::sampler::{LoopMode, Sampler};
-    use std::f32::consts::PI;
 
     #[derive(Copy, Clone, Debug)]
     enum Cmd {

@@ -1,11 +1,5 @@
 use crate::clip::Clip;
-use crate::common_types::Params;
-use crate::sampler::LoopMode;
-use crate::utils;
-use crate::utils::normalize_offset;
 use crate::volume::Volume;
-use smallvec::SmallVec;
-use std::ops::Index;
 
 #[derive(Clone, Debug)]
 pub struct Voice {

@@ -1,9 +1,5 @@
-use crate::sampler::LoopMode;
-use nih_plug::nih_warn;
-use nih_plug_vizia::vizia::views::combo_box_derived_lenses::p;
 use num_traits::real::Real;
 use num_traits::Float;
-use std::io::stdout;
 
 pub fn ping_pong3<T>(x: T, n: T, step: T) -> (T, T)
 where
@@ -87,6 +83,7 @@ where
 #[cfg(test)]
 mod test_loop {
     use super::*;
+
     #[test]
     fn test_bound() {
         let data_len = Bound::new(100.0);

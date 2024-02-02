@@ -1,17 +1,15 @@
 #![allow(unused)]
-use crossbeam_queue::ArrayQueue;
+
 use std::sync::Arc;
 
 use nih_plug::prelude::*;
-use nih_plug_vizia::vizia::style::LengthValue::In;
 use nih_plug_vizia::ViziaState;
-
-use crate::sampler::{LoopMode, Sampler};
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
 
 use crate::common_types::{Info, LoopModeParam, Params as SamplerParams, VersionedWaveformSummary};
 use crate::editor_vizia::DebugData;
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
+use crate::sampler::{LoopMode, Sampler};
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]

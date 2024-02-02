@@ -1,6 +1,4 @@
-use crate::sampler::LoopMode;
-use crate::utils::{normalize_offset, ping_pong2, ping_pong3};
-use log::log_enabled;
+use crate::utils::normalize_offset;
 
 #[derive(Debug, Clone)]
 pub struct Clip {
@@ -89,8 +87,6 @@ impl Clip {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::utils::ping_pong2;
-    use std::time::Instant;
 
     fn print_lines<A>(v: Vec<A>, per_line: usize) -> String
     where
