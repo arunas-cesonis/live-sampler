@@ -1,5 +1,6 @@
 use log::{debug, warn};
 use nih_plug::formatters::v2s_f32_hz_then_khz_with_note_name;
+use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::pin::pin;
@@ -93,7 +94,6 @@ impl Channel {
         let mut voice = Voice {
             note,
             loop_start_percent,
-            offset,
             played: 0.0,
             clip: Clip::new(self.now, offset as usize, length as usize, 0, params.speed),
             ping_pong_speed: 1.0,
@@ -184,7 +184,10 @@ impl Channel {
             voice
                 .clip
                 .update_length(self.now, (len_f32 * params.loop_length_percent) as usize);
-            let index = voice.clip.data_index(self.now, self.data.len());
+            let offset = ((params.start_offset_percent + voice.loop_start_percent) * len_f32)
+                .floor() as usize;
+            voice.clip.update_offset(offset);
+            let index = voice.clip.sample_index(self.now, self.data.len());
             let value = self.data[index] * voice.volume.value(self.now);
 
             output += value;
@@ -234,7 +237,9 @@ impl Channel {
         }
 
         let mut output = 0.0;
-        output += self.play_voices(params);
+        if !self.data.is_empty() {
+            output += self.play_voices(params);
+        }
 
         // passthru handling
         {
@@ -264,39 +269,33 @@ pub struct Sampler {
     channels: Vec<Channel>,
 }
 
+#[derive(Default, Clone, Debug)]
+pub struct WaveformSummary {
+    pub data: Vec<f32>,
+    pub min: f32,
+    pub max: f32,
+}
+
 impl Sampler {
-    pub fn get_waveform_summary(&mut self, max_len: usize) -> Vec<f32> {
-        //let mut smooth = vec![0.0; data.len()];
-        //let mut acc = 0.0;
-        //let mut count = 0;
-        //let window_size = 8;
-        //for i in 0..data.len() + window_size {
-        //    if i < data.len() {
-        //        acc += data[i];
-        //        count += 1;
-        //    }
-        //    if i >= window_size * 2 {
-        //        acc -= data[i - window_size * 2];
-        //        count -= 1;
-        //    }
-        //    if i >= window_size {
-        //        smooth[i - window_size] = acc / count as f32;
-        //    }
-        //}
+    pub fn get_waveform_summary(&self, resolution: usize) -> WaveformSummary {
         let data = &self.channels[0].data;
-        let ratio = data.len() as f32 / max_len as f32;
-        let out = if ratio < 1.0 {
-            data.clone()
-        } else {
-            let mut out = vec![];
-            let smooth = &data;
-            for i in 0..max_len {
-                let index = (i as f32 * ratio).floor() as usize;
-                out.push(smooth[index]);
-            }
-            out
+        let step = data.len() as f32 / resolution as f32;
+        let mut out = vec![0.0; resolution];
+        let mut r = WaveformSummary {
+            data: vec![0.0; resolution],
+            min: 0.0,
+            max: 0.0,
         };
-        out
+        for i in 0..resolution {
+            let a = ((i as f32) * step).floor() as usize;
+            let b = (((i + 1) as f32) * step).floor() as usize;
+            let n = (b - a) as f32;
+            let value = (data[a..b].iter().map(|x| x * x).sum::<f32>() / n).sqrt();
+            r.data[i] = value;
+            r.min = r.min.min(value);
+            r.max = r.max.max(value);
+        }
+        r
     }
 
     pub fn new(channel_count: usize, params: &Params) -> Self {

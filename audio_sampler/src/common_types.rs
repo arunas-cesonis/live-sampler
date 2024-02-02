@@ -1,4 +1,4 @@
-use crate::sampler::VoiceInfo;
+use crate::sampler::{VoiceInfo, WaveformSummary};
 use nih_plug::prelude::Enum;
 use std::sync::Arc;
 
@@ -31,6 +31,7 @@ pub struct Params {
     pub auto_passthru: bool,
     pub loop_mode: LoopMode,
     pub loop_length_percent: f32,
+    pub start_offset_percent: f32,
     pub speed: f32,
 }
 
@@ -41,6 +42,7 @@ impl Default for Params {
             attack_samples: 100,
             loop_mode: LoopMode::PlayOnce,
             loop_length_percent: 1.0,
+            start_offset_percent: 0.0,
             decay_samples: 100,
             speed: 1.0,
         }
@@ -48,13 +50,13 @@ impl Default for Params {
 }
 
 #[derive(Clone, Default, Debug)]
-pub struct WaveformSummary {
+pub struct VersionedWaveformSummary {
     pub version: usize,
-    pub data: Vec<f32>,
+    pub waveform_summary: WaveformSummary,
 }
 
 #[derive(Clone, Default, Debug)]
 pub struct Info {
     pub voices: Vec<VoiceInfo>,
-    pub waveform_summary: Arc<WaveformSummary>,
+    pub waveform_summary: Arc<VersionedWaveformSummary>,
 }
