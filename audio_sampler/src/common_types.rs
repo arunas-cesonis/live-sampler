@@ -1,6 +1,8 @@
-use crate::sampler::{VoiceInfo, WaveformSummary};
-use nih_plug::prelude::Enum;
 use std::sync::Arc;
+
+use nih_plug::prelude::Enum;
+
+use crate::sampler::{VoiceInfo, WaveformSummary};
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum LoopMode {

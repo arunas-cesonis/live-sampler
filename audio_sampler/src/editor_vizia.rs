@@ -1,27 +1,20 @@
-use atomic_float::AtomicF32;
 use std::cell::Cell;
+use std::sync::Arc;
 
+use nih_plug::nih_warn;
 use nih_plug::prelude::Editor;
-
+use nih_plug_vizia::assets::register_noto_sans_bold;
 use nih_plug_vizia::vizia::prelude::*;
-
-use nih_plug_vizia::vizia::vg::imgref::{Img, ImgRef};
+use nih_plug_vizia::vizia::vg;
+use nih_plug_vizia::vizia::vg::imgref::Img;
 use nih_plug_vizia::vizia::vg::rgb::RGBA8;
 use nih_plug_vizia::vizia::vg::{Color, ImageId};
 use nih_plug_vizia::vizia::vg::{ImageFlags, ImageSource, Paint, Path, PixelFormat, RenderTarget};
 use nih_plug_vizia::widgets::*;
-use nih_plug_vizia::{assets, create_vizia_editor, vizia, ViziaState, ViziaTheming};
-
-use log::warn;
-use nih_plug::nih_warn;
-use nih_plug::wrapper::vst3::vst3_sys::vst::get_red;
-use nih_plug_vizia::assets::register_noto_sans_bold;
-use nih_plug_vizia::vizia::vg;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
 use crate::common_types::Info;
-use crate::{utils, AudioSamplerParams};
+use crate::AudioSamplerParams;
 
 #[derive(Debug, Clone, Default)]
 pub struct DebugData {
