@@ -11,7 +11,7 @@ pub use crate::common_types::LoopMode;
 use crate::common_types::Params;
 use crate::utils::{normalize_offset, ping_pong2};
 use crate::voice::Voice;
-use crate::{bundleEntry, utils, voice};
+use crate::{utils, voice};
 use nih_plug::nih_warn;
 use nih_plug::wrapper::vst3::vst3_sys::vst::ChannelPluginLocation::kUsedAsPanner;
 use nih_plug::wrapper::vst3::vst3_sys::vst::IProcessContextRequirementsFlags::kNeedProjectTimeMusic;
