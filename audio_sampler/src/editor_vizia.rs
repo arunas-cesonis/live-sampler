@@ -17,10 +17,11 @@ use nih_plug::nih_warn;
 use nih_plug::wrapper::vst3::vst3_sys::vst::get_red;
 use nih_plug_vizia::assets::register_noto_sans_bold;
 use nih_plug_vizia::vizia::vg;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use crate::common_types::Info;
-use crate::AudioSamplerParams;
+use crate::{utils, AudioSamplerParams};
 
 #[derive(Debug, Clone, Default)]
 pub struct DebugData {
@@ -30,7 +31,6 @@ pub struct DebugData {
 #[derive(Clone, Lens)]
 pub struct Data {
     pub(crate) params: Arc<AudioSamplerParams>,
-    pub(crate) peak_meter: Arc<AtomicF32>,
     pub(crate) debug_data_out: Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>,
     pub(crate) xy: (f32, f32),
     pub(crate) x: f32,
@@ -71,8 +71,6 @@ const NOTES: [&str; 12] = [
 ];
 
 fn display_notes(cx: &mut Context) {
-    let c = vizia::style::Color::red();
-    let g = vizia::style::Color::green();
     HStack::new(cx, |cx| {
         for i in 0..16 {
             let ocatve = (i as i32 / 12) - 2;
@@ -84,11 +82,9 @@ fn display_notes(cx: &mut Context) {
                 .width(Percentage(100.0 / 16.0));
         }
     })
-    //    .background_color(g)
     .child_left(Stretch(1.0))
     .child_right(Stretch(1.0))
     .child_top(Pixels(-20.0))
-    //.child_space(Stretch(1.0))
     .width(Percentage(100.0))
     .height(Percentage(100.0));
 }
@@ -156,16 +152,7 @@ where
                     let value = value.abs() * scale;
                     let h = 1.0 * value.abs() * height as f32;
                     let y = 0.0;
-                    //if value >= 0.0 {
                     (h, y)
-                    //    let h = 0.5 * value.abs() * height as f32;
-                    //    let y = 0.5 * height as f32;
-                    //    (h, y)
-                    //} else {
-                    //    let y = 0.5 * height as f32 + value * height as f32 * 0.5;
-                    //    let h = 0.5 * value.abs() * height as f32;
-                    //    (h, y)
-                    //}
                 };
                 canvas.clear_rect(
                     i as u32,
@@ -258,10 +245,6 @@ where
         let debug_data = &mut self.debug_data.lock();
         let info = &debug_data.read().info;
         self.draw_image(cx, canvas, &bg_bounds, &info);
-        //{//let background_color = cx.background_color();
-        //{let color = Color::rgb(200, 200, 200);
-        //{let paint = Paint::color(color.into());
-        //{canvas.fill_path(&background_path, &paint);
 
         // loop
         let color = Color::rgb(26, 165, 89);
@@ -306,20 +289,21 @@ pub enum EditorEvent {
 pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         register_noto_sans_bold(cx);
-        // assets::register_noto_sans_light(cx);
-        //        assets::register_noto_sans_thin(cx);
 
         data.clone().build(cx);
 
         VStack::new(cx, |cx| {
-            Label::new(cx, "Audio Sampler")
-                .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
-                .font_weight(FontWeightKeyword::Bold)
-                .font_size(30.0)
-                .text_align(TextAlign::Left)
-                .height(Pixels(42.0))
-                .child_top(Stretch(1.0))
-                .child_bottom(Pixels(0.0));
+            HStack::new(cx, |cx| {
+                Label::new(cx, "Audio Sampler")
+                    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+                    .font_weight(FontWeightKeyword::Bold)
+                    .font_size(30.0)
+                    .text_align(TextAlign::Left)
+                    .height(Pixels(42.0))
+                    .child_top(Stretch(1.0))
+                    .child_bottom(Pixels(0.0));
+            })
+            .height(Pixels(42.0));
             HStack::new(cx, |cx| {
                 VStack::new(cx, |cx| {
                     Label::new(cx, "Volume").top(Pixels(10.0));
@@ -329,8 +313,7 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     Label::new(cx, "Decay").top(Pixels(10.0));
                     ParamSlider::new(cx, Data::params, |params| &params.decay);
                     Label::new(cx, "Passthru").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.auto_passthru)
-                        .top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.auto_passthru);
                 })
                 .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
@@ -344,69 +327,11 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     ParamSlider::new(cx, Data::params, |params| &params.loop_mode);
                 })
                 .width(Percentage(25.0));
-                VStack::new(cx, |cx| {
-                    //    Slider::new(cx, Data::y).on_changing(|cx, value| {
-                    //        cx.emit(EditorEvent::UpdateY(value));
-                    //    });
-                    //    Slider::new(cx, Data::x).on_changing(|cx, value| {
-                    //        cx.emit(EditorEvent::UpdateX(value));
-                    //    });
-                    //    .space(Stretch(1.0));
-                    //Label::new(cx, Data::x.map(|x| x.to_string())).space(Stretch(1.0));
-                    //Label::new(cx, Data::y.map(|y| y.to_string())).space(Stretch(1.0));
-                    //Button::new(
-                    //    cx,
-                    //    |cx| cx.emit(EditorEvent::UpdateX(10.0)),
-                    //    |cx| Label::new(cx, "Update X"),
-                    //)
-                    //.top(Pixels(10.0));
-                    //Label::new(cx, "Debug").top(Pixels(10.0));
-                    //Textbox::new_multiline(
-                    //    cx,
-                    //    Data::debug_data_out.map(|x| {
-                    //        let mut m = x.lock();
-                    //        format!("{:#?}", m.read())
-                    //    }),
-                    //    true,
-                    //)
-                    //.font_size(16.0)
-                    //.width(Percentage(100.0))
-                    //.height(Percentage(100.0));
-                });
-
-                //Element::new(cx).background_color(Color::rgb(255, 0, 0));
-                // Element::new(cx);
+                VStack::new(cx, |cx| {});
             });
             WaveformView::new(cx, Data::debug_data_out, Data::xy).height(Pixels(50.0));
         })
         .border_width(Pixels(10.0));
-
-        //VStack::new(cx, |cx| {
-        //    Label::new(cx, "Audio Sampler")
-        //        .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
-        //        .font_weight(FontWeightKeyword::Bold)
-        //        .font_size(30.0)
-        //        .height(Pixels(50.0))
-        //        .child_top(Stretch(1.0))
-        //        .child_bottom(Pixels(0.0));
-
-        //    Label::new(cx, "Gain");
-        //    ParamSlider::new(cx, Data::params, |params| &params.volume);
-
-        //    PeakMeter::new(
-        //        cx,
-        //        Data::peak_meter
-        //            .map(|peak_meter| util::gain_to_db(peak_meter.load(Ordering::Relaxed))),
-        //        Some(Duration::from_millis(600)),
-        //    )
-        //    // This is how adding padding works in vizia
-        //    .top(Pixels(10.0));
-
-        //    WaveformView::new(cx, StaticLens::new(&1.0));
-        //})
-        //.row_between(Pixels(0.0))
-        //.child_left(Stretch(1.0))
-        //.child_right(Stretch(1.0));
 
         ResizeHandle::new(cx);
     })

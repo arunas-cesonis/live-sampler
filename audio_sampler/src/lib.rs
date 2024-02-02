@@ -224,7 +224,6 @@ impl Plugin for AudioSampler {
 
         let data = editor_vizia::Data {
             params: self.params.clone(),
-            peak_meter: self.peak_meter.clone(),
             debug_data_out: self.debug_data_out.clone(),
             xy: (0.0, 0.0),
             y: 0.0,
