@@ -1,24 +1,28 @@
-use crossbeam_queue::ArrayQueue;
+#![allow(unused)]
+
 use std::sync::Arc;
 
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
-
-use crate::sampler::{Info, LoopMode, Sampler};
-
-use crate::editor_vizia::DebugData;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
+
+use crate::common_types::{Info, LoopModeParam, Params as SamplerParams, VersionedWaveformSummary};
+use crate::editor_vizia::DebugData;
+use crate::sampler::{LoopMode, Sampler};
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
 // mod editor;
+mod clip;
+mod common_types;
 mod editor_vizia;
-mod intervals;
 mod sampler;
 mod test_sampler;
+mod utils;
+mod voice;
 mod volume;
 
 type SysEx = ();
@@ -29,11 +33,10 @@ pub struct AudioSampler {
     sample_rate: f32,
     sampler: Sampler,
     peak_meter: Arc<AtomicF32>,
-    info_queue: Arc<ArrayQueue<Info>>,
-    debug: Arc<parking_lot::Mutex<String>>,
     debug_data_in: Arc<parking_lot::Mutex<triple_buffer::Input<DebugData>>>,
     debug_data_out: Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>,
     peak_meter_decay_weight: f32,
+    waveform_summary: Arc<VersionedWaveformSummary>,
 }
 
 #[derive(Params)]
@@ -47,9 +50,11 @@ pub struct AudioSamplerParams {
     #[id = "decay"]
     pub decay: FloatParam,
     #[id = "loop_mode"]
-    pub loop_mode: EnumParam<LoopMode>,
+    pub loop_mode: EnumParam<LoopModeParam>,
     #[id = "loop_length"]
     pub loop_length: FloatParam,
+    #[id = "start_offset"]
+    pub start_offset: FloatParam,
     #[id = "volume"]
     pub volume: FloatParam,
     /// The editor state, saved together with the parameter state so the custom scaling can be
@@ -58,7 +63,8 @@ pub struct AudioSamplerParams {
     editor_state: Arc<ViziaState>,
 }
 
-const MILLISECONDS_PARAM_SKEW_FACTOR: f32 = 0.25;
+const ATTACK_DECAY_SKEW_FACTOR: f32 = 0.25;
+const LOOP_LENGTH_SKEW_FACTOR: f32 = 0.5;
 
 impl Default for AudioSamplerParams {
     fn default() -> Self {
@@ -79,7 +85,7 @@ impl Default for AudioSamplerParams {
                 FloatRange::Skewed {
                     min: 0.0,
                     max: 1000.0,
-                    factor: MILLISECONDS_PARAM_SKEW_FACTOR,
+                    factor: ATTACK_DECAY_SKEW_FACTOR,
                 },
             )
             .with_unit(" ms"),
@@ -89,19 +95,25 @@ impl Default for AudioSamplerParams {
                 FloatRange::Skewed {
                     min: 0.0,
                     max: 1000.0,
-                    factor: MILLISECONDS_PARAM_SKEW_FACTOR,
+                    factor: ATTACK_DECAY_SKEW_FACTOR,
                 },
             )
             .with_unit(" ms"),
-            loop_mode: EnumParam::new("Loop mode", LoopMode::PlayOnce),
+            loop_mode: EnumParam::new("Loop mode", LoopModeParam::PlayOnce),
             loop_length: FloatParam::new(
                 "Loop length",
                 1.0,
                 FloatRange::Skewed {
                     min: 0.001,
                     max: 1.0,
-                    factor: 0.5,
+                    factor: LOOP_LENGTH_SKEW_FACTOR,
                 },
+            )
+            .with_unit(" %"),
+            start_offset: FloatParam::new(
+                "Start offset",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
             )
             .with_unit(" %"),
             volume: FloatParam::new("Gain", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
@@ -117,12 +129,11 @@ impl Default for AudioSampler {
             params: Arc::new(AudioSamplerParams::default()),
             sample_rate: -1.0,
             peak_meter_decay_weight: 1.0,
-            sampler: Sampler::new(0, &sampler::Params::default()),
-            info_queue: Arc::new(ArrayQueue::new(1)),
+            sampler: Sampler::new(0, &SamplerParams::default()),
             peak_meter: Default::default(), //debug: Arc::new(Mutex::new(None)),
-            debug: Default::default(),
             debug_data_in: Arc::new(parking_lot::Mutex::new(debug_data_in)),
             debug_data_out: Arc::new(parking_lot::Mutex::new(debug_data_out)),
+            waveform_summary: Arc::new(VersionedWaveformSummary::default()),
         }
     }
 }
@@ -138,26 +149,20 @@ impl AudioSampler {
             .unwrap();
         channel_count
     }
-    //fn debug_println(&mut self, fmt: fmt::Arguments) {
-    //    let f = self.debug.lock();
-    //    let binding = f.unwrap();
-    //    let mut file = binding.as_ref().unwrap();
-    //    file.write_fmt(fmt).unwrap();
-    //    file.write(&[b'\n']).unwrap();
-    //    file.flush().unwrap();
-    //}
-    fn sampler_params(&self) -> sampler::Params {
+
+    fn sampler_params(&self) -> SamplerParams {
         let params_speed = self.params.speed.smoothed.next();
         let params_passthru = self.params.auto_passthru.value();
         let attack_millis = self.params.attack.smoothed.next();
         let attack_samples = (attack_millis * self.sample_rate / 1000.0) as usize;
         let decay_millis = self.params.decay.smoothed.next();
         let decay_samples = (decay_millis * self.sample_rate / 1000.0) as usize;
-        let params = sampler::Params {
+        let params = SamplerParams {
             auto_passthru: params_passthru,
             attack_samples,
-            loop_mode: self.params.loop_mode.value(),
+            loop_mode: LoopMode::from_param(self.params.loop_mode.value()),
             loop_length_percent: self.params.loop_length.smoothed.next(),
+            start_offset_percent: self.params.start_offset.value(),
             decay_samples,
             speed: params_speed,
         };
@@ -214,16 +219,13 @@ impl Plugin for AudioSampler {
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         // Using vizia as Iced doesn't support drawing bitmap images under OpenGL
-        let info_queue = Arc::new(ArrayQueue::new(1));
-        self.info_queue = info_queue.clone();
-        self.debug = Default::default();
-        self.debug = Arc::new(parking_lot::Mutex::new(format!("{:?}", self.sampler)));
 
         let data = editor_vizia::Data {
             params: self.params.clone(),
-            peak_meter: self.peak_meter.clone(),
-            debug: self.debug.clone(),
             debug_data_out: self.debug_data_out.clone(),
+            xy: (0.0, 0.0),
+            y: 0.0,
+            x: 0.0,
         };
 
         editor_vizia::create(self.params.editor_state.clone(), data)
@@ -277,7 +279,13 @@ impl Plugin for AudioSampler {
                         _ => (),
                     },
                     NoteEvent::NoteOff { note, .. } => match note {
-                        0 => self.sampler.stop_recording(params),
+                        0 => {
+                            self.sampler.stop_recording(params);
+                            self.waveform_summary = Arc::new(VersionedWaveformSummary {
+                                version: self.waveform_summary.version + 1,
+                                waveform_summary: self.sampler.get_waveform_summary(940),
+                            });
+                        }
                         1 => self.sampler.unreverse(params),
                         12..=27 => self.sampler.stop_playing(note, params),
                         _ => (),
@@ -295,7 +303,12 @@ impl Plugin for AudioSampler {
             //}
             if self.params.editor_state.is_open() {
                 self.update_peak_meter(&mut frame);
-                let info = self.sampler.get_info(params);
+                let voice_info = self.sampler.get_voice_info(params);
+                let info = Info {
+                    voices: voice_info,
+                    waveform_summary: self.waveform_summary.clone(),
+                };
+                //info.waveform_summary = (0..940) .map(|x| (x as f32 - 470.0) / 470.0) .collect::<Vec<_>>();
                 self.debug_data_in.lock().write(DebugData { info });
             }
         }
