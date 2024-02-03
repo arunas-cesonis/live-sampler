@@ -12,8 +12,24 @@ pub enum LoopMode {
 }
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
+pub enum RecordingMode {
+    #[name = "When C-2 is held"]
+    NoteTriggered,
+    #[name = "Always record"]
+    Always,
+}
+
+impl Default for RecordingMode {
+    fn default() -> Self {
+        RecordingMode::Always
+    }
+}
+
+#[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum LoopModeParam {
+    #[name = "Play once and stop"]
     PlayOnce,
+    #[name = "Loop"]
     Loop,
 }
 
@@ -35,6 +51,10 @@ pub struct Params {
     pub loop_length_percent: f32,
     pub start_offset_percent: f32,
     pub speed: f32,
+    pub recording_mode: RecordingMode,
+    pub fixed_size_samples: usize,
+    pub transport_pos_samples: Option<i64>,
+    pub sample_id: usize,
 }
 
 impl Default for Params {
@@ -42,11 +62,15 @@ impl Default for Params {
         Self {
             auto_passthru: true,
             attack_samples: 100,
-            loop_mode: LoopMode::PlayOnce,
+            loop_mode: LoopMode::Loop,
             loop_length_percent: 1.0,
             start_offset_percent: 0.0,
             decay_samples: 100,
             speed: 1.0,
+            recording_mode: RecordingMode::default(),
+            fixed_size_samples: 0,
+            transport_pos_samples: None,
+            sample_id: 0,
         }
     }
 }
@@ -60,5 +84,7 @@ pub struct VersionedWaveformSummary {
 #[derive(Clone, Default, Debug)]
 pub struct Info {
     pub voices: Vec<VoiceInfo>,
+    pub last_recorded_indices: Vec<Option<usize>>,
+    pub data_len: usize,
     pub waveform_summary: Arc<VersionedWaveformSummary>,
 }

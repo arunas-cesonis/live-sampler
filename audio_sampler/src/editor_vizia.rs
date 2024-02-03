@@ -19,6 +19,7 @@ use crate::AudioSamplerParams;
 #[derive(Debug, Clone, Default)]
 pub struct DebugData {
     pub(crate) info: Info,
+    pub(crate) message: String,
 }
 
 #[derive(Clone, Lens)]
@@ -45,7 +46,7 @@ impl Model for Data {
     }
 }
 
-const WINDOW_SIZE: (u32, u32) = (640 + 320, 400);
+const WINDOW_SIZE: (u32, u32) = (640 + 320, 450);
 const WINDOW_SIZEF: (f32, f32) = (WINDOW_SIZE.0 as f32, WINDOW_SIZE.1 as f32);
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
@@ -246,6 +247,8 @@ where
         let pos_paint = Paint::color(color.into());
         let color = Color::rgba(255, 165, 89, 128);
         let slice_paint = Paint::color(color.into());
+        let color = Color::rgba(255, 0, 0, 128);
+        let rec_paint = Paint::color(color.into());
 
         canvas.fill_text(0.0, 0.0, "HELLO", &Paint::color(Color::rgb(0, 255, 0)));
 
@@ -254,6 +257,20 @@ where
             let x = i as f32 * (bounds.w / 16.0) + bounds.x;
             let path = rectangle_path(x, bounds.y, width, bounds.h);
             canvas.fill_path(&path, &slice_paint);
+        }
+
+        //if let Some(x) = info.last_recorded_index {
+        for x in &info.last_recorded_indices {
+            let width = 5.0;
+            let x = if let Some(x) = x {
+                *x as f32
+            } else {
+                continue;
+            };
+
+            let x = (x as f32 / info.data_len as f32) * bounds.w + bounds.x;
+            let path = rectangle_path(x, bounds.y, width, bounds.h);
+            canvas.fill_path(&path, &rec_paint);
         }
 
         for v in &info.voices {
@@ -320,8 +337,19 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     ParamSlider::new(cx, Data::params, |params| &params.loop_mode);
                 })
                 .width(Percentage(25.0));
-                VStack::new(cx, |cx| {});
+                VStack::new(cx, |cx| {
+                    Label::new(cx, "Recording mode").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.recording_mode);
+                    Label::new(
+                        cx,
+                        Data::debug_data_out.map(|d| d.lock().read().message.clone()),
+                    )
+                    .top(Pixels(10.0));
+                })
+                .width(Percentage(25.0));
             });
+            //HStack::new(cx, |cx| {
+            //});
             WaveformView::new(cx, Data::debug_data_out, Data::xy).height(Pixels(50.0));
         })
         .border_width(Pixels(10.0));
