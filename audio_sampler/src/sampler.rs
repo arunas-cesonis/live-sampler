@@ -4,7 +4,8 @@ use nih_plug::nih_warn;
 
 use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
-use crate::common_types::Params;
+use crate::common_types::{Params, RecordingMode};
+use crate::utils::normalize_offset;
 use crate::voice::Voice;
 use crate::volume::Volume;
 
@@ -13,11 +14,26 @@ struct Channel {
     data: Vec<f32>,
     write: usize,
     reverse_speed: f32,
+    recording_state: Recording,
     voices: Vec<Voice>,
-    recording: bool,
     now: usize,
     passthru_on: bool,
     passthru_volume: Volume,
+    last_recorded_offset: Option<usize>,
+    errors: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum Recording {
+    Idle,
+    NoteTriggered,
+    Always,
+}
+
+impl Default for Recording {
+    fn default() -> Self {
+        Recording::Idle
+    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -46,16 +62,26 @@ impl Channel {
             write: 0,
             reverse_speed: 1.0,
             voices: vec![],
-            recording: false,
+            recording_state: Recording::Idle,
             now: 0,
             passthru_on: false,
             passthru_volume: Volume::new(if params.auto_passthru { 1.0 } else { 0.0 }),
+            last_recorded_offset: None,
+            errors: vec![],
+        }
+    }
+
+    pub fn is_recording(&self) -> bool {
+        match self.recording_state {
+            Recording::NoteTriggered | Recording::Always => true,
+            Recording::Idle => false,
         }
     }
 
     fn log(&self, params: &Params, s: String) {
         nih_warn!(
-            "voices={} voices(!finished)={} attack={} decay={} passthru_vol={:.2} {}",
+            "now={} voices={} voices(!finished)={} attack={} decay={} passthru_vol={:.2} {}",
+            self.now,
             self.voices.len(),
             self.voices.iter().filter(|v| !v.finished).count(),
             params.attack_samples,
@@ -77,6 +103,9 @@ impl Channel {
         velocity: f32,
         params: &Params,
     ) {
+        if self.data.is_empty() {
+            return;
+        }
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
         let offset = loop_start_percent * self.data.len() as f32;
         let length = params.loop_length_percent * self.data.len() as f32;
@@ -122,19 +151,23 @@ impl Channel {
     }
 
     pub fn start_recording(&mut self, _params: &Params) {
-        if !self.recording {
-            assert_eq!(self.write, 0);
-            self.recording = true;
+        match self.recording_state {
+            Recording::Idle => {
+                assert_eq!(self.write, 0);
+                self.recording_state = Recording::NoteTriggered;
+            }
+            _ => {}
         }
     }
 
     pub fn stop_recording(&mut self, _params: &Params) {
-        // This is not an error as some DAWs will send note off events for notes
-        // that were never played, e.g. REAPER
-        if self.recording {
-            self.recording = false;
-            self.data.truncate(self.write);
-            self.write = 0;
+        match self.recording_state {
+            Recording::NoteTriggered => {
+                self.recording_state = Recording::Idle;
+                self.data.truncate(self.write);
+                self.write = 0;
+            }
+            _ => {}
         }
     }
 
@@ -212,18 +245,84 @@ impl Channel {
         output
     }
 
-    pub fn process_sample<'a>(&mut self, sample: &mut f32, params: &Params) {
-        let value = *sample;
+    fn start_always_recording(&mut self, params: &Params) {
+        assert_ne!(self.recording_state, Recording::Always);
+        self.last_recorded_offset = None;
+        self.recording_state = Recording::Always;
+    }
 
-        if self.recording {
-            assert!(self.write <= self.data.len());
-            if self.write == self.data.len() {
-                self.data.push(value);
-            } else {
-                self.data[self.write] = value;
-            }
-            self.write += 1;
+    fn stop_always_recording(&mut self, params: &Params) {
+        assert_eq!(self.recording_state, Recording::Always);
+        self.recording_state = Recording::Idle;
+    }
+
+    fn handle_recording_state(&mut self, params: &Params) {
+        match (params.recording_mode) {
+            RecordingMode::Always => match self.recording_state {
+                Recording::Idle => self.start_always_recording(params),
+                Recording::NoteTriggered => {
+                    self.stop_recording(params);
+                    self.start_always_recording(params);
+                }
+                Recording::Always => (),
+            },
+            RecordingMode::NoteTriggered => match self.recording_state {
+                Recording::Idle => (),
+                Recording::NoteTriggered => (),
+                Recording::Always => self.stop_always_recording(params),
+            },
         }
+    }
+
+    fn record_sample(&mut self, sample: f32, params: &Params) {
+        match self.recording_state {
+            Recording::Idle => {
+                // do nothing
+            }
+            Recording::NoteTriggered => {
+                assert!(self.write <= self.data.len());
+                if self.write == self.data.len() {
+                    self.data.push(sample);
+                } else {
+                    self.data[self.write] = sample;
+                }
+                self.last_recorded_offset = Some(self.write);
+                self.write += 1;
+            }
+            Recording::Always => {
+                if let Some(transport_pos_samples) = params.transport_pos_samples {
+                    // running in Bitwig have seen transport_pos_samples < 0
+                    // debug_assert!(
+                    //     transport_pos_samples >= 0,
+                    //     "transport_pos_samples={}", //     transport_pos_samples
+                    // );
+                    let offset = normalize_offset(
+                        transport_pos_samples + params.sample_id as i64,
+                        params.fixed_size_samples as i64,
+                    );
+                    assert!(offset >= 0, "offset={}", offset);
+                    let offset = offset as usize;
+                    self.data.resize(params.fixed_size_samples, 0.0);
+                    self.data[offset] = sample;
+                    if let Some(prev_offset) = self.last_recorded_offset {
+                        if !(offset == 1 + prev_offset
+                            || offset == 0 && prev_offset == params.fixed_size_samples - 1)
+                        {
+                            self.errors
+                                .push(format!("skipped {} {}", offset, prev_offset));
+                        }
+                    }
+                    self.last_recorded_offset = Some(offset);
+                }
+            }
+        }
+    }
+
+    pub fn process_sample<'a>(&mut self, io: &mut f32, params: &Params) {
+        let input = *io;
+
+        self.handle_recording_state(params);
+        self.record_sample(input, params);
 
         let mut output = 0.0;
         if !self.data.is_empty() {
@@ -239,7 +338,7 @@ impl Channel {
 
             // its important output is calculated before updating state & volume
             let passhtru_value = self.passthru_volume.value(self.now);
-            output += value * passhtru_value;
+            output += input * passhtru_value;
 
             // update volume
             self.passthru_volume.step(self.now);
@@ -249,7 +348,7 @@ impl Channel {
         }
 
         self.now += 1;
-        *sample = output;
+        *io = output;
     }
 }
 
@@ -269,7 +368,6 @@ impl Sampler {
     pub fn get_waveform_summary(&self, resolution: usize) -> WaveformSummary {
         let data = &self.channels[0].data;
         let step = data.len() as f32 / resolution as f32;
-        let mut out = vec![0.0; resolution];
         let mut r = WaveformSummary {
             data: vec![0.0; resolution],
             min: 0.0,
@@ -337,6 +435,28 @@ impl Sampler {
         for j in 0..frame.len() {
             self.channels[j].process_sample(frame[j], params);
         }
+    }
+
+    pub fn get_errors(&self) -> impl Iterator<Item = &str> {
+        self.channels
+            .iter()
+            .flat_map(|c| c.errors.iter().map(|s| s.as_str()))
+    }
+
+    pub fn is_recording(&self) -> Vec<bool> {
+        self.channels.iter().map(|x| x.is_recording()).collect()
+    }
+
+    pub fn get_last_recorded_offsets(&self) -> Vec<Option<usize>> {
+        self.channels
+            .iter()
+            .map(|x| x.last_recorded_offset)
+            .collect()
+    }
+
+    pub fn get_data_len(&self) -> usize {
+        let ch = &self.channels[0];
+        ch.data.len()
     }
 
     pub fn get_voice_info(&self, params: &Params) -> Vec<VoiceInfo> {
