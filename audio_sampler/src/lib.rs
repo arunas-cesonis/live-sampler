@@ -25,6 +25,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 mod clip;
 mod common_types;
 mod editor_vizia;
+mod recorder;
 mod sampler;
 mod test_sampler;
 mod time_unit;

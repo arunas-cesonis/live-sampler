@@ -2,8 +2,20 @@
 mod test {
     use std::f32::consts::PI;
 
-    use crate::common_types::Params;
+    use crate::common_types::{Params, RecordingMode};
     use crate::sampler::{LoopMode, Sampler};
+
+    fn base_params() -> Params {
+        let params = Params {
+            loop_mode: LoopMode::PlayOnce,
+            attack_samples: 0,
+            decay_samples: 0,
+            loop_length_percent: 1.0,
+            recording_mode: RecordingMode::NoteTriggered,
+            ..Params::default()
+        };
+        params
+    }
 
     #[derive(Copy, Clone, Debug)]
     enum Cmd {
@@ -84,7 +96,7 @@ mod test {
             attack_samples: 0,
             decay_samples: 0,
             loop_length_percent: 1.0,
-            ..Params::default()
+            ..base_params()
         };
         let ten_tens = vec![100.0; 10];
         let five_tens = vec![100.0; 5];
@@ -180,7 +192,7 @@ mod test {
             attack_samples: 0,
             decay_samples: 0,
             loop_length_percent: 1.0,
-            ..Params::default()
+            ..base_params()
         };
         let ten_tens = vec![100.0; 10];
         let five_tens = vec![100.0; 5];
@@ -217,7 +229,7 @@ mod test {
             attack_samples: 0,
             decay_samples: 0,
             loop_length_percent: 1.0,
-            ..Params::default()
+            ..base_params()
         };
         let ten_tens = vec![100.0; 10];
         let _five_tens = vec![100.0; 5];
@@ -312,7 +324,7 @@ mod test {
             decay_samples: 0,
             loop_length_percent: 0.6,
             speed: -1.0,
-            ..Params::default()
+            ..base_params()
         };
         let ten_tens = vec![100.0; 10];
         let _five_tens = vec![100.0; 5];
@@ -349,7 +361,7 @@ mod test {
             attack_samples: 0,
             decay_samples: 0,
             loop_length_percent: 1.0,
-            ..Params::default()
+            ..base_params()
         };
         let ten_tens = vec![100.0; 10];
         let _five_tens = vec![100.0; 5];
@@ -391,7 +403,7 @@ mod test {
             decay_samples: 0,
             loop_length_percent: 1.0,
             speed: -1.0,
-            ..Params::default()
+            ..base_params()
         };
         let ten_tens = vec![100.0; 10];
         let _five_tens = vec![100.0; 5];
@@ -459,7 +471,7 @@ mod test {
             attack_samples: 0,
             decay_samples: 0,
             loop_length_percent: 1.0,
-            ..Params::default()
+            ..base_params()
         };
         let mut host = Host::new(params);
         host.schedule(0, Cmd::StartRecording);
@@ -489,7 +501,7 @@ mod test {
             attack_samples: 0,
             decay_samples: 0,
             loop_length_percent: 1.0,
-            ..Params::default()
+            ..base_params()
         };
         let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
         let _one_to_five: Vec<_> = (0..5).map(|x| x as f32).collect();
@@ -525,7 +537,7 @@ mod test {
             attack_samples: 0,
             decay_samples: 0,
             loop_length_percent: 1.0,
-            ..Params::default()
+            ..base_params()
         };
         let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
         let one_to_five: Vec<_> = (0..5).map(|x| x as f32).collect();
@@ -560,7 +572,7 @@ mod test {
             attack_samples: 0,
             decay_samples: 0,
             loop_length_percent: 1.0,
-            ..Params::default()
+            ..base_params()
         };
         let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
         let ten_zeros = vec![0.0; 10];
@@ -584,7 +596,7 @@ mod test {
             attack_samples: 0,
             decay_samples: 0,
             loop_length_percent: 1.0,
-            ..Params::default()
+            ..base_params()
         };
         let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
         let ten_tens = vec![777.0; 100];
@@ -609,7 +621,7 @@ mod test {
             attack_samples: 0,
             decay_samples: 0,
             loop_length_percent: 1.0,
-            ..Params::default()
+            ..base_params()
         };
         let input = (0..44100)
             .map(|x| {

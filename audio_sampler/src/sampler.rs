@@ -5,6 +5,7 @@ use nih_plug::nih_warn;
 use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
 use crate::common_types::{Params, RecordingMode};
+use crate::recorder::Recorder;
 use crate::utils::normalize_offset;
 use crate::voice::Voice;
 use crate::volume::Volume;
@@ -21,6 +22,7 @@ struct Channel {
     passthru_volume: Volume,
     last_recorded_offset: Option<usize>,
     errors: Vec<String>,
+    recorder: Recorder,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -68,6 +70,7 @@ impl Channel {
             passthru_volume: Volume::new(if params.auto_passthru { 1.0 } else { 0.0 }),
             last_recorded_offset: None,
             errors: vec![],
+            recorder: Recorder::new(),
         }
     }
 
@@ -258,7 +261,7 @@ impl Channel {
 
     fn handle_recording_state(&mut self, params: &Params) {
         match (params.recording_mode) {
-            RecordingMode::Always => match self.recording_state {
+            RecordingMode::AlwaysOn => match self.recording_state {
                 Recording::Idle => self.start_always_recording(params),
                 Recording::NoteTriggered => {
                     self.stop_recording(params);
