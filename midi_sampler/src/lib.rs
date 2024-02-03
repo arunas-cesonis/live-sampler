@@ -98,14 +98,12 @@ impl Plugin for MIDISampler {
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
-        eprintln!("*** INIT ***");
         self.sample_rate = buffer_config.sample_rate;
         self.sampler = EventSampler::default();
         true
     }
 
     fn reset(&mut self) {
-        eprintln!("*** RESET ***");
         self.sampler = EventSampler::default();
     }
 
