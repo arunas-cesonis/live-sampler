@@ -16,12 +16,12 @@ pub enum RecordingMode {
     #[name = "When C-2 is held"]
     NoteTriggered,
     #[name = "Always record"]
-    Always,
+    AlwaysOn,
 }
 
 impl Default for RecordingMode {
     fn default() -> Self {
-        RecordingMode::Always
+        RecordingMode::AlwaysOn
     }
 }
 
