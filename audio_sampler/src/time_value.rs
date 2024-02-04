@@ -1,29 +1,54 @@
-use nih_plug::prelude::Transport;
+use nih_plug::prelude::{Enum, Transport};
+
+#[derive(Debug, Enum, PartialEq, Clone, Copy)]
+pub enum TimeUnit {
+    #[name = "1/16 notes"]
+    SixteenthNotes,
+    #[name = "1/4 notes"]
+    QuarterNotes,
+    #[name = "Seconds"]
+    Seconds,
+    #[name = "Samples"]
+    Samples,
+    #[name = "Bars"]
+    Bars,
+}
 
 #[derive(Debug, Clone, Copy)]
-pub enum TimeUnit {
+pub enum TimeValue {
     QuarterNotes(f64),
     Samples(f64),
+    Seconds(f64),
     Bars(f64),
 }
 
-impl TimeUnit {
+impl TimeValue {
     pub fn quarter_notes(quarter_notes: f64) -> Self {
-        TimeUnit::QuarterNotes(quarter_notes)
+        TimeValue::QuarterNotes(quarter_notes)
     }
     pub fn samples(samples: f64) -> Self {
-        TimeUnit::Samples(samples)
+        TimeValue::Samples(samples)
     }
     pub fn bars(bars: f64) -> Self {
-        TimeUnit::Bars(bars)
+        TimeValue::Bars(bars)
+    }
+    pub fn from_unit_value(unit: TimeUnit, value: f64) -> Self {
+        match unit {
+            TimeUnit::SixteenthNotes => TimeValue::QuarterNotes(value / 4.0),
+            TimeUnit::QuarterNotes => TimeValue::QuarterNotes(value),
+            TimeUnit::Seconds => TimeValue::Seconds(value),
+            TimeUnit::Samples => TimeValue::Samples(value),
+            TimeUnit::Bars => TimeValue::Bars(value),
+        }
     }
     pub fn as_samples_f64(&self, transport: &Transport) -> Option<f64> {
         Some(match self {
-            TimeUnit::QuarterNotes(quarter_notes) => {
+            TimeValue::QuarterNotes(quarter_notes) => {
                 calc_quarter_notes_per_bar(transport)? * quarter_notes
             }
-            TimeUnit::Samples(samples) => *samples,
-            TimeUnit::Bars(bars) => calc_samples_per_bar(transport)? * bars,
+            TimeValue::Samples(samples) => *samples,
+            TimeValue::Seconds(seconds) => *seconds * (transport.sample_rate as f64),
+            TimeValue::Bars(bars) => calc_samples_per_bar(transport)? * bars,
         })
     }
 }

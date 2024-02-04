@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::f64::consts::PI;
 use std::sync::Arc;
 
 use nih_plug::nih_warn;
@@ -34,6 +35,10 @@ pub struct Data {
 impl Model for Data {
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
         event.map(|editor_event, _| match editor_event {
+            EditorEvent::Choice(i) => {
+                eprintln!("Choice: {}", i);
+                //self.debug_data_out.lock().write().message = format!("Choice: {}", i);
+            }
             EditorEvent::UpdateX(x) => {
                 self.xy = (*x, self.xy.1);
                 self.x = *x;
@@ -294,6 +299,7 @@ where
 pub enum EditorEvent {
     UpdateX(f32),
     UpdateY(f32),
+    Choice(usize),
 }
 
 pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dyn Editor>> {
@@ -317,27 +323,47 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
             HStack::new(cx, |cx| {
                 VStack::new(cx, |cx| {
                     Label::new(cx, "Volume").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.volume);
+                    ParamSlider::new(cx, Data::params, |params| &params.volume)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                     Label::new(cx, "Attack").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.attack);
+                    ParamSlider::new(cx, Data::params, |params| &params.attack)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                     Label::new(cx, "Decay").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.decay);
+                    ParamSlider::new(cx, Data::params, |params| &params.decay)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                     Label::new(cx, "Passthru").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.auto_passthru);
+                    ParamSlider::new(cx, Data::params, |params| &params.auto_passthru)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                 })
                 .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
                     Label::new(cx, "Speed").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.speed);
+                    ParamSlider::new(cx, Data::params, |params| &params.speed)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                     Label::new(cx, "Start offset").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.start_offset);
+                    ParamSlider::new(cx, Data::params, |params| &params.start_offset)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                     Label::new(cx, "Loop length").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.loop_length);
-                    Label::new(cx, "Loop mode").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.loop_mode);
+                    HStack::new(cx, |cx| {
+                        ParamSlider::new(cx, Data::params, |params| &params.loop_length)
+                            .width(Stretch(0.5))
+                            .right(Pixels(10.0));
+                        ParamSlider::new(cx, Data::params, |params| &params.loop_length_unit)
+                            .width(Stretch(0.5))
+                            .right(Pixels(10.0));
+                        //   .width(Percentage(20.0))
+                    });
                 })
                 .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
+                    Label::new(cx, "Loop mode").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.loop_mode);
                     Label::new(cx, "Recording mode").top(Pixels(10.0));
                     ParamSlider::new(cx, Data::params, |params| &params.recording_mode);
                     Label::new(
@@ -345,6 +371,25 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                         Data::debug_data_out.map(|d| d.lock().read().message.clone()),
                     )
                     .top(Pixels(10.0));
+                })
+                .width(Percentage(25.0));
+                VStack::new(cx, |cx| {
+                    Label::new(cx, "Dropdown").top(Pixels(10.0));
+                    Dropdown::new(
+                        cx,
+                        |cx| Label::new(cx, "Go"),
+                        |cx| {
+                            for i in 0..5 {
+                                Label::new(cx, i)
+                                    .on_press(move |cx| {
+                                        cx.emit(EditorEvent::Choice(i));
+                                        cx.emit(PopupEvent::Close); // close the popup
+                                    })
+                                    .width(Stretch(1.0));
+                            }
+                        },
+                    )
+                    .width(Pixels(100.0));
                 })
                 .width(Percentage(25.0));
             });
