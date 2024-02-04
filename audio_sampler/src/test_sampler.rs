@@ -2,7 +2,7 @@
 mod test {
     use std::f32::consts::PI;
 
-    use crate::common_types::{Params, RecordingMode};
+    use crate::common_types::{InitParams, Params, RecordingMode};
     use crate::sampler::{LoopMode, Sampler};
 
     fn base_params() -> Params {
@@ -37,7 +37,7 @@ mod test {
     impl Host {
         fn new(params: Params) -> Self {
             Host {
-                sampler: Sampler::new(1, &params),
+                sampler: Sampler::new(1, &InitParams::default()),
                 params,
                 now: 0,
                 cmds: vec![],
