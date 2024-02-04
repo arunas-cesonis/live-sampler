@@ -13,15 +13,15 @@ pub enum LoopMode {
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum RecordingMode {
-    #[name = "When C-2 is held"]
+    #[name = "Only when C-2 is held"]
     NoteTriggered,
-    #[name = "Always record"]
+    #[name = "Always (last bar)"]
     AlwaysOn,
 }
 
 impl Default for RecordingMode {
     fn default() -> Self {
-        RecordingMode::AlwaysOn
+        RecordingMode::NoteTriggered
     }
 }
 

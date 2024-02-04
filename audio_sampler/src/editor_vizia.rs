@@ -20,7 +20,7 @@ use crate::AudioSamplerParams;
 #[derive(Debug, Clone, Default)]
 pub struct DebugData {
     pub(crate) info: Info,
-    pub(crate) message: String,
+    pub(crate) message: Option<String>,
 }
 
 #[derive(Clone, Lens)]
@@ -210,6 +210,9 @@ fn rectangle_path(x: f32, y: f32, w: f32, h: f32) -> Path {
     path.close();
     path
 }
+// disabling various position drawings because they are a bit buggy at the moment
+// and do not look very good
+const DISABLE_DRAWING_INDICES: bool = true;
 
 impl<X> View for WaveformView<X>
 where
@@ -265,6 +268,10 @@ where
         }
 
         //if let Some(x) = info.last_recorded_index {
+        if DISABLE_DRAWING_INDICES {
+            return;
+        }
+
         for x in &info.last_recorded_indices {
             let width = 5.0;
             let x = if let Some(x) = x {
@@ -358,40 +365,52 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                             .width(Stretch(0.5))
                             .right(Pixels(10.0));
                         //   .width(Percentage(20.0))
-                    });
-                })
-                .width(Percentage(25.0));
-                VStack::new(cx, |cx| {
+                    })
+                    .width(Stretch(1.0))
+                    .right(Pixels(10.0))
+                    .height(Auto);
                     Label::new(cx, "Loop mode").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.loop_mode);
-                    Label::new(cx, "Recording mode").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.recording_mode);
-                    Label::new(
-                        cx,
-                        Data::debug_data_out.map(|d| d.lock().read().message.clone()),
-                    )
-                    .top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.loop_mode)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                 })
                 .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
-                    Label::new(cx, "Dropdown").top(Pixels(10.0));
-                    Dropdown::new(
-                        cx,
-                        |cx| Label::new(cx, "Go"),
-                        |cx| {
-                            for i in 0..5 {
-                                Label::new(cx, i)
-                                    .on_press(move |cx| {
-                                        cx.emit(EditorEvent::Choice(i));
-                                        cx.emit(PopupEvent::Close); // close the popup
-                                    })
-                                    .width(Stretch(1.0));
-                            }
-                        },
-                    )
-                    .width(Pixels(100.0));
+                    Label::new(cx, "Will record").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.recording_mode)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
+                    Label::new(cx, "Show debug data").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.show_debug_data)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                 })
                 .width(Percentage(25.0));
+                Label::new(
+                    cx,
+                    Data::debug_data_out
+                        .map(|d| d.lock().read().message.clone().unwrap_or("".to_string())),
+                )
+                .top(Pixels(10.0));
+                //VStack::new(cx, |cx| {
+                //    Label::new(cx, "Dropdown").top(Pixels(10.0));
+                //    Dropdown::new(
+                //        cx,
+                //        |cx| Label::new(cx, "Go"),
+                //        |cx| {
+                //            for i in 0..5 {
+                //                Label::new(cx, i)
+                //                    .on_press(move |cx| {
+                //                        cx.emit(EditorEvent::Choice(i));
+                //                        cx.emit(PopupEvent::Close); // close the popup
+                //                    })
+                //                    .width(Stretch(1.0));
+                //            }
+                //        },
+                //    )
+                //    .width(Pixels(100.0));
+                //})
+                //.width(Percentage(25.0));
             });
             //HStack::new(cx, |cx| {
             //});
