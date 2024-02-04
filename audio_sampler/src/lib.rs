@@ -54,6 +54,8 @@ pub struct AudioSampler {
 pub struct AudioSamplerParams {
     #[id = "auto_passthru"]
     pub auto_passthru: BoolParam,
+    #[id = "show_debug_data"]
+    pub show_debug_data: BoolParam,
     #[id = "speed"]
     pub speed: FloatParam,
     #[id = "attack"]
@@ -86,6 +88,7 @@ impl Default for AudioSamplerParams {
         Self {
             editor_state: editor_vizia::default_state(),
             auto_passthru: BoolParam::new("Pass through", true),
+            show_debug_data: BoolParam::new("Show debug data", false),
             speed: FloatParam::new(
                 "Speed",
                 1.0,
@@ -347,7 +350,12 @@ impl Plugin for AudioSampler {
                     self.update_waveform();
                     self.last_waveform_updated = self.last_frame_recorded;
                 }
-
+                let debug_message = if self.params.show_debug_data.value() {
+                    let message = mk_message(&self.sampler, params, context.transport());
+                    message
+                } else {
+                    None
+                };
                 let voice_info = self.sampler.get_voice_info(params);
                 let info = Info {
                     voices: voice_info,
@@ -355,9 +363,10 @@ impl Plugin for AudioSampler {
                     data_len: self.sampler.get_data_len(),
                     waveform_summary: self.waveform_summary.clone(),
                 };
-                let message = mk_message(&self.sampler, params, context.transport())
-                    .unwrap_or("".to_string());
-                self.debug_data_in.lock().write(DebugData { info, message });
+                self.debug_data_in.lock().write(DebugData {
+                    info,
+                    message: debug_message,
+                });
             }
         }
 
