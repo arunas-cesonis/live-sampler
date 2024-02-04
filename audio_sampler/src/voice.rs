@@ -1,6 +1,10 @@
 use crate::clip::Clip;
 use crate::volume::Volume;
 
+#[repr(transparent)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct VoiceId(pub usize);
+
 #[derive(Clone, Debug)]
 pub struct Voice {
     pub note: u8,

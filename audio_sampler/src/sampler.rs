@@ -4,7 +4,8 @@ use nih_plug::nih_warn;
 
 use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
-use crate::common_types::{Params, RecordingMode};
+use crate::common_types::{InitParams, Params, RecordingMode};
+use crate::recorder;
 use crate::recorder::Recorder;
 use crate::utils::normalize_offset;
 use crate::voice::Voice;
@@ -13,15 +14,11 @@ use crate::volume::Volume;
 #[derive(Clone, Debug)]
 struct Channel {
     data: Vec<f32>,
-    write: usize,
     reverse_speed: f32,
-    recording_state: Recording,
     voices: Vec<Voice>,
     now: usize,
     passthru_on: bool,
     passthru_volume: Volume,
-    last_recorded_offset: Option<usize>,
-    errors: Vec<String>,
     recorder: Recorder,
 }
 
@@ -58,27 +55,24 @@ fn loop_length(loop_length_percent: f32, data_len: usize) -> f32 {
 }
 
 impl Channel {
-    fn new(params: &Params) -> Self {
+    fn new(params: &InitParams) -> Self {
         Channel {
             data: vec![],
-            write: 0,
             reverse_speed: 1.0,
             voices: vec![],
-            recording_state: Recording::Idle,
             now: 0,
             passthru_on: false,
             passthru_volume: Volume::new(if params.auto_passthru { 1.0 } else { 0.0 }),
-            last_recorded_offset: None,
-            errors: vec![],
             recorder: Recorder::new(),
         }
     }
 
     pub fn is_recording(&self) -> bool {
-        match self.recording_state {
-            Recording::NoteTriggered | Recording::Always => true,
-            Recording::Idle => false,
-        }
+        self.recorder().is_recording()
+    }
+
+    pub fn recorder(&self) -> &Recorder {
+        &self.recorder
     }
 
     fn log(&self, params: &Params, s: String) {
@@ -153,25 +147,12 @@ impl Channel {
         self.reverse_speed = 1.0;
     }
 
-    pub fn start_recording(&mut self, _params: &Params) {
-        match self.recording_state {
-            Recording::Idle => {
-                assert_eq!(self.write, 0);
-                self.recording_state = Recording::NoteTriggered;
-            }
-            _ => {}
-        }
+    pub fn start_recording(&mut self, params: &Params) {
+        self.recorder.start(&mut self.data, &params.into());
     }
 
-    pub fn stop_recording(&mut self, _params: &Params) {
-        match self.recording_state {
-            Recording::NoteTriggered => {
-                self.recording_state = Recording::Idle;
-                self.data.truncate(self.write);
-                self.write = 0;
-            }
-            _ => {}
-        }
+    pub fn stop_recording(&mut self, params: &Params) {
+        self.recorder.stop(&mut self.data, &params.into());
     }
 
     fn handle_passthru(&mut self, params: &Params) {
@@ -248,84 +229,11 @@ impl Channel {
         output
     }
 
-    fn start_always_recording(&mut self, params: &Params) {
-        assert_ne!(self.recording_state, Recording::Always);
-        self.last_recorded_offset = None;
-        self.recording_state = Recording::Always;
-    }
-
-    fn stop_always_recording(&mut self, params: &Params) {
-        assert_eq!(self.recording_state, Recording::Always);
-        self.recording_state = Recording::Idle;
-    }
-
-    fn handle_recording_state(&mut self, params: &Params) {
-        match (params.recording_mode) {
-            RecordingMode::AlwaysOn => match self.recording_state {
-                Recording::Idle => self.start_always_recording(params),
-                Recording::NoteTriggered => {
-                    self.stop_recording(params);
-                    self.start_always_recording(params);
-                }
-                Recording::Always => (),
-            },
-            RecordingMode::NoteTriggered => match self.recording_state {
-                Recording::Idle => (),
-                Recording::NoteTriggered => (),
-                Recording::Always => self.stop_always_recording(params),
-            },
-        }
-    }
-
-    fn record_sample(&mut self, sample: f32, params: &Params) {
-        match self.recording_state {
-            Recording::Idle => {
-                // do nothing
-            }
-            Recording::NoteTriggered => {
-                assert!(self.write <= self.data.len());
-                if self.write == self.data.len() {
-                    self.data.push(sample);
-                } else {
-                    self.data[self.write] = sample;
-                }
-                self.last_recorded_offset = Some(self.write);
-                self.write += 1;
-            }
-            Recording::Always => {
-                if let Some(transport_pos_samples) = params.transport_pos_samples {
-                    // running in Bitwig have seen transport_pos_samples < 0
-                    // debug_assert!(
-                    //     transport_pos_samples >= 0,
-                    //     "transport_pos_samples={}", //     transport_pos_samples
-                    // );
-                    let offset = normalize_offset(
-                        transport_pos_samples + params.sample_id as i64,
-                        params.fixed_size_samples as i64,
-                    );
-                    assert!(offset >= 0, "offset={}", offset);
-                    let offset = offset as usize;
-                    self.data.resize(params.fixed_size_samples, 0.0);
-                    self.data[offset] = sample;
-                    if let Some(prev_offset) = self.last_recorded_offset {
-                        if !(offset == 1 + prev_offset
-                            || offset == 0 && prev_offset == params.fixed_size_samples - 1)
-                        {
-                            self.errors
-                                .push(format!("skipped {} {}", offset, prev_offset));
-                        }
-                    }
-                    self.last_recorded_offset = Some(offset);
-                }
-            }
-        }
-    }
-
     pub fn process_sample<'a>(&mut self, io: &mut f32, params: &Params) {
         let input = *io;
 
-        self.handle_recording_state(params);
-        self.record_sample(input, params);
+        self.recorder
+            .process_sample(input, &mut self.data, &params.into());
 
         let mut output = 0.0;
         if !self.data.is_empty() {
@@ -388,7 +296,7 @@ impl Sampler {
         r
     }
 
-    pub fn new(channel_count: usize, params: &Params) -> Self {
+    pub fn new(channel_count: usize, params: &InitParams) -> Self {
         Self {
             channels: vec![Channel::new(&params); channel_count],
         }
@@ -440,20 +348,25 @@ impl Sampler {
         }
     }
 
-    pub fn get_errors(&self) -> impl Iterator<Item = &str> {
-        self.channels
-            .iter()
-            .flat_map(|c| c.errors.iter().map(|s| s.as_str()))
+    pub fn get_frames_processed(&self) -> usize {
+        self.channels[0].now
     }
 
-    pub fn is_recording(&self) -> Vec<bool> {
-        self.channels.iter().map(|x| x.is_recording()).collect()
+    pub fn is_recording(&self) -> bool {
+        let yes = self.channels[0].recorder.is_recording();
+        debug_assert!(
+            self.channels
+                .iter()
+                .all(|x| x.recorder.is_recording() == yes),
+            "is_recording mismatch"
+        );
+        yes
     }
 
     pub fn get_last_recorded_offsets(&self) -> Vec<Option<usize>> {
         self.channels
             .iter()
-            .map(|x| x.last_recorded_offset)
+            .map(|x| x.recorder().last_recorded_offset())
             .collect()
     }
 
@@ -475,5 +388,12 @@ impl Sampler {
                 VoiceInfo { start, end, pos }
             })
             .collect()
+    }
+
+    pub fn get_error_count(&self) -> usize {
+        self.channels
+            .iter()
+            .map(|x| x.recorder.errors().len())
+            .sum()
     }
 }

@@ -49,6 +49,7 @@ pub struct Params {
     pub auto_passthru: bool,
     pub loop_mode: LoopMode,
     pub loop_length_percent: f32,
+    pub loop_length_samples: f32,
     pub start_offset_percent: f32,
     pub speed: f32,
     pub recording_mode: RecordingMode,
@@ -57,13 +58,16 @@ pub struct Params {
     pub sample_id: usize,
 }
 
+pub const DEFAULT_AUTO_PASSTHRU: bool = true;
+
 impl Default for Params {
     fn default() -> Self {
         Self {
-            auto_passthru: true,
+            auto_passthru: DEFAULT_AUTO_PASSTHRU,
             attack_samples: 100,
             loop_mode: LoopMode::Loop,
             loop_length_percent: 1.0,
+            loop_length_samples: 0.0,
             start_offset_percent: 0.0,
             decay_samples: 100,
             speed: 1.0,
@@ -71,6 +75,18 @@ impl Default for Params {
             fixed_size_samples: 0,
             transport_pos_samples: None,
             sample_id: 0,
+        }
+    }
+}
+
+pub struct InitParams {
+    pub auto_passthru: bool,
+}
+
+impl Default for InitParams {
+    fn default() -> Self {
+        InitParams {
+            auto_passthru: DEFAULT_AUTO_PASSTHRU,
         }
     }
 }

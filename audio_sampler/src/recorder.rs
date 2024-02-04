@@ -1,3 +1,4 @@
+use crate::common_types;
 use crate::common_types::RecordingMode;
 use crate::utils::normalize_offset;
 
@@ -14,11 +15,21 @@ enum State {
 }
 
 pub struct Params {
-    transport_pos_samples: Option<i64>,
-    sample_id: usize,
-    trigger: bool,
-    recording_mode: RecordingMode,
-    fixed_size_samples: usize,
+    pub transport_pos_samples: Option<i64>,
+    pub sample_id: usize,
+    pub recording_mode: RecordingMode,
+    pub fixed_size_samples: usize,
+}
+
+impl From<&common_types::Params> for Params {
+    fn from(params: &common_types::Params) -> Self {
+        Self {
+            transport_pos_samples: params.transport_pos_samples,
+            sample_id: params.sample_id,
+            recording_mode: params.recording_mode,
+            fixed_size_samples: params.fixed_size_samples,
+        }
+    }
 }
 
 impl Params {
@@ -28,7 +39,6 @@ impl Params {
             sample_id: self.sample_id,
             recording_mode: self.recording_mode,
             fixed_size_samples: self.fixed_size_samples,
-            trigger,
         }
     }
     pub fn with_transport_pos_samples(&self, transport_pos_samples: i64) -> Self {
@@ -37,7 +47,6 @@ impl Params {
             sample_id: self.sample_id,
             recording_mode: self.recording_mode,
             fixed_size_samples: self.fixed_size_samples,
-            trigger: self.trigger,
         }
     }
     pub fn with_recording_mode(&self, recording_mode: RecordingMode) -> Self {
@@ -46,13 +55,18 @@ impl Params {
             sample_id: self.sample_id,
             recording_mode,
             fixed_size_samples: self.fixed_size_samples,
-            trigger: self.trigger,
         }
     }
 }
 
 #[derive(Clone, Debug)]
-enum RecorderError {
+pub enum Triggers {
+    Start,
+    Stop,
+}
+
+#[derive(Clone, Debug)]
+pub enum RecorderError {
     SkippedSamples { i: usize, prev_offset: usize },
     NegativeTransportPos { transport_pos_samples: i64 },
     IncorrectState,
@@ -70,6 +84,10 @@ impl Recorder {
             state: State::Idle,
             errors: vec![],
         }
+    }
+
+    pub fn errors(&self) -> &[RecorderError] {
+        &self.errors
     }
 
     fn always_on(&mut self, data: &mut Vec<f32>, params: &Params) {
@@ -95,7 +113,27 @@ impl Recorder {
         }
     }
 
-    pub fn start(&mut self) {
+    pub fn last_recorded_offset(&self) -> Option<usize> {
+        match self.state {
+            State::AlwaysOn {
+                last_recorded_offset,
+                ..
+            } => last_recorded_offset,
+            State::Triggered { write, .. } => Some(write),
+            _ => None,
+        }
+    }
+
+    pub fn is_recording(&self) -> bool {
+        match self.state {
+            State::Triggered { .. } => true,
+            State::AlwaysOn { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn start(&mut self, data: &mut Vec<f32>, params: &Params) {
+        self.handle_state_transitions(data, params);
         match self.state {
             State::Idle => {
                 self.state = State::Triggered { write: 0 };
@@ -114,14 +152,8 @@ impl Recorder {
                 State::AlwaysOn { .. } => (),
             },
             RecordingMode::NoteTriggered => match self.state {
-                State::Idle if params.trigger => self.start(),
                 State::Idle => (),
-                State::Triggered { .. } if params.trigger => (),
-                State::Triggered { .. } => self.stop(data, params),
-                State::AlwaysOn { .. } if params.trigger => {
-                    self.always_off(params);
-                    self.start();
-                }
+                State::Triggered { .. } => (),
                 State::AlwaysOn { .. } => {
                     self.always_off(params);
                 }
@@ -188,33 +220,31 @@ mod test {
             fixed_size_samples: 100,
             recording_mode: RecordingMode::NoteTriggered,
             sample_id: 0,
-            trigger: false,
         };
         let params = &params;
         rec.process_sample(1.0, &mut data, params);
         assert!(data.iter().all(|&x| x == 0.0));
-        let params = &params.with_trigger(true);
+        rec.start(&mut data, params);
         for i in 1..20 {
             rec.process_sample(i as f32, &mut data, params);
         }
-        let params = &params.with_trigger(false);
+        rec.stop(&mut data, params);
         rec.process_sample(0.0, &mut data, params);
         assert_eq!(data, (1..20).map(|x| x as f32).collect::<Vec<_>>());
-        let params = &params.with_trigger(true);
+        rec.start(&mut data, params);
         rec.process_sample(100.0, &mut data, params);
         assert_eq!(data[0], 100.0);
         let params = params.with_recording_mode(RecordingMode::AlwaysOn);
         rec.process_sample(101.0, &mut data, &params.with_transport_pos_samples(210));
         rec.process_sample(102.0, &mut data, &params.with_transport_pos_samples(211));
-        let params = params.with_trigger(true);
+        rec.start(&mut data, &params);
         rec.process_sample(103.0, &mut data, &params.with_transport_pos_samples(212));
 
         assert_eq!(data[10], 101.0);
         assert_eq!(data[11], 102.0);
         assert_eq!(data[12], 103.0);
-        let params = params
-            .with_recording_mode(RecordingMode::NoteTriggered)
-            .with_trigger(true);
+        let params = params.with_recording_mode(RecordingMode::NoteTriggered);
+        rec.start(&mut data, &params);
         rec.process_sample(104.0, &mut data, &params.with_transport_pos_samples(213));
         rec.stop(&mut data, &params.with_transport_pos_samples(214));
         assert_eq!(data, vec![104.0], "{:#?}", rec);
