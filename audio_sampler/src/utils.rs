@@ -69,7 +69,6 @@ where
         + std::ops::Add<Output = T>
         + std::ops::Sub<Output = T>
         + PartialOrd
-        + Real
         + std::ops::Neg<Output = T>
         + num_traits::Zero
         + Copy,
@@ -77,7 +76,8 @@ where
     let x = offset % n;
     let x = if x < T::zero() { x + n } else { x };
     // to avoid -0.0
-    x.abs()
+    // x.abs()
+    x
 }
 
 // https://github.com/robbert-vdh/nih-plug/blob/92ce73700005255565c6be45412609ea87eb8b41/src/util.rs#L38
