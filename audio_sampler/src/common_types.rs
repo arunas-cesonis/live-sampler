@@ -3,7 +3,7 @@ use std::sync::Arc;
 use nih_plug::prelude::Enum;
 
 use crate::sampler::{VoiceInfo, WaveformSummary};
-use crate::time_value::{TimeUnit, TimeValue};
+use crate::time_value::{TimeOrRatio, TimeUnit, TimeValue};
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum LoopMode {
@@ -41,12 +41,6 @@ impl LoopMode {
             LoopModeParam::Loop => LoopMode::Loop,
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum TimeOrRatio {
-    Time(TimeValue),
-    Ratio(f32),
 }
 
 #[derive(Debug, Clone)]

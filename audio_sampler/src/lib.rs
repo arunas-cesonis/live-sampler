@@ -10,12 +10,12 @@ use num_traits::ToPrimitive;
 use tikv_jemallocator::Jemalloc;
 
 use crate::common_types::{
-    Info, InitParams, LoopModeParam, Params as SamplerParams, RecordingMode, TimeOrRatio,
+    Info, InitParams, LoopModeParam, Params as SamplerParams, RecordingMode,
     VersionedWaveformSummary,
 };
 use crate::editor_vizia::DebugData;
 use crate::sampler::{LoopMode, Sampler};
-use crate::time_value::{calc_samples_per_bar, TimeUnit, TimeValue};
+use crate::time_value::{calc_samples_per_bar, TimeOrRatio, TimeOrRatioUnit, TimeUnit, TimeValue};
 use crate::utils::normalize_offset;
 
 #[cfg(not(target_env = "msvc"))]
@@ -66,7 +66,7 @@ pub struct AudioSamplerParams {
     #[id = "loop_length"]
     pub loop_length: FloatParam,
     #[id = "start_offset"]
-    pub loop_length_unit: EnumParam<TimeUnit>,
+    pub loop_length_unit: EnumParam<TimeOrRatioUnit>,
     #[id = "loop_length_unit"]
     pub start_offset: FloatParam,
     #[id = "volume"]
@@ -117,7 +117,7 @@ impl Default for AudioSamplerParams {
             )
             .with_unit(" ms"),
             loop_mode: EnumParam::new("Loop mode", LoopModeParam::Loop),
-            loop_length_unit: EnumParam::new("Loop length unit", TimeUnit::Bars),
+            loop_length_unit: EnumParam::new("Loop length unit", TimeOrRatioUnit::Ratio),
             recording_mode: EnumParam::new("Recording mode", RecordingMode::default()),
             loop_length: FloatParam::new(
                 "Loop length",
@@ -169,6 +169,12 @@ impl AudioSampler {
         channel_count
     }
 
+    fn loop_length(&self, transport: &Transport) -> TimeOrRatio {
+        let value = self.params.loop_length.smoothed.next();
+        let unit = self.params.loop_length_unit.value();
+        TimeOrRatio::from_unit_value(unit, value)
+    }
+
     fn sampler_params(&self, sample_id: usize, transport: &Transport) -> SamplerParams {
         let params_speed = self.params.speed.smoothed.next();
         let params_passthru = self.params.auto_passthru.value();
@@ -180,7 +186,7 @@ impl AudioSampler {
             auto_passthru: params_passthru,
             attack_samples,
             loop_mode: LoopMode::from_param(self.params.loop_mode.value()),
-            loop_length: TimeOrRatio::Ratio(1.0),
+            loop_length: self.loop_length(transport),
             start_offset_percent: self.params.start_offset.value(),
             decay_samples,
             speed: params_speed,
