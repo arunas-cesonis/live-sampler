@@ -169,7 +169,7 @@ impl AudioSampler {
         channel_count
     }
 
-    fn loop_length(&self, transport: &Transport) -> TimeOrRatio {
+    fn loop_length(&self) -> TimeOrRatio {
         let value = self.params.loop_length.smoothed.next();
         let unit = self.params.loop_length_unit.value();
         TimeOrRatio::from_unit_value(unit, value)
@@ -182,26 +182,28 @@ impl AudioSampler {
         let attack_samples = (attack_millis * self.sample_rate / 1000.0) as usize;
         let decay_millis = self.params.decay.smoothed.next();
         let decay_samples = (decay_millis * self.sample_rate / 1000.0) as usize;
+
+        let transport = common_types::Transport {
+            sample_rate: self.sample_rate,
+            tempo: transport.tempo.unwrap() as f32,
+            pos_samples: transport.pos_samples().unwrap() as f32,
+            time_sig_numerator: transport.time_sig_numerator.unwrap() as u32,
+            time_sig_denominator: transport.time_sig_denominator.unwrap() as u32,
+        };
         let params = SamplerParams {
             auto_passthru: params_passthru,
             attack_samples,
             loop_mode: LoopMode::from_param(self.params.loop_mode.value()),
-            loop_length: self.loop_length(transport),
+            loop_length: self.loop_length(),
             start_offset_percent: self.params.start_offset.value(),
             decay_samples,
             speed: params_speed,
             recording_mode: self.params.recording_mode.value(),
             fixed_size_samples: TimeValue::bars(1.0)
-                .as_samples_f64(transport)
-                .and_then(|x| x.to_usize())
-                .unwrap_or(0),
-            transport: common_types::Transport {
-                sample_rate: self.sample_rate,
-                tempo: transport.tempo.unwrap() as f32,
-                pos_samples: transport.pos_samples().unwrap() as f32,
-                time_sig_numerator: transport.time_sig_numerator.unwrap() as u32,
-                time_sig_denominator: transport.time_sig_denominator.unwrap() as u32,
-            },
+                .as_samples(&transport)
+                .to_usize()
+                .expect("failed converting value for fixed_size_samples from f32 to usize"),
+            transport,
             sample_id,
         };
         params
@@ -354,7 +356,7 @@ impl Plugin for AudioSampler {
                     self.last_waveform_updated = self.last_frame_recorded;
                 }
                 let debug_message = if self.params.show_debug_data.value() {
-                    let message = mk_message(&self.sampler, params, context.transport());
+                    let message = mk_message(&self.sampler, params);
                     message
                 } else {
                     None
@@ -390,12 +392,10 @@ impl Plugin for AudioSampler {
     }
 }
 
-fn mk_message(sampler: &Sampler, params: &SamplerParams, transport: &Transport) -> Option<String> {
-    let pos_samples = transport.pos_samples()?;
-    let pos_beats = transport.pos_beats()?;
-    let samples_per_bar = TimeValue::bars(1.0).as_samples_f64(transport)?;
-    let bar_start_pos_beats = transport.bar_start_pos_beats()?;
-    let current_bar = (pos_samples as f64 / samples_per_bar).floor();
+fn mk_message(sampler: &Sampler, params: &SamplerParams) -> Option<String> {
+    let pos_samples = params.transport.pos_samples;
+    let samples_per_bar = TimeValue::bars(1.0).as_samples(&params.transport);
+    let current_bar = (pos_samples / samples_per_bar).floor();
     let mut tmp = vec![];
     tmp.push(("pos_samples", format!("{:.3}", pos_samples)));
     tmp.push((
@@ -405,9 +405,7 @@ fn mk_message(sampler: &Sampler, params: &SamplerParams, transport: &Transport) 
             sampler::loop_length(params, sampler.get_data_len())
         ),
     ));
-    tmp.push(("pos_beats", format!("{:.3}", pos_beats)));
     tmp.push(("samples_per_bar", format!("{:.3}", samples_per_bar)));
-    tmp.push(("bar_start_pos_beats", format!("{:.3}", bar_start_pos_beats)));
     tmp.push(("current_bar", format!("{:.3}", current_bar)));
     tmp.push(("is_recording", format!("{:?}", sampler.is_recording())));
     tmp.push(("errors", format!("{:?}", sampler.get_error_count())));
@@ -415,10 +413,7 @@ fn mk_message(sampler: &Sampler, params: &SamplerParams, transport: &Transport) 
     tmp.push(("data_len", format!("{:?}", sampler.get_data_len())));
     tmp.push((
         "bar_offset",
-        format!(
-            "{:.3}",
-            normalize_offset(pos_samples as f64, samples_per_bar)
-        ),
+        format!("{:.3}", normalize_offset(pos_samples, samples_per_bar)),
     ));
     let mut res = String::new();
     for (k, v) in tmp {
