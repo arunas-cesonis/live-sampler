@@ -10,7 +10,7 @@ use num_traits::ToPrimitive;
 use tikv_jemallocator::Jemalloc;
 
 use crate::common_types::{
-    Info, InitParams, LoopModeParam, Params as SamplerParams, RecordingMode,
+    Info, InitParams, LoopModeParam, Params as SamplerParams, RecordingMode, TimeOrRatio,
     VersionedWaveformSummary,
 };
 use crate::editor_vizia::DebugData;
@@ -180,14 +180,7 @@ impl AudioSampler {
             auto_passthru: params_passthru,
             attack_samples,
             loop_mode: LoopMode::from_param(self.params.loop_mode.value()),
-            loop_length_percent: self.params.loop_length.smoothed.next(),
-            loop_length_samples: {
-                let unit = self.params.loop_length_unit.value();
-                TimeValue::from_unit_value(unit, self.params.loop_length.smoothed.next() as f64)
-                    .as_samples_f64(transport)
-                    .and_then(|s| s.to_f32())
-                    .unwrap_or(0.0)
-            },
+            loop_length: TimeOrRatio::Ratio(1.0),
             start_offset_percent: self.params.start_offset.value(),
             decay_samples,
             speed: params_speed,
@@ -196,7 +189,13 @@ impl AudioSampler {
                 .as_samples_f64(transport)
                 .and_then(|x| x.to_usize())
                 .unwrap_or(0),
-            transport_pos_samples: transport.pos_samples(),
+            transport: common_types::Transport {
+                sample_rate: self.sample_rate,
+                tempo: transport.tempo.unwrap() as f32,
+                pos_samples: transport.pos_samples().unwrap() as f32,
+                time_sig_numerator: transport.time_sig_numerator.unwrap() as u32,
+                time_sig_denominator: transport.time_sig_denominator.unwrap() as u32,
+            },
             sample_id,
         };
         params
@@ -210,7 +209,7 @@ impl AudioSampler {
         } else {
             current_peak_meter * self.peak_meter_decay_weight
                 + amplitude * (1.0 - self.peak_meter_decay_weight)
-        };00
+        };
 
         self.peak_meter
             .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed)
@@ -395,7 +394,10 @@ fn mk_message(sampler: &Sampler, params: &SamplerParams, transport: &Transport) 
     tmp.push(("pos_samples", format!("{:.3}", pos_samples)));
     tmp.push((
         "loop_length_samples",
-        format!("{:.3}", params.loop_length_samples),
+        format!(
+            "{:.3}",
+            sampler::loop_length(params, sampler.get_data_len())
+        ),
     ));
     tmp.push(("pos_beats", format!("{:.3}", pos_beats)));
     tmp.push(("samples_per_bar", format!("{:.3}", samples_per_bar)));
