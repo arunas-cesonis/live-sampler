@@ -33,7 +33,6 @@ mod time_value;
 mod utils;
 mod voice;
 mod volume;
-
 type SysEx = ();
 
 pub struct AudioSampler {
@@ -123,13 +122,11 @@ impl Default for AudioSamplerParams {
             loop_length: FloatParam::new(
                 "Loop length",
                 1.0,
-                FloatRange::Skewed {
-                    min: 0.001,
+                FloatRange::Linear {
+                    min: 0.125,
                     max: 100.0,
-                    factor: LOOP_LENGTH_SKEW_FACTOR,
                 },
-            )
-            .with_unit(" %"),
+            ),
             start_offset: FloatParam::new(
                 "Start offset",
                 0.0,
@@ -213,7 +210,7 @@ impl AudioSampler {
         } else {
             current_peak_meter * self.peak_meter_decay_weight
                 + amplitude * (1.0 - self.peak_meter_decay_weight)
-        };
+        };00
 
         self.peak_meter
             .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed)
@@ -269,6 +266,7 @@ impl Plugin for AudioSampler {
             xy: (0.0, 0.0),
             y: 0.0,
             x: 0.0,
+            peak_meter: self.peak_meter.clone(),
         };
 
         editor_vizia::create(self.params.editor_state.clone(), data)
@@ -367,6 +365,19 @@ impl Plugin for AudioSampler {
                     info,
                     message: debug_message,
                 });
+
+                let amplitude = (frame.iter().fold(0.0, |z, x| z + **x) / frame.len() as f32).abs();
+
+                let current_peak_meter = self.peak_meter.load(std::sync::atomic::Ordering::Relaxed);
+                let new_peak_meter = if amplitude > current_peak_meter {
+                    amplitude
+                } else {
+                    current_peak_meter * self.peak_meter_decay_weight
+                        + amplitude * (1.0 - self.peak_meter_decay_weight)
+                };
+
+                self.peak_meter
+                    .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed)
             }
         }
 

@@ -1,5 +1,7 @@
+use atomic_float::AtomicF32;
 use std::cell::Cell;
 use std::f64::consts::PI;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use nih_plug::nih_warn;
@@ -15,7 +17,7 @@ use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
 use crate::common_types::Info;
-use crate::AudioSamplerParams;
+use crate::{utils, AudioSamplerParams};
 
 #[derive(Debug, Clone, Default)]
 pub struct DebugData {
@@ -30,6 +32,7 @@ pub struct Data {
     pub(crate) xy: (f32, f32),
     pub(crate) x: f32,
     pub(crate) y: f32,
+    pub(crate) peak_meter: Arc<AtomicF32>,
 }
 
 impl Model for Data {
@@ -325,6 +328,15 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     .height(Pixels(42.0))
                     .child_top(Stretch(1.0))
                     .child_bottom(Pixels(0.0));
+                PeakMeter::new(
+                    cx,
+                    Data::peak_meter
+                        .map(|peak_meter| utils::gain_to_db(peak_meter.load(Ordering::Relaxed))),
+                    Some(Duration::from_millis(600)),
+                )
+                .width(Stretch(0.25))
+                .left(Pixels(20.0))
+                .top(Pixels(19.0));
             })
             .height(Pixels(42.0));
             HStack::new(cx, |cx| {
@@ -362,8 +374,8 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                             .width(Stretch(0.5))
                             .right(Pixels(10.0));
                         ParamSlider::new(cx, Data::params, |params| &params.loop_length_unit)
-                            .width(Stretch(0.5))
-                            .right(Pixels(10.0));
+                            .width(Stretch(0.5));
+                        //.right(Pixels(10.0));
                         //   .width(Percentage(20.0))
                     })
                     .width(Stretch(1.0))
