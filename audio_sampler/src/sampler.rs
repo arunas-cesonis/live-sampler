@@ -4,10 +4,10 @@ use nih_plug::nih_warn;
 
 use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
-use crate::common_types::{InitParams, Params, RecordingMode, TimeOrRatio};
+use crate::common_types::{InitParams, Params, RecordingMode};
 use crate::recorder;
 use crate::recorder::Recorder;
-use crate::time_value::TimeValue;
+use crate::time_value::{TimeOrRatio, TimeValue};
 use crate::utils::normalize_offset;
 use crate::voice::Voice;
 use crate::volume::Volume;

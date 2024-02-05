@@ -14,6 +14,54 @@ pub enum TimeUnit {
     Bars,
 }
 
+impl TryFrom<TimeOrRatioUnit> for TimeUnit {
+    type Error = ();
+    fn try_from(unit: TimeOrRatioUnit) -> Result<Self, Self::Error> {
+        match unit {
+            TimeOrRatioUnit::SixteenthNotes => Ok(TimeUnit::SixteenthNotes),
+            TimeOrRatioUnit::QuarterNotes => Ok(TimeUnit::QuarterNotes),
+            TimeOrRatioUnit::Seconds => Ok(TimeUnit::Seconds),
+            TimeOrRatioUnit::Samples => Ok(TimeUnit::Samples),
+            TimeOrRatioUnit::Bars => Ok(TimeUnit::Bars),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum TimeOrRatio {
+    Time(TimeValue),
+    Ratio(f32),
+}
+
+impl TimeOrRatio {
+    pub fn from_unit_value(unit: TimeOrRatioUnit, value: f32) -> TimeOrRatio {
+        match unit {
+            TimeOrRatioUnit::Ratio => TimeOrRatio::Ratio(value),
+            _ => TimeOrRatio::Time(TimeValue::from_unit_value(
+                unit.try_into().unwrap(),
+                value as f64,
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Enum, PartialEq, Clone, Copy)]
+pub enum TimeOrRatioUnit {
+    #[name = "1/16 notes"]
+    SixteenthNotes,
+    #[name = "1/4 notes"]
+    QuarterNotes,
+    #[name = "Seconds"]
+    Seconds,
+    #[name = "Samples"]
+    Samples,
+    #[name = "Bars"]
+    Bars,
+    #[name = "Ratio"]
+    Ratio,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum TimeValue {
     QuarterNotes(f64),
