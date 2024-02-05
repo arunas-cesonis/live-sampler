@@ -54,7 +54,7 @@ impl Model for Data {
     }
 }
 
-const WINDOW_SIZE: (u32, u32) = (640 + 320, 450);
+const WINDOW_SIZE: (u32, u32) = (640 + 320, 380);
 const WINDOW_SIZEF: (f32, f32) = (WINDOW_SIZE.0 as f32, WINDOW_SIZE.1 as f32);
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
@@ -131,7 +131,8 @@ where
         let image_id = canvas
             .create_image_empty(width, height, PixelFormat::Rgba8, ImageFlags::empty())
             .unwrap();
-        let data = vec![RGBA8::new(180u8, 180u8, 200u8, 255u8); 4 * width * height];
+        let c = 0xd0;
+        let data = vec![RGBA8::new(c, c, c, 0xff); 4 * width * height];
         let image = Img::new(data.as_slice(), width, height);
         canvas.update_image(image_id, ImageSource::Rgba(image), 0, 0);
         canvas.save();
@@ -187,7 +188,6 @@ where
             path.rect(bounds.x, bounds.y, imgw as f32, imgh as f32);
             canvas.fill_path(
                 &path,
-                //&Paint::color(vg::Color::rgba(255, 0, 0, 128)),
                 &Paint::image(
                     img,
                     bounds.x,
@@ -198,6 +198,7 @@ where
                     1f32,
                 ),
             );
+            canvas.stroke_path(&path, &Paint::color(vg::Color::rgba(0, 0, 0, 255)));
         }
         //canvas.delete_image(img);
     }
@@ -256,17 +257,17 @@ where
         let loop_paint = Paint::color(color.into());
         let color = Color::rgb(26, 165, 89);
         let pos_paint = Paint::color(color.into());
-        let color = Color::rgba(255, 165, 89, 128);
+        let color = Color::rgba(255, 255, 255, 128);
         let slice_paint = Paint::color(color.into());
         let color = Color::rgba(255, 0, 0, 128);
         let rec_paint = Paint::color(color.into());
 
         canvas.fill_text(0.0, 0.0, "HELLO", &Paint::color(Color::rgb(0, 255, 0)));
 
-        for i in 0..16 {
+        for i in 1..16 {
             let width = 5.0;
             let x = i as f32 * (bounds.w / 16.0) + bounds.x;
-            let path = rectangle_path(x, bounds.y, width, bounds.h);
+            let path = rectangle_path(x, bounds.y + 2.0, width, bounds.h - 4.0);
             canvas.fill_path(&path, &slice_paint);
         }
 
