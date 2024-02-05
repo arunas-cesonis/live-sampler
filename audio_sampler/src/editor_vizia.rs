@@ -1,4 +1,7 @@
+use atomic_float::AtomicF32;
 use std::cell::Cell;
+use std::f64::consts::PI;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use nih_plug::nih_warn;
@@ -14,11 +17,12 @@ use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
 use crate::common_types::Info;
-use crate::AudioSamplerParams;
+use crate::{utils, AudioSamplerParams};
 
 #[derive(Debug, Clone, Default)]
 pub struct DebugData {
     pub(crate) info: Info,
+    pub(crate) message: Option<String>,
 }
 
 #[derive(Clone, Lens)]
@@ -28,11 +32,16 @@ pub struct Data {
     pub(crate) xy: (f32, f32),
     pub(crate) x: f32,
     pub(crate) y: f32,
+    pub(crate) peak_meter: Arc<AtomicF32>,
 }
 
 impl Model for Data {
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
         event.map(|editor_event, _| match editor_event {
+            EditorEvent::Choice(i) => {
+                eprintln!("Choice: {}", i);
+                //self.debug_data_out.lock().write().message = format!("Choice: {}", i);
+            }
             EditorEvent::UpdateX(x) => {
                 self.xy = (*x, self.xy.1);
                 self.x = *x;
@@ -45,7 +54,7 @@ impl Model for Data {
     }
 }
 
-const WINDOW_SIZE: (u32, u32) = (640 + 320, 400);
+const WINDOW_SIZE: (u32, u32) = (640 + 320, 380);
 const WINDOW_SIZEF: (f32, f32) = (WINDOW_SIZE.0 as f32, WINDOW_SIZE.1 as f32);
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
@@ -122,7 +131,8 @@ where
         let image_id = canvas
             .create_image_empty(width, height, PixelFormat::Rgba8, ImageFlags::empty())
             .unwrap();
-        let data = vec![RGBA8::new(180u8, 180u8, 200u8, 255u8); 4 * width * height];
+        let c = 0xd0;
+        let data = vec![RGBA8::new(c, c, c, 0xff); 4 * width * height];
         let image = Img::new(data.as_slice(), width, height);
         canvas.update_image(image_id, ImageSource::Rgba(image), 0, 0);
         canvas.save();
@@ -178,7 +188,6 @@ where
             path.rect(bounds.x, bounds.y, imgw as f32, imgh as f32);
             canvas.fill_path(
                 &path,
-                //&Paint::color(vg::Color::rgba(255, 0, 0, 128)),
                 &Paint::image(
                     img,
                     bounds.x,
@@ -189,6 +198,7 @@ where
                     1f32,
                 ),
             );
+            canvas.stroke_path(&path, &Paint::color(vg::Color::rgba(0, 0, 0, 255)));
         }
         //canvas.delete_image(img);
     }
@@ -204,6 +214,9 @@ fn rectangle_path(x: f32, y: f32, w: f32, h: f32) -> Path {
     path.close();
     path
 }
+// disabling various position drawings because they are a bit buggy at the moment
+// and do not look very good
+const DISABLE_DRAWING_INDICES: bool = true;
 
 impl<X> View for WaveformView<X>
 where
@@ -244,16 +257,36 @@ where
         let loop_paint = Paint::color(color.into());
         let color = Color::rgb(26, 165, 89);
         let pos_paint = Paint::color(color.into());
-        let color = Color::rgba(255, 165, 89, 128);
+        let color = Color::rgba(255, 255, 255, 128);
         let slice_paint = Paint::color(color.into());
+        let color = Color::rgba(255, 0, 0, 128);
+        let rec_paint = Paint::color(color.into());
 
         canvas.fill_text(0.0, 0.0, "HELLO", &Paint::color(Color::rgb(0, 255, 0)));
 
-        for i in 0..16 {
+        for i in 1..16 {
             let width = 5.0;
             let x = i as f32 * (bounds.w / 16.0) + bounds.x;
-            let path = rectangle_path(x, bounds.y, width, bounds.h);
+            let path = rectangle_path(x, bounds.y + 2.0, width, bounds.h - 4.0);
             canvas.fill_path(&path, &slice_paint);
+        }
+
+        //if let Some(x) = info.last_recorded_index {
+        if DISABLE_DRAWING_INDICES {
+            return;
+        }
+
+        for x in &info.last_recorded_indices {
+            let width = 5.0;
+            let x = if let Some(x) = x {
+                *x as f32
+            } else {
+                continue;
+            };
+
+            let x = (x as f32 / info.data_len as f32) * bounds.w + bounds.x;
+            let path = rectangle_path(x, bounds.y, width, bounds.h);
+            canvas.fill_path(&path, &rec_paint);
         }
 
         for v in &info.voices {
@@ -277,6 +310,7 @@ where
 pub enum EditorEvent {
     UpdateX(f32),
     UpdateY(f32),
+    Choice(usize),
 }
 
 pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dyn Editor>> {
@@ -295,33 +329,104 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     .height(Pixels(42.0))
                     .child_top(Stretch(1.0))
                     .child_bottom(Pixels(0.0));
+                PeakMeter::new(
+                    cx,
+                    Data::peak_meter
+                        .map(|peak_meter| utils::gain_to_db(peak_meter.load(Ordering::Relaxed))),
+                    Some(Duration::from_millis(600)),
+                )
+                .width(Stretch(0.25))
+                .left(Pixels(20.0))
+                .top(Pixels(19.0));
             })
             .height(Pixels(42.0));
             HStack::new(cx, |cx| {
                 VStack::new(cx, |cx| {
                     Label::new(cx, "Volume").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.volume);
+                    ParamSlider::new(cx, Data::params, |params| &params.volume)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                     Label::new(cx, "Attack").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.attack);
+                    ParamSlider::new(cx, Data::params, |params| &params.attack)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                     Label::new(cx, "Decay").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.decay);
+                    ParamSlider::new(cx, Data::params, |params| &params.decay)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                     Label::new(cx, "Passthru").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.auto_passthru);
+                    ParamSlider::new(cx, Data::params, |params| &params.auto_passthru)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                 })
                 .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
                     Label::new(cx, "Speed").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.speed);
+                    ParamSlider::new(cx, Data::params, |params| &params.speed)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                     Label::new(cx, "Start offset").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.start_offset);
+                    ParamSlider::new(cx, Data::params, |params| &params.start_offset)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                     Label::new(cx, "Loop length").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.loop_length);
+                    HStack::new(cx, |cx| {
+                        ParamSlider::new(cx, Data::params, |params| &params.loop_length)
+                            .width(Stretch(0.5))
+                            .right(Pixels(10.0));
+                        ParamSlider::new(cx, Data::params, |params| &params.loop_length_unit)
+                            .width(Stretch(0.5));
+                        //.right(Pixels(10.0));
+                        //   .width(Percentage(20.0))
+                    })
+                    .width(Stretch(1.0))
+                    .right(Pixels(10.0))
+                    .height(Auto);
                     Label::new(cx, "Loop mode").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.loop_mode);
+                    ParamSlider::new(cx, Data::params, |params| &params.loop_mode)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                 })
                 .width(Percentage(25.0));
-                VStack::new(cx, |cx| {});
+                VStack::new(cx, |cx| {
+                    Label::new(cx, "Will record").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.recording_mode)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
+                    Label::new(cx, "Show debug data").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.show_debug_data)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
+                })
+                .width(Percentage(25.0));
+                Label::new(
+                    cx,
+                    Data::debug_data_out
+                        .map(|d| d.lock().read().message.clone().unwrap_or("".to_string())),
+                )
+                .top(Pixels(10.0));
+                //VStack::new(cx, |cx| {
+                //    Label::new(cx, "Dropdown").top(Pixels(10.0));
+                //    Dropdown::new(
+                //        cx,
+                //        |cx| Label::new(cx, "Go"),
+                //        |cx| {
+                //            for i in 0..5 {
+                //                Label::new(cx, i)
+                //                    .on_press(move |cx| {
+                //                        cx.emit(EditorEvent::Choice(i));
+                //                        cx.emit(PopupEvent::Close); // close the popup
+                //                    })
+                //                    .width(Stretch(1.0));
+                //            }
+                //        },
+                //    )
+                //    .width(Pixels(100.0));
+                //})
+                //.width(Percentage(25.0));
             });
+            //HStack::new(cx, |cx| {
+            //});
             WaveformView::new(cx, Data::debug_data_out, Data::xy).height(Pixels(50.0));
         })
         .border_width(Pixels(10.0));

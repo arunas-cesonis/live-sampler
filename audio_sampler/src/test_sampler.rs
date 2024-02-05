@@ -2,8 +2,25 @@
 mod test {
     use std::f32::consts::PI;
 
-    use crate::common_types::Params;
+    use crate::common_types::{InitParams, Params, RecordingMode, Transport};
     use crate::sampler::{LoopMode, Sampler};
+    use crate::time_value::{TimeOrRatio, TimeValue};
+
+    pub fn one_to_ten() -> Vec<f32> {
+        (0..10).map(|x| x as f32).collect()
+    }
+
+    fn base_params() -> Params {
+        let params = Params {
+            loop_mode: LoopMode::PlayOnce,
+            attack_samples: 0,
+            decay_samples: 0,
+            loop_length: TimeOrRatio::Ratio(1.0),
+            recording_mode: RecordingMode::NoteTriggered,
+            ..Params::default()
+        };
+        params
+    }
 
     #[derive(Copy, Clone, Debug)]
     enum Cmd {
@@ -25,7 +42,7 @@ mod test {
     impl Host {
         fn new(params: Params) -> Self {
             Host {
-                sampler: Sampler::new(1, &params),
+                sampler: Sampler::new(1, &InitParams::default()),
                 params,
                 now: 0,
                 cmds: vec![],
@@ -48,8 +65,8 @@ mod test {
                 .into_iter()
                 .map(|x| {
                     let (todo, rem) = self.cmds.iter().partition(|(at, _)| *at == self.now);
-                    for &(_, x) in &todo {
-                        match x {
+                    for &(_, cmd) in &todo {
+                        match cmd {
                             Cmd::StartPlaying { start_percent: pos } => {
                                 self.sampler.start_playing(pos, 11, 1.0, &self.params)
                             }
@@ -57,7 +74,7 @@ mod test {
                             Cmd::StartRecording => self.sampler.start_recording(&self.params),
                             Cmd::StopRecording => self.sampler.stop_recording(&self.params),
                             Cmd::SetLoopLength { length_percent } => {
-                                self.params.loop_length_percent = length_percent;
+                                self.params.loop_length = TimeOrRatio::Ratio(length_percent);
                             }
                             Cmd::SetSpeed { speed } => self.params.speed = speed,
                         }
@@ -83,18 +100,18 @@ mod test {
             loop_mode: LoopMode::PlayOnce,
             attack_samples: 0,
             decay_samples: 0,
-            loop_length_percent: 1.0,
-            ..Params::default()
+            loop_length: TimeOrRatio::Ratio(1.0),
+            ..base_params()
         };
         let ten_tens = vec![100.0; 10];
         let five_tens = vec![100.0; 5];
-        let one_to_ten = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let one_to_ten = one_to_ten();
         let one_to_five = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let input = vec![one_to_ten.clone(), ten_tens.clone()].concat();
 
         // record first 10 samples, then PlayOnce with loop length 50%
         let mut host = Host::new(Params {
-            loop_length_percent: 0.5,
+            loop_length: TimeOrRatio::Ratio(0.5),
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
@@ -108,7 +125,7 @@ mod test {
 
         // record first 10 samples, then PlayOnce with loop length 100%
         let mut host = Host::new(Params {
-            loop_length_percent: 1.0,
+            loop_length: TimeOrRatio::Ratio(1.0),
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
@@ -122,7 +139,7 @@ mod test {
 
         // record first 10 samples, then wait for 2 samples and PlayOnce with loop length 50%
         let mut host = Host::new(Params {
-            loop_length_percent: 0.5,
+            loop_length: TimeOrRatio::Ratio(0.5),
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
@@ -140,7 +157,7 @@ mod test {
 
         // record first 10 samples, then wait for 2 samples and PlayOnce with loop length 100%
         let mut host = Host::new(Params {
-            loop_length_percent: 1.0,
+            loop_length: TimeOrRatio::Ratio(1.0),
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
@@ -179,8 +196,8 @@ mod test {
             loop_mode: LoopMode::PlayOnce,
             attack_samples: 0,
             decay_samples: 0,
-            loop_length_percent: 1.0,
-            ..Params::default()
+            loop_length: TimeOrRatio::Ratio(1.0),
+            ..base_params()
         };
         let ten_tens = vec![100.0; 10];
         let five_tens = vec![100.0; 5];
@@ -190,7 +207,7 @@ mod test {
 
         // backwards crossing data boundary
         let mut host = Host::new(Params {
-            loop_length_percent: 1.0,
+            loop_length: TimeOrRatio::Ratio(1.0),
             speed: -1.0,
             ..params.clone()
         });
@@ -216,8 +233,8 @@ mod test {
             loop_mode: LoopMode::Loop,
             attack_samples: 0,
             decay_samples: 0,
-            loop_length_percent: 1.0,
-            ..Params::default()
+            loop_length: TimeOrRatio::Ratio(1.0),
+            ..base_params()
         };
         let ten_tens = vec![100.0; 10];
         let _five_tens = vec![100.0; 5];
@@ -227,7 +244,7 @@ mod test {
 
         // record first 10 samples, then for 10 samples duration play loop length 100%
         let mut host = Host::new(Params {
-            loop_length_percent: 1.0,
+            loop_length: TimeOrRatio::Ratio(1.0),
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
@@ -241,7 +258,7 @@ mod test {
 
         // record first 10 samples, then for 10 samples duration play loop length 50%
         let mut host = Host::new(Params {
-            loop_length_percent: 0.5,
+            loop_length: TimeOrRatio::Ratio(0.5),
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
@@ -256,7 +273,7 @@ mod test {
 
         // record first 10 samples, wait 2 samples and then for 8 samples duration play loop length 50% from 20%
         let mut host = Host::new(Params {
-            loop_length_percent: 0.5,
+            loop_length: TimeOrRatio::Ratio(0.5),
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
@@ -280,7 +297,7 @@ mod test {
 
         // record first 10 samples, then play loop length 50% from 80%
         let mut host = Host::new(Params {
-            loop_length_percent: 0.5,
+            loop_length: TimeOrRatio::Ratio(0.5),
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
@@ -310,9 +327,9 @@ mod test {
             loop_mode: LoopMode::Loop,
             attack_samples: 0,
             decay_samples: 0,
-            loop_length_percent: 0.6,
+            loop_length: TimeOrRatio::Ratio(0.6),
             speed: -1.0,
-            ..Params::default()
+            ..base_params()
         };
         let ten_tens = vec![100.0; 10];
         let _five_tens = vec![100.0; 5];
@@ -348,8 +365,8 @@ mod test {
             loop_mode: LoopMode::Loop,
             attack_samples: 0,
             decay_samples: 0,
-            loop_length_percent: 1.0,
-            ..Params::default()
+            loop_length: TimeOrRatio::Ratio(1.0),
+            ..base_params()
         };
         let ten_tens = vec![100.0; 10];
         let _five_tens = vec![100.0; 5];
@@ -358,7 +375,7 @@ mod test {
         let input = vec![one_to_ten.clone(), ten_tens.clone()].concat();
         // record first 10 samples, then play loop length 50% from 80% in reverse
         let mut host = Host::new(Params {
-            loop_length_percent: 0.6,
+            loop_length: TimeOrRatio::Ratio(0.6),
             speed: -1.0,
             ..params.clone()
         });
@@ -389,9 +406,9 @@ mod test {
             loop_mode: LoopMode::Loop,
             attack_samples: 0,
             decay_samples: 0,
-            loop_length_percent: 1.0,
+            loop_length: TimeOrRatio::Ratio(1.0),
             speed: -1.0,
-            ..Params::default()
+            ..base_params()
         };
         let ten_tens = vec![100.0; 10];
         let _five_tens = vec![100.0; 5];
@@ -432,7 +449,7 @@ mod test {
 
         // rec 10, play rev 2x5 in 20
         let mut host = Host::new(Params {
-            loop_length_percent: 0.5,
+            loop_length: TimeOrRatio::Ratio(0.5),
             ..params
         });
         host.schedule(0, Cmd::StartRecording);
@@ -458,8 +475,8 @@ mod test {
             loop_mode: LoopMode::PingPong,
             attack_samples: 0,
             decay_samples: 0,
-            loop_length_percent: 1.0,
-            ..Params::default()
+            loop_length: TimeOrRatio::Ratio(1.0),
+            ..base_params()
         };
         let mut host = Host::new(params);
         host.schedule(0, Cmd::StartRecording);
@@ -488,8 +505,8 @@ mod test {
             loop_mode: LoopMode::PingPong,
             attack_samples: 0,
             decay_samples: 0,
-            loop_length_percent: 1.0,
-            ..Params::default()
+            loop_length: TimeOrRatio::Ratio(1.0),
+            ..base_params()
         };
         let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
         let _one_to_five: Vec<_> = (0..5).map(|x| x as f32).collect();
@@ -498,7 +515,7 @@ mod test {
 
         // record first 10 samples, then PingPong 50%
         let mut host = Host::new(Params {
-            loop_length_percent: 1.0,
+            loop_length: TimeOrRatio::Ratio(1.0),
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
@@ -524,8 +541,8 @@ mod test {
             loop_mode: LoopMode::PingPong,
             attack_samples: 0,
             decay_samples: 0,
-            loop_length_percent: 1.0,
-            ..Params::default()
+            loop_length: TimeOrRatio::Ratio(1.0),
+            ..base_params()
         };
         let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
         let one_to_five: Vec<_> = (0..5).map(|x| x as f32).collect();
@@ -533,7 +550,7 @@ mod test {
         let input = vec![one_to_ten.clone(), ten_tens.clone(), ten_tens.clone()].concat();
 
         let mut host = Host::new(Params {
-            loop_length_percent: 0.5,
+            loop_length: TimeOrRatio::Ratio(0.5),
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
@@ -559,39 +576,38 @@ mod test {
             loop_mode: LoopMode::PingPong,
             attack_samples: 0,
             decay_samples: 0,
-            loop_length_percent: 1.0,
-            ..Params::default()
+            loop_length: TimeOrRatio::Ratio(1.0),
+            ..base_params()
         };
         let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
         let ten_zeros = vec![0.0; 10];
         let input = vec![one_to_ten.clone(), ten_zeros.clone(), ten_zeros.clone()].concat();
 
         let mut host = Host::new(Params {
-            loop_length_percent: 1.0,
+            loop_length: TimeOrRatio::Ratio(1.0),
             ..params.clone()
         });
         let tmp = host.clone();
         host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(input.clone());
         assert_eq!(input, output);
-        eprintln!("{:?}", output);
     }
 
+    // not yet implemented
     #[test]
     fn test_ping_pong_2() {
         let params = Params {
             loop_mode: LoopMode::PingPong,
             attack_samples: 0,
             decay_samples: 0,
-            loop_length_percent: 1.0,
-            ..Params::default()
+            loop_length: TimeOrRatio::Ratio(1.0),
+            ..base_params()
         };
-        let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
         let ten_tens = vec![777.0; 100];
-        let input = vec![one_to_ten.clone(), ten_tens.clone(), ten_tens.clone()].concat();
+        let input = vec![one_to_ten().clone(), ten_tens.clone(), ten_tens.clone()].concat();
 
         let mut host = Host::new(Params {
-            loop_length_percent: 1.0,
+            loop_length: TimeOrRatio::Ratio(1.0),
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
@@ -608,8 +624,8 @@ mod test {
             loop_mode: LoopMode::PingPong,
             attack_samples: 0,
             decay_samples: 0,
-            loop_length_percent: 1.0,
-            ..Params::default()
+            loop_length: TimeOrRatio::Ratio(1.0),
+            ..base_params()
         };
         let input = (0..44100)
             .map(|x| {
@@ -622,7 +638,7 @@ mod test {
         //let input = (0..44100).map(|x| x as f32).collect::<Vec<_>>();
 
         let mut host = Host::new(Params {
-            loop_length_percent: 1.0,
+            loop_length: TimeOrRatio::Ratio(1.0),
             ..params.clone()
         });
         host.schedule(0, Cmd::StartRecording);
@@ -633,5 +649,39 @@ mod test {
         for (i, x) in wave.data.iter().take(20).enumerate() {
             eprintln!("{:<4}: {:?}", i, x);
         }
+    }
+
+    #[test]
+    fn test_loop_length() {
+        let params = Params {
+            loop_length: TimeOrRatio::Time(TimeValue::QuarterNotes(1.0)),
+            loop_mode: LoopMode::Loop,
+            transport: Transport {
+                tempo: 15.0,
+                sample_rate: 1.0,
+                pos_samples: 0.0,
+                ..Transport::default()
+            },
+            ..base_params()
+        };
+        let mut host = Host::new(params);
+        host.schedule(0, Cmd::StartRecording);
+        let mut input = one_to_ten();
+        host.schedule(0, Cmd::StartRecording);
+        host.schedule(input.len(), Cmd::StopRecording);
+        host.schedule(input.len(), Cmd::StartPlaying { start_percent: 0.0 });
+        input.resize(input.len() + 10, 0.0);
+        let output = host.run_input(input.clone());
+
+        assert_eq!(
+            output,
+            vec![
+                one_to_ten(),
+                input[0..4].to_vec(),
+                input[0..4].to_vec(),
+                input[0..2].to_vec()
+            ]
+            .concat()
+        );
     }
 }

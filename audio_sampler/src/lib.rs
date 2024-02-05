@@ -3,13 +3,20 @@
 use std::sync::Arc;
 
 use nih_plug::prelude::*;
+use nih_plug_vizia::vizia::prelude::Role::Time;
 use nih_plug_vizia::ViziaState;
+use num_traits::ToPrimitive;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
-use crate::common_types::{Info, LoopModeParam, Params as SamplerParams, VersionedWaveformSummary};
+use crate::common_types::{
+    Info, InitParams, LoopModeParam, Params as SamplerParams, RecordingMode,
+    VersionedWaveformSummary,
+};
 use crate::editor_vizia::DebugData;
 use crate::sampler::{LoopMode, Sampler};
+use crate::time_value::{calc_samples_per_bar, TimeOrRatio, TimeOrRatioUnit, TimeUnit, TimeValue};
+use crate::utils::normalize_offset;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -19,12 +26,13 @@ static GLOBAL: Jemalloc = Jemalloc;
 mod clip;
 mod common_types;
 mod editor_vizia;
+mod recorder;
 mod sampler;
 mod test_sampler;
+mod time_value;
 mod utils;
 mod voice;
 mod volume;
-
 type SysEx = ();
 
 pub struct AudioSampler {
@@ -37,12 +45,16 @@ pub struct AudioSampler {
     debug_data_out: Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>,
     peak_meter_decay_weight: f32,
     waveform_summary: Arc<VersionedWaveformSummary>,
+    last_frame_recorded: usize,
+    last_waveform_updated: usize,
 }
 
 #[derive(Params)]
 pub struct AudioSamplerParams {
     #[id = "auto_passthru"]
     pub auto_passthru: BoolParam,
+    #[id = "show_debug_data"]
+    pub show_debug_data: BoolParam,
     #[id = "speed"]
     pub speed: FloatParam,
     #[id = "attack"]
@@ -54,9 +66,13 @@ pub struct AudioSamplerParams {
     #[id = "loop_length"]
     pub loop_length: FloatParam,
     #[id = "start_offset"]
+    pub loop_length_unit: EnumParam<TimeOrRatioUnit>,
+    #[id = "loop_length_unit"]
     pub start_offset: FloatParam,
     #[id = "volume"]
     pub volume: FloatParam,
+    #[id = "recording_mode"]
+    pub recording_mode: EnumParam<RecordingMode>,
     /// The editor state, saved together with the parameter state so the custom scaling can be
     /// restored.
     #[persist = "editor-state"]
@@ -64,13 +80,14 @@ pub struct AudioSamplerParams {
 }
 
 const ATTACK_DECAY_SKEW_FACTOR: f32 = 0.25;
-const LOOP_LENGTH_SKEW_FACTOR: f32 = 0.5;
+const LOOP_LENGTH_SKEW_FACTOR: f32 = 1.0;
 
 impl Default for AudioSamplerParams {
     fn default() -> Self {
         Self {
             editor_state: editor_vizia::default_state(),
             auto_passthru: BoolParam::new("Pass through", true),
+            show_debug_data: BoolParam::new("Show debug data", false),
             speed: FloatParam::new(
                 "Speed",
                 1.0,
@@ -99,17 +116,17 @@ impl Default for AudioSamplerParams {
                 },
             )
             .with_unit(" ms"),
-            loop_mode: EnumParam::new("Loop mode", LoopModeParam::PlayOnce),
+            loop_mode: EnumParam::new("Loop mode", LoopModeParam::Loop),
+            loop_length_unit: EnumParam::new("Loop length unit", TimeOrRatioUnit::Ratio),
+            recording_mode: EnumParam::new("Recording mode", RecordingMode::default()),
             loop_length: FloatParam::new(
                 "Loop length",
                 1.0,
-                FloatRange::Skewed {
-                    min: 0.001,
-                    max: 1.0,
-                    factor: LOOP_LENGTH_SKEW_FACTOR,
+                FloatRange::Linear {
+                    min: 0.125,
+                    max: 100.0,
                 },
-            )
-            .with_unit(" %"),
+            ),
             start_offset: FloatParam::new(
                 "Start offset",
                 0.0,
@@ -129,11 +146,13 @@ impl Default for AudioSampler {
             params: Arc::new(AudioSamplerParams::default()),
             sample_rate: -1.0,
             peak_meter_decay_weight: 1.0,
-            sampler: Sampler::new(0, &SamplerParams::default()),
+            sampler: Sampler::new(0, &InitParams::default()),
             peak_meter: Default::default(), //debug: Arc::new(Mutex::new(None)),
             debug_data_in: Arc::new(parking_lot::Mutex::new(debug_data_in)),
             debug_data_out: Arc::new(parking_lot::Mutex::new(debug_data_out)),
             waveform_summary: Arc::new(VersionedWaveformSummary::default()),
+            last_frame_recorded: 0,
+            last_waveform_updated: 0,
         }
     }
 }
@@ -150,7 +169,13 @@ impl AudioSampler {
         channel_count
     }
 
-    fn sampler_params(&self) -> SamplerParams {
+    fn loop_length(&self, transport: &Transport) -> TimeOrRatio {
+        let value = self.params.loop_length.smoothed.next();
+        let unit = self.params.loop_length_unit.value();
+        TimeOrRatio::from_unit_value(unit, value)
+    }
+
+    fn sampler_params(&self, sample_id: usize, transport: &Transport) -> SamplerParams {
         let params_speed = self.params.speed.smoothed.next();
         let params_passthru = self.params.auto_passthru.value();
         let attack_millis = self.params.attack.smoothed.next();
@@ -161,10 +186,23 @@ impl AudioSampler {
             auto_passthru: params_passthru,
             attack_samples,
             loop_mode: LoopMode::from_param(self.params.loop_mode.value()),
-            loop_length_percent: self.params.loop_length.smoothed.next(),
+            loop_length: self.loop_length(transport),
             start_offset_percent: self.params.start_offset.value(),
             decay_samples,
             speed: params_speed,
+            recording_mode: self.params.recording_mode.value(),
+            fixed_size_samples: TimeValue::bars(1.0)
+                .as_samples_f64(transport)
+                .and_then(|x| x.to_usize())
+                .unwrap_or(0),
+            transport: common_types::Transport {
+                sample_rate: self.sample_rate,
+                tempo: transport.tempo.unwrap() as f32,
+                pos_samples: transport.pos_samples().unwrap() as f32,
+                time_sig_numerator: transport.time_sig_numerator.unwrap() as u32,
+                time_sig_denominator: transport.time_sig_denominator.unwrap() as u32,
+            },
+            sample_id,
         };
         params
     }
@@ -181,6 +219,13 @@ impl AudioSampler {
 
         self.peak_meter
             .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn update_waveform(&mut self) {
+        self.waveform_summary = Arc::new(VersionedWaveformSummary {
+            version: self.waveform_summary.version + 1,
+            waveform_summary: self.sampler.get_waveform_summary(940),
+        });
     }
 }
 
@@ -226,6 +271,7 @@ impl Plugin for AudioSampler {
             xy: (0.0, 0.0),
             y: 0.0,
             x: 0.0,
+            peak_meter: self.peak_meter.clone(),
         };
 
         editor_vizia::create(self.params.editor_state.clone(), data)
@@ -239,7 +285,7 @@ impl Plugin for AudioSampler {
     ) -> bool {
         self.audio_io_layout = audio_io_layout.clone();
         self.sample_rate = buffer_config.sample_rate;
-        self.sampler = Sampler::new(self.channel_count(), &self.sampler_params());
+        self.sampler = Sampler::new(self.channel_count(), &InitParams::default());
         self.peak_meter_decay_weight = 0.25f64
             .powf((buffer_config.sample_rate as f64 * PEAK_METER_DECAY_MS / 1000.0).recip())
             as f32;
@@ -247,7 +293,7 @@ impl Plugin for AudioSampler {
     }
 
     fn reset(&mut self) {
-        self.sampler = Sampler::new(self.channel_count(), &self.sampler_params());
+        self.sampler = Sampler::new(self.channel_count(), &InitParams::default());
     }
 
     fn process(
@@ -259,7 +305,7 @@ impl Plugin for AudioSampler {
         let mut next_event = context.next_event();
 
         for (sample_id, channel_samples) in buffer.iter_samples().enumerate() {
-            let params = self.sampler_params();
+            let params = self.sampler_params(sample_id, &context.transport());
             let params = &params;
             while let Some(event) = next_event {
                 if event.timing() != sample_id as u32 {
@@ -279,13 +325,7 @@ impl Plugin for AudioSampler {
                         _ => (),
                     },
                     NoteEvent::NoteOff { note, .. } => match note {
-                        0 => {
-                            self.sampler.stop_recording(params);
-                            self.waveform_summary = Arc::new(VersionedWaveformSummary {
-                                version: self.waveform_summary.version + 1,
-                                waveform_summary: self.sampler.get_waveform_summary(940),
-                            });
-                        }
+                        0 => self.sampler.stop_recording(params),
                         1 => self.sampler.unreverse(params),
                         12..=27 => self.sampler.stop_playing(note, params),
                         _ => (),
@@ -293,6 +333,10 @@ impl Plugin for AudioSampler {
                     _ => (),
                 }
                 next_event = context.next_event();
+            }
+
+            if self.sampler.is_recording() {
+                self.last_frame_recorded = self.sampler.get_frames_processed();
             }
 
             let mut frame = channel_samples.into_iter().collect::<Vec<_>>();
@@ -303,18 +347,85 @@ impl Plugin for AudioSampler {
             //}
             if self.params.editor_state.is_open() {
                 self.update_peak_meter(&mut frame);
+
+                if self.last_frame_recorded > self.last_waveform_updated + self.sample_rate as usize
+                {
+                    self.update_waveform();
+                    self.last_waveform_updated = self.last_frame_recorded;
+                }
+                let debug_message = if self.params.show_debug_data.value() {
+                    let message = mk_message(&self.sampler, params, context.transport());
+                    message
+                } else {
+                    None
+                };
                 let voice_info = self.sampler.get_voice_info(params);
                 let info = Info {
                     voices: voice_info,
+                    last_recorded_indices: self.sampler.get_last_recorded_offsets(),
+                    data_len: self.sampler.get_data_len(),
                     waveform_summary: self.waveform_summary.clone(),
                 };
-                //info.waveform_summary = (0..940) .map(|x| (x as f32 - 470.0) / 470.0) .collect::<Vec<_>>();
-                self.debug_data_in.lock().write(DebugData { info });
+                self.debug_data_in.lock().write(DebugData {
+                    info,
+                    message: debug_message,
+                });
+
+                let amplitude = (frame.iter().fold(0.0, |z, x| z + **x) / frame.len() as f32).abs();
+
+                let current_peak_meter = self.peak_meter.load(std::sync::atomic::Ordering::Relaxed);
+                let new_peak_meter = if amplitude > current_peak_meter {
+                    amplitude
+                } else {
+                    current_peak_meter * self.peak_meter_decay_weight
+                        + amplitude * (1.0 - self.peak_meter_decay_weight)
+                };
+
+                self.peak_meter
+                    .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed)
             }
         }
 
         ProcessStatus::Normal
     }
+}
+
+fn mk_message(sampler: &Sampler, params: &SamplerParams, transport: &Transport) -> Option<String> {
+    let pos_samples = transport.pos_samples()?;
+    let pos_beats = transport.pos_beats()?;
+    let samples_per_bar = TimeValue::bars(1.0).as_samples_f64(transport)?;
+    let bar_start_pos_beats = transport.bar_start_pos_beats()?;
+    let current_bar = (pos_samples as f64 / samples_per_bar).floor();
+    let mut tmp = vec![];
+    tmp.push(("pos_samples", format!("{:.3}", pos_samples)));
+    tmp.push((
+        "loop_length_samples",
+        format!(
+            "{:.3}",
+            sampler::loop_length(params, sampler.get_data_len())
+        ),
+    ));
+    tmp.push(("pos_beats", format!("{:.3}", pos_beats)));
+    tmp.push(("samples_per_bar", format!("{:.3}", samples_per_bar)));
+    tmp.push(("bar_start_pos_beats", format!("{:.3}", bar_start_pos_beats)));
+    tmp.push(("current_bar", format!("{:.3}", current_bar)));
+    tmp.push(("is_recording", format!("{:?}", sampler.is_recording())));
+    tmp.push(("errors", format!("{:?}", sampler.get_error_count())));
+
+    tmp.push(("data_len", format!("{:?}", sampler.get_data_len())));
+    tmp.push((
+        "bar_offset",
+        format!(
+            "{:.3}",
+            normalize_offset(pos_samples as f64, samples_per_bar)
+        ),
+    ));
+    let mut res = String::new();
+    for (k, v) in tmp {
+        res.push_str(&format!("{}={}\n", k, v));
+    }
+
+    Some(res)
 }
 
 impl ClapPlugin for AudioSampler {

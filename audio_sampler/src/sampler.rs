@@ -4,20 +4,36 @@ use nih_plug::nih_warn;
 
 use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
-use crate::common_types::Params;
+use crate::common_types::{InitParams, Params, RecordingMode};
+use crate::recorder;
+use crate::recorder::Recorder;
+use crate::time_value::{TimeOrRatio, TimeValue};
+use crate::utils::normalize_offset;
 use crate::voice::Voice;
 use crate::volume::Volume;
 
 #[derive(Clone, Debug)]
 struct Channel {
     data: Vec<f32>,
-    write: usize,
     reverse_speed: f32,
     voices: Vec<Voice>,
-    recording: bool,
     now: usize,
     passthru_on: bool,
     passthru_volume: Volume,
+    recorder: Recorder,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum Recording {
+    Idle,
+    NoteTriggered,
+    Always,
+}
+
+impl Default for Recording {
+    fn default() -> Self {
+        Recording::Idle
+    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -33,29 +49,55 @@ fn starting_offset(loop_start_percent: f32, data_len: usize) -> f32 {
     start
 }
 
-fn loop_length(loop_length_percent: f32, data_len: usize) -> f32 {
-    let len_f32 = data_len as f32;
-    let start = loop_length_percent * len_f32;
-    start
+pub fn loop_length(params: &Params, data_len: usize) -> f32 {
+    let t = &params.transport;
+    match params.loop_length {
+        TimeOrRatio::Time(time) => match time {
+            TimeValue::Samples(samples) => samples as f32,
+            TimeValue::Seconds(seconds) => seconds as f32 * t.sample_rate as f32,
+            TimeValue::QuarterNotes(quarter_notes) => {
+                let samples_per_quarter_note = t.sample_rate as f32 * 60.0 / t.tempo;
+                quarter_notes as f32 * samples_per_quarter_note
+            }
+            TimeValue::Bars(bars) => {
+                let samples_per_bar = t.sample_rate as f32 * 60.0 / t.tempo
+                    * t.time_sig_numerator as f32
+                    / t.time_sig_denominator as f32;
+                bars as f32 * samples_per_bar
+            }
+        },
+        TimeOrRatio::Ratio(ratio) => {
+            let len_f32 = data_len as f32;
+            len_f32 * ratio
+        }
+    }
 }
 
 impl Channel {
-    fn new(params: &Params) -> Self {
+    fn new(params: &InitParams) -> Self {
         Channel {
             data: vec![],
-            write: 0,
             reverse_speed: 1.0,
             voices: vec![],
-            recording: false,
             now: 0,
             passthru_on: false,
             passthru_volume: Volume::new(if params.auto_passthru { 1.0 } else { 0.0 }),
+            recorder: Recorder::new(),
         }
+    }
+
+    pub fn is_recording(&self) -> bool {
+        self.recorder().is_recording()
+    }
+
+    pub fn recorder(&self) -> &Recorder {
+        &self.recorder
     }
 
     fn log(&self, params: &Params, s: String) {
         nih_warn!(
-            "voices={} voices(!finished)={} attack={} decay={} passthru_vol={:.2} {}",
+            "now={} voices={} voices(!finished)={} attack={} decay={} passthru_vol={:.2} {}",
+            self.now,
             self.voices.len(),
             self.voices.iter().filter(|v| !v.finished).count(),
             params.attack_samples,
@@ -77,9 +119,15 @@ impl Channel {
         velocity: f32,
         params: &Params,
     ) {
+        if self.data.is_empty() {
+            return;
+        }
+        #[cfg(debug_asserttions)]
+        eprintln!("start playing now={} note={}", self.now, note);
+
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
         let offset = loop_start_percent * self.data.len() as f32;
-        let length = params.loop_length_percent * self.data.len() as f32;
+        let length: f32 = loop_length(params, self.data.len());
         let mut voice = Voice {
             note,
             loop_start_percent,
@@ -121,21 +169,12 @@ impl Channel {
         self.reverse_speed = 1.0;
     }
 
-    pub fn start_recording(&mut self, _params: &Params) {
-        if !self.recording {
-            assert_eq!(self.write, 0);
-            self.recording = true;
-        }
+    pub fn start_recording(&mut self, params: &Params) {
+        self.recorder.start(&mut self.data, &params.into());
     }
 
-    pub fn stop_recording(&mut self, _params: &Params) {
-        // This is not an error as some DAWs will send note off events for notes
-        // that were never played, e.g. REAPER
-        if self.recording {
-            self.recording = false;
-            self.data.truncate(self.write);
-            self.write = 0;
-        }
+    pub fn stop_recording(&mut self, params: &Params) {
+        self.recorder.stop(&mut self.data, &params.into());
     }
 
     fn handle_passthru(&mut self, params: &Params) {
@@ -172,7 +211,7 @@ impl Channel {
             voice.clip.update_speed(self.now, speed);
             voice
                 .clip
-                .update_length(self.now, (len_f32 * params.loop_length_percent) as usize);
+                .update_length(self.now, loop_length(params, self.data.len()) as usize);
             let offset = ((params.start_offset_percent + voice.loop_start_percent) * len_f32)
                 .floor() as usize;
             voice.clip.update_offset(offset);
@@ -212,18 +251,11 @@ impl Channel {
         output
     }
 
-    pub fn process_sample<'a>(&mut self, sample: &mut f32, params: &Params) {
-        let value = *sample;
+    pub fn process_sample<'a>(&mut self, io: &mut f32, params: &Params) {
+        let input = *io;
 
-        if self.recording {
-            assert!(self.write <= self.data.len());
-            if self.write == self.data.len() {
-                self.data.push(value);
-            } else {
-                self.data[self.write] = value;
-            }
-            self.write += 1;
-        }
+        self.recorder
+            .process_sample(input, &mut self.data, &params.into());
 
         let mut output = 0.0;
         if !self.data.is_empty() {
@@ -239,7 +271,7 @@ impl Channel {
 
             // its important output is calculated before updating state & volume
             let passhtru_value = self.passthru_volume.value(self.now);
-            output += value * passhtru_value;
+            output += input * passhtru_value;
 
             // update volume
             self.passthru_volume.step(self.now);
@@ -249,7 +281,7 @@ impl Channel {
         }
 
         self.now += 1;
-        *sample = output;
+        *io = output;
     }
 }
 
@@ -269,7 +301,6 @@ impl Sampler {
     pub fn get_waveform_summary(&self, resolution: usize) -> WaveformSummary {
         let data = &self.channels[0].data;
         let step = data.len() as f32 / resolution as f32;
-        let mut out = vec![0.0; resolution];
         let mut r = WaveformSummary {
             data: vec![0.0; resolution],
             min: 0.0,
@@ -287,7 +318,7 @@ impl Sampler {
         r
     }
 
-    pub fn new(channel_count: usize, params: &Params) -> Self {
+    pub fn new(channel_count: usize, params: &InitParams) -> Self {
         Self {
             channels: vec![Channel::new(&params); channel_count],
         }
@@ -339,18 +370,53 @@ impl Sampler {
         }
     }
 
+    pub fn get_frames_processed(&self) -> usize {
+        self.channels[0].now
+    }
+
+    pub fn is_recording(&self) -> bool {
+        let yes = self.channels[0].recorder.is_recording();
+        debug_assert!(
+            self.channels
+                .iter()
+                .all(|x| x.recorder.is_recording() == yes),
+            "is_recording mismatch"
+        );
+        yes
+    }
+
+    pub fn get_last_recorded_offsets(&self) -> Vec<Option<usize>> {
+        self.channels
+            .iter()
+            .map(|x| x.recorder().last_recorded_offset())
+            .collect()
+    }
+
+    pub fn get_data_len(&self) -> usize {
+        let ch = &self.channels[0];
+        ch.data.len()
+    }
+
     pub fn get_voice_info(&self, params: &Params) -> Vec<VoiceInfo> {
         let data_len_f32 = self.channels[0].data.len() as f32;
 
+        let l = loop_length(params, self.get_data_len());
         self.channels[0]
             .voices
             .iter()
             .map(|v| {
                 let start = v.loop_start_percent;
-                let end = (v.loop_start_percent + params.loop_length_percent) % 1.0;
+                let end = (v.loop_start_percent + l / data_len_f32) % 1.0;
                 let pos = v.last_sample_index as f32 / data_len_f32;
                 VoiceInfo { start, end, pos }
             })
             .collect()
+    }
+
+    pub fn get_error_count(&self) -> usize {
+        self.channels
+            .iter()
+            .map(|x| x.recorder.errors().len())
+            .sum()
     }
 }
