@@ -14,7 +14,7 @@ pub enum LoopMode {
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum RecordingMode {
-    #[name = "Only when C-2 is held"]
+    #[name = "Only when C-2 is on"]
     NoteTriggered,
     #[name = "Always (last bar)"]
     AlwaysOn,
