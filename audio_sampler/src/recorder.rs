@@ -15,7 +15,7 @@ enum State {
 }
 
 pub struct Params {
-    pub transport_pos_samples: Option<i64>,
+    pub transport_pos_samples: f32,
     pub sample_id: usize,
     pub recording_mode: RecordingMode,
     pub fixed_size_samples: usize,
@@ -24,7 +24,7 @@ pub struct Params {
 impl From<&common_types::Params> for Params {
     fn from(params: &common_types::Params) -> Self {
         Self {
-            transport_pos_samples: params.transport_pos_samples,
+            transport_pos_samples: params.transport.pos_samples,
             sample_id: params.sample_id,
             recording_mode: params.recording_mode,
             fixed_size_samples: params.fixed_size_samples,
@@ -43,7 +43,7 @@ impl Params {
     }
     pub fn with_transport_pos_samples(&self, transport_pos_samples: i64) -> Self {
         Self {
-            transport_pos_samples: Some(transport_pos_samples),
+            transport_pos_samples: transport_pos_samples as f32,
             sample_id: self.sample_id,
             recording_mode: self.recording_mode,
             fixed_size_samples: self.fixed_size_samples,
@@ -68,7 +68,7 @@ pub enum Triggers {
 #[derive(Clone, Debug)]
 pub enum RecorderError {
     SkippedSamples { i: usize, prev_offset: usize },
-    NegativeTransportPos { transport_pos_samples: i64 },
+    NegativeTransportPos { transport_pos_samples: f32 },
     IncorrectState,
 }
 
@@ -179,28 +179,27 @@ impl Recorder {
                 length,
                 last_recorded_offset,
             } => {
-                if let Some(transport_pos_samples) = params.transport_pos_samples {
-                    data.resize(params.fixed_size_samples, 0.0);
-                    if transport_pos_samples < 0 {
-                        self.errors.push(RecorderError::NegativeTransportPos {
-                            transport_pos_samples,
-                        });
-                    }
-                    let i = normalize_offset(
-                        transport_pos_samples + params.sample_id as i64,
-                        *length as i64,
-                    );
-                    assert!(i >= 0, "i={}", i);
-                    let i = i as usize;
-                    data[i] = sample;
-                    if let Some(prev_offset) = *last_recorded_offset {
-                        if !(i == 1 + prev_offset || i == 0 && prev_offset == *length - 1) {
-                            self.errors
-                                .push(RecorderError::SkippedSamples { i, prev_offset });
-                        }
-                    }
-                    *last_recorded_offset = Some(i);
+                let transport_pos_samples = params.transport_pos_samples;
+                data.resize(params.fixed_size_samples, 0.0);
+                if transport_pos_samples < 0.0 {
+                    self.errors.push(RecorderError::NegativeTransportPos {
+                        transport_pos_samples,
+                    });
                 }
+                let i = normalize_offset(
+                    transport_pos_samples + params.sample_id as f32,
+                    *length as f32,
+                );
+                assert!(i >= 0.0, "i={}", i);
+                let i = i as usize;
+                data[i] = sample;
+                if let Some(prev_offset) = *last_recorded_offset {
+                    if !(i == 1 + prev_offset || i == 0 && prev_offset == *length - 1) {
+                        self.errors
+                            .push(RecorderError::SkippedSamples { i, prev_offset });
+                    }
+                }
+                *last_recorded_offset = Some(i);
             }
             _ => (),
         }
@@ -216,7 +215,7 @@ mod test {
         let mut rec = Recorder::new();
         let mut data = vec![0.0; 10];
         let params = Params {
-            transport_pos_samples: None,
+            transport_pos_samples: 0.0,
             fixed_size_samples: 100,
             recording_mode: RecordingMode::NoteTriggered,
             sample_id: 0,

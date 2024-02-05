@@ -3,6 +3,7 @@ use std::sync::Arc;
 use nih_plug::prelude::Enum;
 
 use crate::sampler::{VoiceInfo, WaveformSummary};
+use crate::time_value::{TimeUnit, TimeValue};
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum LoopMode {
@@ -43,22 +44,48 @@ impl LoopMode {
 }
 
 #[derive(Debug, Clone)]
+pub enum TimeOrRatio {
+    Time(TimeValue),
+    Ratio(f32),
+}
+
+#[derive(Debug, Clone)]
 pub struct Params {
     pub attack_samples: usize,
     pub decay_samples: usize,
     pub auto_passthru: bool,
     pub loop_mode: LoopMode,
-    pub loop_length_percent: f32,
-    pub loop_length_samples: f32,
+    pub loop_length: TimeOrRatio,
     pub start_offset_percent: f32,
     pub speed: f32,
     pub recording_mode: RecordingMode,
     pub fixed_size_samples: usize,
-    pub transport_pos_samples: Option<i64>,
     pub sample_id: usize,
+    pub transport: Transport,
 }
 
 pub const DEFAULT_AUTO_PASSTHRU: bool = true;
+
+#[derive(Debug, Clone)]
+pub struct Transport {
+    pub sample_rate: f32,
+    pub tempo: f32,
+    pub pos_samples: f32,
+    pub time_sig_numerator: u32,
+    pub time_sig_denominator: u32,
+}
+
+impl Default for Transport {
+    fn default() -> Self {
+        Self {
+            sample_rate: 44100.0,
+            tempo: 120.0,
+            pos_samples: 0.0,
+            time_sig_numerator: 4,
+            time_sig_denominator: 4,
+        }
+    }
+}
 
 impl Default for Params {
     fn default() -> Self {
@@ -66,15 +93,14 @@ impl Default for Params {
             auto_passthru: DEFAULT_AUTO_PASSTHRU,
             attack_samples: 100,
             loop_mode: LoopMode::Loop,
-            loop_length_percent: 1.0,
-            loop_length_samples: 0.0,
+            loop_length: TimeOrRatio::Ratio(1.0),
             start_offset_percent: 0.0,
             decay_samples: 100,
             speed: 1.0,
             recording_mode: RecordingMode::default(),
             fixed_size_samples: 0,
-            transport_pos_samples: None,
             sample_id: 0,
+            transport: Transport::default(),
         }
     }
 }
