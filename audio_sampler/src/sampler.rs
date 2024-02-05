@@ -122,6 +122,9 @@ impl Channel {
         if self.data.is_empty() {
             return;
         }
+        #[cfg(debug_asserttions)]
+        eprintln!("start playing now={} note={}", self.now, note);
+
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
         let offset = loop_start_percent * self.data.len() as f32;
         let length: f32 = loop_length(params, self.data.len());

@@ -2,8 +2,13 @@
 mod test {
     use std::f32::consts::PI;
 
-    use crate::common_types::{InitParams, Params, RecordingMode, TimeOrRatio};
+    use crate::common_types::{InitParams, Params, RecordingMode, Transport};
     use crate::sampler::{LoopMode, Sampler};
+    use crate::time_value::{TimeOrRatio, TimeValue};
+
+    pub fn one_to_ten() -> Vec<f32> {
+        (0..10).map(|x| x as f32).collect()
+    }
 
     fn base_params() -> Params {
         let params = Params {
@@ -60,8 +65,8 @@ mod test {
                 .into_iter()
                 .map(|x| {
                     let (todo, rem) = self.cmds.iter().partition(|(at, _)| *at == self.now);
-                    for &(_, x) in &todo {
-                        match x {
+                    for &(_, cmd) in &todo {
+                        match cmd {
                             Cmd::StartPlaying { start_percent: pos } => {
                                 self.sampler.start_playing(pos, 11, 1.0, &self.params)
                             }
@@ -100,7 +105,7 @@ mod test {
         };
         let ten_tens = vec![100.0; 10];
         let five_tens = vec![100.0; 5];
-        let one_to_ten = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let one_to_ten = one_to_ten();
         let one_to_five = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let input = vec![one_to_ten.clone(), ten_tens.clone()].concat();
 
@@ -586,9 +591,9 @@ mod test {
         host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(input.clone());
         assert_eq!(input, output);
-        eprintln!("{:?}", output);
     }
 
+    // not yet implemented
     #[test]
     fn test_ping_pong_2() {
         let params = Params {
@@ -598,9 +603,8 @@ mod test {
             loop_length: TimeOrRatio::Ratio(1.0),
             ..base_params()
         };
-        let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
         let ten_tens = vec![777.0; 100];
-        let input = vec![one_to_ten.clone(), ten_tens.clone(), ten_tens.clone()].concat();
+        let input = vec![one_to_ten().clone(), ten_tens.clone(), ten_tens.clone()].concat();
 
         let mut host = Host::new(Params {
             loop_length: TimeOrRatio::Ratio(1.0),
@@ -645,5 +649,39 @@ mod test {
         for (i, x) in wave.data.iter().take(20).enumerate() {
             eprintln!("{:<4}: {:?}", i, x);
         }
+    }
+
+    #[test]
+    fn test_loop_length() {
+        let params = Params {
+            loop_length: TimeOrRatio::Time(TimeValue::QuarterNotes(1.0)),
+            loop_mode: LoopMode::Loop,
+            transport: Transport {
+                tempo: 15.0,
+                sample_rate: 1.0,
+                pos_samples: 0.0,
+                ..Transport::default()
+            },
+            ..base_params()
+        };
+        let mut host = Host::new(params);
+        host.schedule(0, Cmd::StartRecording);
+        let mut input = one_to_ten();
+        host.schedule(0, Cmd::StartRecording);
+        host.schedule(input.len(), Cmd::StopRecording);
+        host.schedule(input.len(), Cmd::StartPlaying { start_percent: 0.0 });
+        input.resize(input.len() + 10, 0.0);
+        let output = host.run_input(input.clone());
+
+        assert_eq!(
+            output,
+            vec![
+                one_to_ten(),
+                input[0..4].to_vec(),
+                input[0..4].to_vec(),
+                input[0..2].to_vec()
+            ]
+            .concat()
+        );
     }
 }
