@@ -10,8 +10,8 @@ use num_traits::ToPrimitive;
 use tikv_jemallocator::Jemalloc;
 
 use crate::common_types::{
-    Info, InitParams, LoopModeParam, Params as SamplerParams, RecordingMode,
-    VersionedWaveformSummary,
+    Info, InitParams, LoopModeParam, MIDIChannelParam, Note, Params as SamplerParams,
+    RecordingMode, VersionedWaveformSummary,
 };
 use crate::editor_vizia::DebugData;
 use crate::sampler::{LoopMode, Sampler};
@@ -47,6 +47,7 @@ pub struct AudioSampler {
     waveform_summary: Arc<VersionedWaveformSummary>,
     last_frame_recorded: usize,
     last_waveform_updated: usize,
+    active_notes: [[bool; 256]; 16],
 }
 
 #[derive(Params)]
@@ -73,6 +74,8 @@ pub struct AudioSamplerParams {
     pub volume: FloatParam,
     #[id = "recording_mode"]
     pub recording_mode: EnumParam<RecordingMode>,
+    #[id = "midi_channel"]
+    pub midi_channel: EnumParam<MIDIChannelParam>,
     /// The editor state, saved together with the parameter state so the custom scaling can be
     /// restored.
     #[persist = "editor-state"]
@@ -116,6 +119,7 @@ impl Default for AudioSamplerParams {
                 },
             )
             .with_unit(" ms"),
+            midi_channel: EnumParam::new("MIDI channel", MIDIChannelParam::All),
             loop_mode: EnumParam::new("Loop mode", LoopModeParam::Loop),
             loop_length_unit: EnumParam::new("Loop length unit", TimeOrRatioUnit::Ratio),
             recording_mode: EnumParam::new("Recording mode", RecordingMode::default()),
@@ -153,6 +157,7 @@ impl Default for AudioSampler {
             waveform_summary: Arc::new(VersionedWaveformSummary::default()),
             last_frame_recorded: 0,
             last_waveform_updated: 0,
+            active_notes: [[false; 256]; 16],
         }
     }
 }
@@ -167,6 +172,28 @@ impl AudioSampler {
             .try_into()
             .unwrap();
         channel_count
+    }
+
+    fn is_note_active(&self, note: Note) -> bool {
+        self.active_notes[note.channel.into_usize()][note.note as usize]
+    }
+
+    fn set_note_active(&mut self, note: Note, active: bool) {
+        #[cfg(debug_assertions)]
+        nih_warn!("set note active: {:?} <- {}", note, active);
+        self.active_notes[note.channel.into_usize()][note.note as usize] = active;
+    }
+
+    fn get_active_notes(&mut self) -> Vec<Note> {
+        let mut notes = vec![];
+        for channel in 0..16 {
+            for note in 0..256 {
+                if self.active_notes[channel][note] {
+                    notes.push(Note::new(note as u8, channel as u8));
+                }
+            }
+        }
+        notes
     }
 
     fn loop_length(&self) -> TimeOrRatio {
@@ -308,30 +335,51 @@ impl Plugin for AudioSampler {
 
         for (sample_id, channel_samples) in buffer.iter_samples().enumerate() {
             let params = self.sampler_params(sample_id, &context.transport());
+            let channel: Option<u8> = self.params.midi_channel.value().try_into().ok();
             let params = &params;
             while let Some(event) = next_event {
                 if event.timing() != sample_id as u32 {
                     break;
                 }
+                #[cfg(debug_assertions)]
+                nih_warn!("event: {:?}", event);
+                nih_warn!("active_notes: {:?}", self.get_active_notes());
                 //self.debug_println(format_args!("{:?}", event));
                 //nih_warn!("event {:?}", event);
                 // assert!(event.voice_id().is_none());
                 match event {
-                    NoteEvent::NoteOn { velocity, note, .. } => match note {
+                    NoteEvent::NoteOn {
+                        velocity,
+                        note,
+                        channel: note_channel,
+                        ..
+                    } if channel.iter().all(|x| *x == note_channel) => match note {
                         0 => self.sampler.start_recording(params),
                         1 => self.sampler.reverse(params),
                         12..=27 => {
                             let pos = (note - 12) as f32 / 16.0;
+                            let note = Note::new(note, note_channel);
+                            self.set_note_active(note, true);
                             self.sampler.start_playing(pos, note, velocity, params);
                         }
                         _ => (),
                     },
-                    NoteEvent::NoteOff { note, .. } => match note {
-                        0 => self.sampler.stop_recording(params),
-                        1 => self.sampler.unreverse(params),
-                        12..=27 => self.sampler.stop_playing(note, params),
-                        _ => (),
-                    },
+                    NoteEvent::NoteOff {
+                        note,
+                        channel: note_channel,
+                        ..
+                    } => {
+                        let note = Note::new(note, note_channel);
+                        if self.is_note_active(note) {
+                            match note.note {
+                                0 => self.sampler.stop_recording(params),
+                                1 => self.sampler.unreverse(params),
+                                12..=27 => self.sampler.stop_playing(note, params),
+                                _ => (),
+                            }
+                            self.set_note_active(note, false);
+                        }
+                    }
                     _ => (),
                 }
                 next_event = context.next_event();
@@ -408,7 +456,11 @@ fn mk_message(sampler: &Sampler, params: &SamplerParams) -> Option<String> {
     tmp.push(("samples_per_bar", format!("{:.3}", samples_per_bar)));
     tmp.push(("current_bar", format!("{:.3}", current_bar)));
     tmp.push(("is_recording", format!("{:?}", sampler.is_recording())));
-    tmp.push(("errors", format!("{:?}", sampler.get_error_count())));
+    tmp.push(("errors", format!("{}", sampler.print_error_info())));
+    tmp.push((
+        "voices",
+        format!("{}", sampler.get_voice_info(params).len()),
+    ));
 
     tmp.push(("data_len", format!("{:?}", sampler.get_data_len())));
     tmp.push((

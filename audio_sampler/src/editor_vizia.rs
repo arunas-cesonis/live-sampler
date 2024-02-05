@@ -393,6 +393,10 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     ParamSlider::new(cx, Data::params, |params| &params.recording_mode)
                         .width(Stretch(1.0))
                         .right(Pixels(10.0));
+                    Label::new(cx, "MIDI channel").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.midi_channel)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
                     Label::new(cx, "Show debug data").top(Pixels(10.0));
                     ParamSlider::new(cx, Data::params, |params| &params.show_debug_data)
                         .width(Stretch(1.0))
