@@ -406,7 +406,7 @@ impl Sampler {
             .iter()
             .map(|v| {
                 let start = v.loop_start_percent;
-                let end = (v.loop_start_percent + l) % 1.0;
+                let end = (v.loop_start_percent + l / data_len_f32) % 1.0;
                 let pos = v.last_sample_index as f32 / data_len_f32;
                 VoiceInfo { start, end, pos }
             })
