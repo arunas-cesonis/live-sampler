@@ -1,6 +1,9 @@
 This project contains two CLAP/VST3 plugins that can be used to record and play back a buffer.
 audio-sampler operates on audio buffers, midi-sampler operates on midi buffers.
 
+
+![image info](./docs/screenshot.png)
+
 *** audio-sampler ***
 
 MIDI bindings
@@ -21,9 +24,19 @@ However it may not be entirely obvious how some edge cases work, so here's a sho
 - initial playback offset is determined by the length of the buffer when playback is started
 
 Plugin parameters
+- Volume - output volume mulpilier
+- Speed - playback speed multiplier. Applied to all active and new voices
+- Will record (recording mode) - toggles between recording modes:
+-- Always on - recording is always on, buffer contains audio of last bar played
+-- When note C-2 is held (note triggered) - recording is only on when note C-2 (or note 0 in MIDI) is held. This mode is described in section above 
+- Attack - time in which playback volume is ramped up from 0 to 1 (linearly). Starts on note-on event
+- Decay - time in which playback volume drops up from 1 to 0 (linearly). Starts on note-off event
 - Pass through - disables/enables playing back incoming audio while no buffer playback voices are active
-- Fade time - duration of cross-fading between voices or incoming audio
-- Speed - playback speed multiplier
+- Start offset - starting offset to play buffer from. Applied to all active and new voices
+- Loop length - allows shortening down the looped portion of the buffer
+- MIDI channel - MIDI channel over which controlling notes are received
+- Show debug data - toggles displaying debug data on the plugin's UI
+- Loop mode - toggles between looping and playing the loop region once
 
 *** midi-sampler ***
 
