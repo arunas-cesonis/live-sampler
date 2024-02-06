@@ -53,8 +53,12 @@ impl Model for Data {
         });
     }
 }
+#[cfg(debug_assertions)]
+const WINDOW_SIZE: (u32, u32) = (640 + 600, 380);
 
+#[cfg(not(debug_assertions))]
 const WINDOW_SIZE: (u32, u32) = (640 + 320, 380);
+
 const WINDOW_SIZEF: (f32, f32) = (WINDOW_SIZE.0 as f32, WINDOW_SIZE.1 as f32);
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
@@ -216,7 +220,7 @@ fn rectangle_path(x: f32, y: f32, w: f32, h: f32) -> Path {
 }
 // disabling various position drawings because they are a bit buggy at the moment
 // and do not look very good
-const DISABLE_DRAWING_INDICES: bool = true;
+const DISABLE_DRAWING_INDICES: bool = false;
 
 impl<X> View for WaveformView<X>
 where
@@ -391,6 +395,10 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                 VStack::new(cx, |cx| {
                     Label::new(cx, "Will record").top(Pixels(10.0));
                     ParamSlider::new(cx, Data::params, |params| &params.recording_mode)
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0));
+                    Label::new(cx, "MIDI channel").top(Pixels(10.0));
+                    ParamSlider::new(cx, Data::params, |params| &params.midi_channel)
                         .width(Stretch(1.0))
                         .right(Pixels(10.0));
                     Label::new(cx, "Show debug data").top(Pixels(10.0));

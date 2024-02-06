@@ -1,4 +1,5 @@
 use crate::clip::Clip;
+use crate::common_types::Note;
 use crate::volume::Volume;
 
 #[repr(transparent)]
@@ -7,7 +8,7 @@ pub struct VoiceId(pub usize);
 
 #[derive(Clone, Debug)]
 pub struct Voice {
-    pub note: u8,
+    pub note: Note,
     pub loop_start_percent: f32,
     pub played: f32,
     pub volume: Volume,

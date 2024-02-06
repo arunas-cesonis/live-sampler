@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use nih_plug::prelude::*;
+use nih_plug_vizia::vizia::entity;
 use nih_plug_vizia::vizia::prelude::Role::Time;
 use nih_plug_vizia::ViziaState;
 use num_traits::ToPrimitive;
@@ -10,8 +11,8 @@ use num_traits::ToPrimitive;
 use tikv_jemallocator::Jemalloc;
 
 use crate::common_types::{
-    Info, InitParams, LoopModeParam, Params as SamplerParams, RecordingMode,
-    VersionedWaveformSummary,
+    Info, InitParams, LoopModeParam, MIDIChannelParam, Note, Params as SamplerParams,
+    RecordingMode, VersionedWaveformSummary,
 };
 use crate::editor_vizia::DebugData;
 use crate::sampler::{LoopMode, Sampler};
@@ -47,6 +48,203 @@ pub struct AudioSampler {
     waveform_summary: Arc<VersionedWaveformSummary>,
     last_frame_recorded: usize,
     last_waveform_updated: usize,
+    active_notes: [[i16; 256]; 16],
+}
+
+const PEAK_METER_DECAY_MS: f64 = 150.0;
+
+impl Plugin for AudioSampler {
+    const NAME: &'static str = "Audio Sampler";
+    const VENDOR: &'static str = "seunje";
+    const URL: &'static str = "https://github.com/arunas-cesonis/live-sampler";
+    const EMAIL: &'static str = "";
+    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+    const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[
+        AudioIOLayout {
+            main_input_channels: NonZeroU32::new(2),
+            main_output_channels: NonZeroU32::new(2),
+
+            aux_input_ports: &[],
+            aux_output_ports: &[],
+            names: PortNames::const_default(),
+        },
+        AudioIOLayout {
+            main_input_channels: NonZeroU32::new(1),
+            main_output_channels: NonZeroU32::new(1),
+            ..AudioIOLayout::const_default()
+        },
+    ];
+    const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
+    const SAMPLE_ACCURATE_AUTOMATION: bool = true;
+    type SysExMessage = SysEx;
+
+    type BackgroundTask = ();
+
+    fn reset(&mut self) {
+        self.last_waveform_updated = 0;
+        self.last_frame_recorded = 0;
+        self.sampler.reset();
+        self.active_notes.iter_mut().for_each(|v| v.fill(0));
+    }
+
+    fn params(&self) -> Arc<dyn Params> {
+        self.params.clone()
+    }
+
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        // Using vizia as Iced doesn't support drawing bitmap images under OpenGL
+
+        let data = editor_vizia::Data {
+            params: self.params.clone(),
+            debug_data_out: self.debug_data_out.clone(),
+            xy: (0.0, 0.0),
+            y: 0.0,
+            x: 0.0,
+            peak_meter: self.peak_meter.clone(),
+        };
+
+        editor_vizia::create(self.params.editor_state.clone(), data)
+    }
+
+    fn initialize(
+        &mut self,
+        audio_io_layout: &AudioIOLayout,
+        buffer_config: &BufferConfig,
+        _context: &mut impl InitContext<Self>,
+    ) -> bool {
+        self.audio_io_layout = audio_io_layout.clone();
+        self.sample_rate = buffer_config.sample_rate;
+        self.sampler = Sampler::new(self.channel_count(), &InitParams::default());
+        self.peak_meter_decay_weight = 0.25f64
+            .powf((buffer_config.sample_rate as f64 * PEAK_METER_DECAY_MS / 1000.0).recip())
+            as f32;
+        true
+    }
+
+    fn process(
+        &mut self,
+        buffer: &mut Buffer,
+        _aux: &mut AuxiliaryBuffers,
+        context: &mut impl ProcessContext<Self>,
+    ) -> ProcessStatus {
+        let mut next_event = context.next_event();
+
+        for (sample_id, channel_samples) in buffer.iter_samples().enumerate() {
+            let params = self.sampler_params(sample_id, &context.transport());
+            let channel: Option<u8> = self.params.midi_channel.value().try_into().ok();
+            let params = &params;
+            while let Some(event) = next_event {
+                if event.timing() != sample_id as u32 {
+                    break;
+                }
+                #[cfg(debug_assertions)]
+                nih_warn!("event: {:?}", event);
+                //self.debug_println(format_args!("{:?}", event));
+                //nih_warn!("event {:?}", event);
+                // assert!(event.voice_id().is_none());
+                match event {
+                    NoteEvent::NoteOn {
+                        velocity,
+                        note,
+                        channel: note_channel,
+                        ..
+                    } if channel.iter().all(|x| *x == note_channel) => {
+                        let note = Note::new(note, note_channel);
+                        match note.note {
+                            0 => {
+                                self.set_note_active(&note, true);
+                                self.sampler.start_recording(params);
+                            }
+                            1 => {
+                                self.set_note_active(&note, true);
+                                self.sampler.reverse(params);
+                            }
+                            12..=27 => {
+                                self.set_note_active(&note, true);
+                                let pos = (note.note - 12) as f32 / 16.0;
+                                self.sampler.start_playing(pos, note, velocity, params);
+                            }
+                            _ => (),
+                        };
+                    }
+                    NoteEvent::NoteOff {
+                        note,
+                        channel: note_channel,
+                        ..
+                    } => {
+                        let note = Note::new(note, note_channel);
+                        if self.is_note_active(&note) {
+                            match note.note {
+                                0 => self.sampler.stop_recording(params),
+                                1 => self.sampler.unreverse(params),
+                                12..=27 => self.sampler.stop_playing(note, params),
+                                _ => (),
+                            }
+                            self.set_note_active(&note, false);
+                        }
+                    }
+                    _ => (),
+                }
+
+                #[cfg(debug_assertions)]
+                self.verify_active_notes();
+
+                next_event = context.next_event();
+            }
+
+            if self.sampler.is_recording() {
+                self.last_frame_recorded = self.sampler.get_frames_processed();
+            }
+
+            let mut frame = channel_samples.into_iter().collect::<Vec<_>>();
+            self.sampler.process_frame(&mut frame, params);
+
+            //for sample in channel_samples {
+            //    amplitude += *sample;
+            //}
+            if self.params.editor_state.is_open() {
+                self.update_peak_meter(&mut frame);
+
+                if self.last_frame_recorded > self.last_waveform_updated + self.sample_rate as usize
+                {
+                    self.update_waveform();
+                    self.last_waveform_updated = self.last_frame_recorded;
+                }
+                let debug_message = if self.params.show_debug_data.value() {
+                    let message = mk_message(&self.sampler, params);
+                    message
+                } else {
+                    None
+                };
+                let voice_info = self.sampler.get_voice_info(params);
+                let info = Info {
+                    voices: voice_info,
+                    last_recorded_indices: self.sampler.get_last_recorded_offsets(),
+                    data_len: self.sampler.get_data_len(),
+                    waveform_summary: self.waveform_summary.clone(),
+                };
+                self.debug_data_in.lock().write(DebugData {
+                    info,
+                    message: debug_message,
+                });
+
+                let amplitude = (frame.iter().fold(0.0, |z, x| z + **x) / frame.len() as f32).abs();
+
+                let current_peak_meter = self.peak_meter.load(std::sync::atomic::Ordering::Relaxed);
+                let new_peak_meter = if amplitude > current_peak_meter {
+                    amplitude
+                } else {
+                    current_peak_meter * self.peak_meter_decay_weight
+                        + amplitude * (1.0 - self.peak_meter_decay_weight)
+                };
+
+                self.peak_meter
+                    .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed)
+            }
+        }
+
+        ProcessStatus::Normal
+    }
 }
 
 #[derive(Params)]
@@ -73,6 +271,8 @@ pub struct AudioSamplerParams {
     pub volume: FloatParam,
     #[id = "recording_mode"]
     pub recording_mode: EnumParam<RecordingMode>,
+    #[id = "midi_channel"]
+    pub midi_channel: EnumParam<MIDIChannelParam>,
     /// The editor state, saved together with the parameter state so the custom scaling can be
     /// restored.
     #[persist = "editor-state"]
@@ -116,6 +316,7 @@ impl Default for AudioSamplerParams {
                 },
             )
             .with_unit(" ms"),
+            midi_channel: EnumParam::new("MIDI channel", MIDIChannelParam::All),
             loop_mode: EnumParam::new("Loop mode", LoopModeParam::Loop),
             loop_length_unit: EnumParam::new("Loop length unit", TimeOrRatioUnit::Ratio),
             recording_mode: EnumParam::new("Recording mode", RecordingMode::default()),
@@ -153,6 +354,7 @@ impl Default for AudioSampler {
             waveform_summary: Arc::new(VersionedWaveformSummary::default()),
             last_frame_recorded: 0,
             last_waveform_updated: 0,
+            active_notes: [[0; 256]; 16],
         }
     }
 }
@@ -169,7 +371,66 @@ impl AudioSampler {
         channel_count
     }
 
-    fn loop_length(&self, transport: &Transport) -> TimeOrRatio {
+    #[cfg(debug_assertions)]
+    fn verify_active_notes(&mut self) {
+        let mut ghost_notes: Vec<_> = self
+            .sampler
+            .iter_active_notes()
+            .filter(|note| !self.is_note_active(note))
+            .collect();
+        if !ghost_notes.is_empty() {
+            let data_lengths: Vec<_> = self
+                .sampler
+                .channels
+                .iter()
+                .map(|ch| ch.data.len())
+                .collect::<Vec<_>>();
+            self.sampler
+                .channels
+                .iter_mut()
+                .for_each(|ch| ch.data.clear());
+            eprintln!(
+                "sampler just before death: {:#?}\ndatas have been clear, had lengths: {:?}",
+                self.sampler, data_lengths
+            );
+            let count = self.sampler.channels[0].voices.len();
+            for (i, v) in self.sampler.channels[0].voices.iter().enumerate() {
+                eprintln!("voice[{} of {}]: {:?}", i, count, v);
+            }
+            panic!("Ghost notes: {:?}", ghost_notes);
+        }
+    }
+
+    fn is_note_active(&self, note: &Note) -> bool {
+        self.active_notes[note.channel as usize][note.note as usize] > 0
+    }
+
+    fn set_note_active(&mut self, note: &Note, active: bool) {
+        let current = &mut self.active_notes[note.channel as usize][note.note as usize];
+        if active {
+            *current += 1;
+        } else if *current > 0 {
+            *current -= 1;
+        } else {
+            #[cfg(debug_assertions)]
+            panic!("note off without note on: {:?}", note)
+        }
+    }
+
+    fn get_active_notes(&mut self) -> Vec<Note> {
+        let mut notes = vec![];
+        for channel in 0..16 {
+            for note in 0..256 {
+                if self.active_notes[channel][note] > 0 {
+                    let n = Note::new(note as u8, channel as u8);
+                    notes.push(n);
+                }
+            }
+        }
+        notes
+    }
+
+    fn loop_length(&self) -> TimeOrRatio {
         let value = self.params.loop_length.smoothed.next();
         let unit = self.params.loop_length_unit.value();
         TimeOrRatio::from_unit_value(unit, value)
@@ -182,26 +443,28 @@ impl AudioSampler {
         let attack_samples = (attack_millis * self.sample_rate / 1000.0) as usize;
         let decay_millis = self.params.decay.smoothed.next();
         let decay_samples = (decay_millis * self.sample_rate / 1000.0) as usize;
+
+        let transport = common_types::Transport {
+            sample_rate: self.sample_rate,
+            tempo: transport.tempo.unwrap() as f32,
+            pos_samples: transport.pos_samples().unwrap() as f32,
+            time_sig_numerator: transport.time_sig_numerator.unwrap() as u32,
+            time_sig_denominator: transport.time_sig_denominator.unwrap() as u32,
+        };
         let params = SamplerParams {
             auto_passthru: params_passthru,
             attack_samples,
             loop_mode: LoopMode::from_param(self.params.loop_mode.value()),
-            loop_length: self.loop_length(transport),
+            loop_length: self.loop_length(),
             start_offset_percent: self.params.start_offset.value(),
             decay_samples,
             speed: params_speed,
             recording_mode: self.params.recording_mode.value(),
             fixed_size_samples: TimeValue::bars(1.0)
-                .as_samples_f64(transport)
-                .and_then(|x| x.to_usize())
-                .unwrap_or(0),
-            transport: common_types::Transport {
-                sample_rate: self.sample_rate,
-                tempo: transport.tempo.unwrap() as f32,
-                pos_samples: transport.pos_samples().unwrap() as f32,
-                time_sig_numerator: transport.time_sig_numerator.unwrap() as u32,
-                time_sig_denominator: transport.time_sig_denominator.unwrap() as u32,
-            },
+                .as_samples(&transport)
+                .to_usize()
+                .expect("failed converting value for fixed_size_samples from f32 to usize"),
+            transport,
             sample_id,
         };
         params
@@ -229,196 +492,51 @@ impl AudioSampler {
     }
 }
 
-const PEAK_METER_DECAY_MS: f64 = 150.0;
-
-impl Plugin for AudioSampler {
-    const NAME: &'static str = "Audio Sampler";
-    const VENDOR: &'static str = "seunje";
-    const URL: &'static str = "https://github.com/arunas-cesonis/live-sampler";
-    const EMAIL: &'static str = "";
-    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-    const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[
-        AudioIOLayout {
-            main_input_channels: NonZeroU32::new(2),
-            main_output_channels: NonZeroU32::new(2),
-
-            aux_input_ports: &[],
-            aux_output_ports: &[],
-            names: PortNames::const_default(),
-        },
-        AudioIOLayout {
-            main_input_channels: NonZeroU32::new(1),
-            main_output_channels: NonZeroU32::new(1),
-            ..AudioIOLayout::const_default()
-        },
-    ];
-    const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
-    const SAMPLE_ACCURATE_AUTOMATION: bool = true;
-    type SysExMessage = SysEx;
-
-    type BackgroundTask = ();
-
-    fn params(&self) -> Arc<dyn Params> {
-        self.params.clone()
-    }
-
-    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        // Using vizia as Iced doesn't support drawing bitmap images under OpenGL
-
-        let data = editor_vizia::Data {
-            params: self.params.clone(),
-            debug_data_out: self.debug_data_out.clone(),
-            xy: (0.0, 0.0),
-            y: 0.0,
-            x: 0.0,
-            peak_meter: self.peak_meter.clone(),
-        };
-
-        editor_vizia::create(self.params.editor_state.clone(), data)
-    }
-
-    fn initialize(
-        &mut self,
-        audio_io_layout: &AudioIOLayout,
-        buffer_config: &BufferConfig,
-        _context: &mut impl InitContext<Self>,
-    ) -> bool {
-        self.audio_io_layout = audio_io_layout.clone();
-        self.sample_rate = buffer_config.sample_rate;
-        self.sampler = Sampler::new(self.channel_count(), &InitParams::default());
-        self.peak_meter_decay_weight = 0.25f64
-            .powf((buffer_config.sample_rate as f64 * PEAK_METER_DECAY_MS / 1000.0).recip())
-            as f32;
-        true
-    }
-
-    fn reset(&mut self) {
-        self.sampler = Sampler::new(self.channel_count(), &InitParams::default());
-    }
-
-    fn process(
-        &mut self,
-        buffer: &mut Buffer,
-        _aux: &mut AuxiliaryBuffers,
-        context: &mut impl ProcessContext<Self>,
-    ) -> ProcessStatus {
-        let mut next_event = context.next_event();
-
-        for (sample_id, channel_samples) in buffer.iter_samples().enumerate() {
-            let params = self.sampler_params(sample_id, &context.transport());
-            let params = &params;
-            while let Some(event) = next_event {
-                if event.timing() != sample_id as u32 {
-                    break;
-                }
-                //self.debug_println(format_args!("{:?}", event));
-                //nih_warn!("event {:?}", event);
-                // assert!(event.voice_id().is_none());
-                match event {
-                    NoteEvent::NoteOn { velocity, note, .. } => match note {
-                        0 => self.sampler.start_recording(params),
-                        1 => self.sampler.reverse(params),
-                        12..=27 => {
-                            let pos = (note - 12) as f32 / 16.0;
-                            self.sampler.start_playing(pos, note, velocity, params);
-                        }
-                        _ => (),
-                    },
-                    NoteEvent::NoteOff { note, .. } => match note {
-                        0 => self.sampler.stop_recording(params),
-                        1 => self.sampler.unreverse(params),
-                        12..=27 => self.sampler.stop_playing(note, params),
-                        _ => (),
-                    },
-                    _ => (),
-                }
-                next_event = context.next_event();
-            }
-
-            if self.sampler.is_recording() {
-                self.last_frame_recorded = self.sampler.get_frames_processed();
-            }
-
-            let mut frame = channel_samples.into_iter().collect::<Vec<_>>();
-            self.sampler.process_frame(&mut frame, params);
-
-            //for sample in channel_samples {
-            //    amplitude += *sample;
-            //}
-            if self.params.editor_state.is_open() {
-                self.update_peak_meter(&mut frame);
-
-                if self.last_frame_recorded > self.last_waveform_updated + self.sample_rate as usize
-                {
-                    self.update_waveform();
-                    self.last_waveform_updated = self.last_frame_recorded;
-                }
-                let debug_message = if self.params.show_debug_data.value() {
-                    let message = mk_message(&self.sampler, params, context.transport());
-                    message
-                } else {
-                    None
-                };
-                let voice_info = self.sampler.get_voice_info(params);
-                let info = Info {
-                    voices: voice_info,
-                    last_recorded_indices: self.sampler.get_last_recorded_offsets(),
-                    data_len: self.sampler.get_data_len(),
-                    waveform_summary: self.waveform_summary.clone(),
-                };
-                self.debug_data_in.lock().write(DebugData {
-                    info,
-                    message: debug_message,
-                });
-
-                let amplitude = (frame.iter().fold(0.0, |z, x| z + **x) / frame.len() as f32).abs();
-
-                let current_peak_meter = self.peak_meter.load(std::sync::atomic::Ordering::Relaxed);
-                let new_peak_meter = if amplitude > current_peak_meter {
-                    amplitude
-                } else {
-                    current_peak_meter * self.peak_meter_decay_weight
-                        + amplitude * (1.0 - self.peak_meter_decay_weight)
-                };
-
-                self.peak_meter
-                    .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed)
-            }
-        }
-
-        ProcessStatus::Normal
-    }
-}
-
-fn mk_message(sampler: &Sampler, params: &SamplerParams, transport: &Transport) -> Option<String> {
-    let pos_samples = transport.pos_samples()?;
-    let pos_beats = transport.pos_beats()?;
-    let samples_per_bar = TimeValue::bars(1.0).as_samples_f64(transport)?;
-    let bar_start_pos_beats = transport.bar_start_pos_beats()?;
-    let current_bar = (pos_samples as f64 / samples_per_bar).floor();
+fn mk_message(sampler: &Sampler, params: &SamplerParams) -> Option<String> {
+    let pos_samples = params.transport.pos_samples;
+    let samples_per_bar = TimeValue::bars(1.0).as_samples(&params.transport);
+    let current_bar = (pos_samples / samples_per_bar).floor();
     let mut tmp = vec![];
-    tmp.push(("pos_samples", format!("{:.3}", pos_samples)));
     tmp.push((
-        "loop_length_samples",
-        format!(
-            "{:.3}",
-            sampler::loop_length(params, sampler.get_data_len())
-        ),
+        "transport_pos_samples",
+        format!("{:.3}", params.transport.pos_samples),
     ));
-    tmp.push(("pos_beats", format!("{:.3}", pos_beats)));
+    tmp.push((
+        "sample_rate",
+        format!("{:.3}", params.transport.sample_rate),
+    ));
+    tmp.push(("tempo", format!("{:.3}", params.transport.tempo)));
+    tmp.push((
+        "time_sig_numerator",
+        format!("{:.3}", params.transport.time_sig_numerator),
+    ));
+    tmp.push((
+        "time_sig_denominator",
+        format!("{:.3}", params.transport.time_sig_denominator),
+    ));
+    tmp.push((
+        "fixed_size_samples",
+        format!("{:.3}", params.fixed_size_samples),
+    ));
+    tmp.push((
+        "sampler.channels[0].data.len()",
+        format!("{:.3}", sampler.channels[0].data.len()),
+    ));
     tmp.push(("samples_per_bar", format!("{:.3}", samples_per_bar)));
-    tmp.push(("bar_start_pos_beats", format!("{:.3}", bar_start_pos_beats)));
     tmp.push(("current_bar", format!("{:.3}", current_bar)));
     tmp.push(("is_recording", format!("{:?}", sampler.is_recording())));
-    tmp.push(("errors", format!("{:?}", sampler.get_error_count())));
-
-    tmp.push(("data_len", format!("{:?}", sampler.get_data_len())));
+    tmp.push(("errors", format!("{}", sampler.print_error_info())));
+    tmp.push((
+        "recorder state",
+        format!("{:?}", sampler.channels[0].recorder.state),
+    ));
+    tmp.push((
+        "voices",
+        format!("{}", sampler.get_voice_info(params).len()),
+    ));
     tmp.push((
         "bar_offset",
-        format!(
-            "{:.3}",
-            normalize_offset(pos_samples as f64, samples_per_bar)
-        ),
+        format!("{:.3}", normalize_offset(pos_samples, samples_per_bar)),
     ));
     let mut res = String::new();
     for (k, v) in tmp {

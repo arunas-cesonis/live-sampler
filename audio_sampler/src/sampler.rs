@@ -1,10 +1,8 @@
 use std::fmt::Debug;
 
-use nih_plug::nih_warn;
-
 use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
-use crate::common_types::{InitParams, Params, RecordingMode};
+use crate::common_types::{InitParams, Note, Params, RecordingMode};
 use crate::recorder;
 use crate::recorder::Recorder;
 use crate::time_value::{TimeOrRatio, TimeValue};
@@ -13,14 +11,14 @@ use crate::voice::Voice;
 use crate::volume::Volume;
 
 #[derive(Clone, Debug)]
-struct Channel {
-    data: Vec<f32>,
-    reverse_speed: f32,
-    voices: Vec<Voice>,
-    now: usize,
-    passthru_on: bool,
-    passthru_volume: Volume,
-    recorder: Recorder,
+pub(crate) struct Channel {
+    pub(crate) data: Vec<f32>,
+    pub(crate) reverse_speed: f32,
+    pub(crate) voices: Vec<Voice>,
+    pub(crate) now: usize,
+    pub(crate) passthru_on: bool,
+    pub(crate) passthru_volume: Volume,
+    pub(crate) recorder: Recorder,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -74,6 +72,14 @@ pub fn loop_length(params: &Params, data_len: usize) -> f32 {
 }
 
 impl Channel {
+    fn reset(&mut self) {
+        self.data.clear();
+        self.voices.clear();
+        self.now = 0;
+        self.passthru_on = false;
+        self.passthru_volume = Volume::new(0.0);
+        self.recorder = Recorder::new();
+    }
     fn new(params: &InitParams) -> Self {
         Channel {
             data: vec![],
@@ -94,20 +100,10 @@ impl Channel {
         &self.recorder
     }
 
-    fn log(&self, params: &Params, s: String) {
-        nih_warn!(
-            "now={} voices={} voices(!finished)={} attack={} decay={} passthru_vol={:.2} {}",
-            self.now,
-            self.voices.len(),
-            self.voices.iter().filter(|v| !v.finished).count(),
-            params.attack_samples,
-            params.decay_samples,
-            self.passthru_volume.value(self.now),
-            s
-        );
-    }
-
-    fn finish_voice(now: usize, voice: &mut Voice, params: &Params) {
+    fn finish_voice(&mut self, now: usize, index: usize, params: &Params) {
+        let voice = &mut self.voices[index];
+        assert!(!voice.finished);
+        let channel_index: usize = voice.note.channel.into();
         voice.volume.to(now, params.decay_samples, 0.0);
         voice.finished = true;
     }
@@ -115,15 +111,13 @@ impl Channel {
     pub fn start_playing(
         &mut self,
         loop_start_percent: f32,
-        note: u8,
+        note: Note,
         velocity: f32,
         params: &Params,
     ) {
         if self.data.is_empty() {
             return;
         }
-        #[cfg(debug_asserttions)]
-        eprintln!("start playing now={} note={}", self.now, note);
 
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
         let offset = loop_start_percent * self.data.len() as f32;
@@ -141,24 +135,19 @@ impl Channel {
         voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
         self.handle_passthru(params);
-        self.log(params, format!("START PLAYING note={}", note));
     }
 
-    pub fn stop_playing(&mut self, note: u8, params: &Params) {
-        for i in 0..self.voices.len() {
-            let voice = &mut self.voices[i];
-            if voice.note == note && !voice.finished {
-                Self::finish_voice(self.now, voice, params);
-
-                self.handle_passthru(params);
-                self.log(params, format!("STOP PLAYING note={}", note));
-
-                return;
-            }
-        }
-        // This is not an error as some DAWs will send note off events for notes
+    pub fn stop_playing(&mut self, note: Note, params: &Params) {
+        // None is not an error here as some DAWs will send note off events for notes
         // that were never played, e.g. REAPER
-        nih_warn!("could not find voice {note}")
+        if let Some(i) = self
+            .voices
+            .iter()
+            .position(|v| v.note == note && !v.finished)
+        {
+            self.finish_voice(self.now, i, params);
+            //self.handle_passthru(params);
+        }
     }
 
     pub fn reverse(&mut self, _params: &Params) {
@@ -232,7 +221,7 @@ impl Channel {
 
         // remove voices that are finished and mute
         while let Some(j) = finished.pop() {
-            Self::finish_voice(self.now, &mut self.voices[j], params);
+            self.finish_voice(self.now, j, params);
         }
 
         // update voice volumes and find voices that can be removed (finished and mute)
@@ -287,7 +276,7 @@ impl Channel {
 
 #[derive(Clone, Debug)]
 pub struct Sampler {
-    channels: Vec<Channel>,
+    pub(crate) channels: Vec<Channel>,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -298,6 +287,20 @@ pub struct WaveformSummary {
 }
 
 impl Sampler {
+    pub fn reset(&mut self) {
+        self.channels.iter_mut().for_each(|ch| {
+            ch.reset();
+        });
+    }
+    pub fn print_error_info(&self) -> String {
+        self.channels[0].recorder().print_error_info()
+    }
+    pub fn iter_active_notes(&self) -> impl Iterator<Item = Note> + '_ {
+        self.channels[0]
+            .voices
+            .iter()
+            .filter_map(|v| if !v.finished { Some(v.note) } else { None })
+    }
     pub fn get_waveform_summary(&self, resolution: usize) -> WaveformSummary {
         let data = &self.channels[0].data;
         let step = data.len() as f32 / resolution as f32;
@@ -330,11 +333,11 @@ impl Sampler {
         self.channels.iter_mut().for_each(f)
     }
 
-    pub fn start_playing(&mut self, pos: f32, note: u8, velocity: f32, params: &Params) {
+    pub fn start_playing(&mut self, pos: f32, note: Note, velocity: f32, params: &Params) {
         self.each(|ch| ch.start_playing(pos, note, velocity, params));
     }
 
-    pub fn stop_playing(&mut self, note: u8, params: &Params) {
+    pub fn stop_playing(&mut self, note: Note, params: &Params) {
         self.each(|ch| ch.stop_playing(note, params));
     }
 
@@ -411,12 +414,5 @@ impl Sampler {
                 VoiceInfo { start, end, pos }
             })
             .collect()
-    }
-
-    pub fn get_error_count(&self) -> usize {
-        self.channels
-            .iter()
-            .map(|x| x.recorder.errors().len())
-            .sum()
     }
 }
