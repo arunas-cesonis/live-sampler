@@ -220,7 +220,7 @@ fn rectangle_path(x: f32, y: f32, w: f32, h: f32) -> Path {
 }
 // disabling various position drawings because they are a bit buggy at the moment
 // and do not look very good
-const DISABLE_DRAWING_INDICES: bool = true;
+const DISABLE_DRAWING_INDICES: bool = false;
 
 impl<X> View for WaveformView<X>
 where

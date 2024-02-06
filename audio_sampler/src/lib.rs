@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use nih_plug::prelude::*;
+use nih_plug_vizia::vizia::entity;
 use nih_plug_vizia::vizia::prelude::Role::Time;
 use nih_plug_vizia::ViziaState;
 use num_traits::ToPrimitive;
@@ -47,7 +48,7 @@ pub struct AudioSampler {
     waveform_summary: Arc<VersionedWaveformSummary>,
     last_frame_recorded: usize,
     last_waveform_updated: usize,
-    active_notes: [[bool; 256]; 16],
+    active_notes: [[i16; 256]; 16],
 }
 
 const PEAK_METER_DECAY_MS: f64 = 150.0;
@@ -83,7 +84,7 @@ impl Plugin for AudioSampler {
         self.last_waveform_updated = 0;
         self.last_frame_recorded = 0;
         self.sampler.reset();
-        self.active_notes.iter_mut().for_each(|v| v.fill(false));
+        self.active_notes.iter_mut().for_each(|v| v.fill(0));
     }
 
     fn params(&self) -> Arc<dyn Params> {
@@ -353,7 +354,7 @@ impl Default for AudioSampler {
             waveform_summary: Arc::new(VersionedWaveformSummary::default()),
             last_frame_recorded: 0,
             last_waveform_updated: 0,
-            active_notes: [[false; 256]; 16],
+            active_notes: [[0; 256]; 16],
         }
     }
 }
@@ -378,23 +379,49 @@ impl AudioSampler {
             .filter(|note| !self.is_note_active(note))
             .collect();
         if !ghost_notes.is_empty() {
+            let data_lengths: Vec<_> = self
+                .sampler
+                .channels
+                .iter()
+                .map(|ch| ch.data.len())
+                .collect::<Vec<_>>();
+            self.sampler
+                .channels
+                .iter_mut()
+                .for_each(|ch| ch.data.clear());
+            eprintln!(
+                "sampler just before death: {:#?}\ndatas have been clear, had lengths: {:?}",
+                self.sampler, data_lengths
+            );
+            let count = self.sampler.channels[0].voices.len();
+            for (i, v) in self.sampler.channels[0].voices.iter().enumerate() {
+                eprintln!("voice[{} of {}]: {:?}", i, count, v);
+            }
             panic!("Ghost notes: {:?}", ghost_notes);
         }
     }
 
     fn is_note_active(&self, note: &Note) -> bool {
-        self.active_notes[note.channel as usize][note.note as usize]
+        self.active_notes[note.channel as usize][note.note as usize] > 0
     }
 
     fn set_note_active(&mut self, note: &Note, active: bool) {
-        self.active_notes[note.channel as usize][note.note as usize] = active;
+        let current = &mut self.active_notes[note.channel as usize][note.note as usize];
+        if active {
+            *current += 1;
+        } else if *current > 0 {
+            *current -= 1;
+        } else {
+            #[cfg(debug_assertions)]
+            panic!("note off without note on: {:?}", note)
+        }
     }
 
     fn get_active_notes(&mut self) -> Vec<Note> {
         let mut notes = vec![];
         for channel in 0..16 {
             for note in 0..256 {
-                if self.active_notes[channel][note] {
+                if self.active_notes[channel][note] > 0 {
                     let n = Note::new(note as u8, channel as u8);
                     notes.push(n);
                 }
