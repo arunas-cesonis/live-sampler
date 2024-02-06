@@ -553,6 +553,8 @@ impl ClapPlugin for AudioSampler {
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
     const CLAP_FEATURES: &'static [ClapFeature] = &[
         ClapFeature::AudioEffect,
+        ClapFeature::Instrument,
+        ClapFeature::Glitch,
         ClapFeature::Stereo,
         ClapFeature::Mono,
         ClapFeature::Utility,

@@ -95,12 +95,15 @@ pub enum LoopModeParam {
     PlayOnce,
     #[name = "Loop"]
     Loop,
+    #[name = "Ping pong"]
+    PingPong,
 }
 
 impl LoopMode {
     pub fn from_param(param: LoopModeParam) -> Self {
         match param {
             LoopModeParam::PlayOnce => LoopMode::PlayOnce,
+            LoopModeParam::PingPong => LoopMode::PingPong,
             LoopModeParam::Loop => LoopMode::Loop,
         }
     }

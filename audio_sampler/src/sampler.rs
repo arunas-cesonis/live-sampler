@@ -103,6 +103,7 @@ impl Channel {
     fn finish_voice(&mut self, now: usize, index: usize, params: &Params) {
         let voice = &mut self.voices[index];
         assert!(!voice.finished);
+        //eprintln!("now={} stop playing voice={:?}", self.now, voice);
         let channel_index: usize = voice.note.channel.into();
         voice.volume.to(now, params.decay_samples, 0.0);
         voice.finished = true;
@@ -132,6 +133,7 @@ impl Channel {
             finished: false,
             last_sample_index: 0,
         };
+        eprintln!("now={} start playing voice={:?}", self.now, voice);
         voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
         self.handle_passthru(params);
@@ -146,7 +148,7 @@ impl Channel {
             .position(|v| v.note == note && !v.finished)
         {
             self.finish_voice(self.now, i, params);
-            //self.handle_passthru(params);
+            self.handle_passthru(params);
         }
     }
 
@@ -189,10 +191,20 @@ impl Channel {
         }
     }
 
+    fn should_remove_voice(voice: &Voice, params: &Params) -> bool {
+        voice.volume.is_static_and_mute() && voice.finished
+    }
+
     fn play_voices(&mut self, params: &Params) -> f32 {
         let mut output = 0.0;
         let mut finished: Vec<usize> = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
+            // prevents voice playing 1 unnecessary
+            // sample at the end when voice is cancelled by note and does not have any decay time
+            if Self::should_remove_voice(voice, params) {
+                continue;
+            }
+
             let speed = self.reverse_speed * params.speed;
 
             let len_f32 = self.data.len() as f32;
@@ -206,6 +218,10 @@ impl Channel {
             voice.clip.update_offset(offset);
             let index = voice.clip.sample_index(self.now, self.data.len());
             let value = self.data[index] * voice.volume.value(self.now);
+            // eprintln!(
+            //     "self.now={} play value={} voice={:?}",
+            //     self.now, value, voice
+            // );
 
             output += value;
             voice.played += speed;
@@ -269,6 +285,7 @@ impl Channel {
             self.handle_passthru(params);
         }
 
+        //eprintln!("self.now={} play output={}", self.now, output);
         self.now += 1;
         *io = output;
     }

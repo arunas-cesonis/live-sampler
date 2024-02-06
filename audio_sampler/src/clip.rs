@@ -2,11 +2,23 @@ use crate::utils::normalize_offset;
 
 #[derive(Debug, Clone)]
 pub struct Clip {
+    // base index of where clip plays from
     offset: usize,
+    // length of the slice played
     length: usize,
+    // accumulated offset adjustment
     local_adjustment: usize,
+    // sample number of when the clip was last updated
     updated_at: usize,
+    // speed of the clip
     speed: f32,
+    //
+    // given the above and current time 'now' sample index played is calculated as
+    //
+    // (((now - updated_at) * speed + local_adjustment) % length + offset) % data.len()
+    //
+    // where in the calculation the '%" is modulo operator which flips negative values to positive
+    // 'mirroring' against the second argument, e.g. -5 % 3 = -2 + 3 = 1
 }
 
 impl Clip {
