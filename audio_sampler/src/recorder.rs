@@ -3,14 +3,9 @@ use crate::common_types::RecordingMode;
 use crate::utils::normalize_offset;
 
 #[derive(Clone, Debug, PartialEq)]
-enum State {
-    Triggered {
-        write: usize,
-    },
-    AlwaysOn {
-        length: usize,
-        last_recorded_offset: Option<usize>,
-    },
+pub(crate) enum State {
+    Triggered { write: usize },
+    AlwaysOn { last_recorded_offset: Option<usize> },
     Idle,
 }
 
@@ -65,34 +60,38 @@ pub enum Triggers {
     Stop,
 }
 
-#[derive(Clone, Debug)]
-pub enum RecorderError {
-    SkippedSamples { i: usize, prev_offset: usize },
-    NegativeTransportPos { transport_pos_samples: f32 },
-    IncorrectState,
+#[derive(Default, Clone, Debug)]
+pub struct RecorderErrors {
+    skipped_samples: Vec<(usize, usize)>,
+    negative_transport_pos: Vec<f32>,
+    incorrect_state: Vec<(State, State)>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Recorder {
-    state: State,
-    errors: Vec<RecorderError>,
+    pub(crate) state: State,
+    pub(crate) errors: RecorderErrors,
 }
 
 impl Recorder {
     pub fn new() -> Self {
         Self {
             state: State::Idle,
-            errors: vec![],
+            errors: RecorderErrors::default(),
         }
     }
 
-    pub fn errors(&self) -> &[RecorderError] {
-        &self.errors
+    pub fn print_error_info(&self) -> String {
+        format!(
+            "skip: {:?}, neg: {:?}, inc: {:?}",
+            self.errors.skipped_samples.len(),
+            self.errors.negative_transport_pos.len(),
+            self.errors.incorrect_state.len()
+        )
     }
 
     fn always_on(&mut self, data: &mut Vec<f32>, params: &Params) {
         self.state = State::AlwaysOn {
-            length: params.fixed_size_samples,
             last_recorded_offset: None,
         };
     }
@@ -108,7 +107,9 @@ impl Recorder {
                 self.state = State::Idle;
             }
             _ => {
-                self.errors.push(RecorderError::IncorrectState);
+                self.errors
+                    .incorrect_state
+                    .push((State::Triggered { write: 0 }, self.state.clone()));
             }
         }
     }
@@ -139,7 +140,9 @@ impl Recorder {
                 self.state = State::Triggered { write: 0 };
             }
             _ => {
-                self.errors.push(RecorderError::IncorrectState);
+                self.errors
+                    .incorrect_state
+                    .push((State::Idle, self.state.clone()));
             }
         }
     }
@@ -176,27 +179,27 @@ impl Recorder {
                 *write += 1;
             }
             State::AlwaysOn {
-                length,
                 last_recorded_offset,
             } => {
                 let transport_pos_samples = params.transport_pos_samples;
                 data.resize(params.fixed_size_samples, 0.0);
                 if transport_pos_samples < 0.0 {
-                    self.errors.push(RecorderError::NegativeTransportPos {
-                        transport_pos_samples,
-                    });
+                    self.errors
+                        .negative_transport_pos
+                        .push(transport_pos_samples);
                 }
                 let i = normalize_offset(
                     transport_pos_samples + params.sample_id as f32,
-                    *length as f32,
+                    params.fixed_size_samples as f32,
                 );
                 assert!(i >= 0.0, "i={}", i);
                 let i = i as usize;
                 data[i] = sample;
                 if let Some(prev_offset) = *last_recorded_offset {
-                    if !(i == 1 + prev_offset || i == 0 && prev_offset == *length - 1) {
-                        self.errors
-                            .push(RecorderError::SkippedSamples { i, prev_offset });
+                    if !(i == 1 + prev_offset
+                        || i == 0 && prev_offset == params.fixed_size_samples - 1)
+                    {
+                        self.errors.skipped_samples.push((i, prev_offset));
                     }
                 }
                 *last_recorded_offset = Some(i);

@@ -13,8 +13,71 @@ pub enum LoopMode {
 }
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
+pub enum MIDIChannelParam {
+    #[name = "All"]
+    All,
+    #[name = "1"]
+    Channel1,
+    #[name = "2"]
+    Channel2,
+    #[name = "3"]
+    Channel3,
+    #[name = "4"]
+    Channel4,
+    #[name = "5"]
+    Channel5,
+    #[name = "6"]
+    Channel6,
+    #[name = "7"]
+    Channel7,
+    #[name = "8"]
+    Channel8,
+    #[name = "9"]
+    Channel9,
+    #[name = "10"]
+    Channel10,
+    #[name = "11"]
+    Channel11,
+    #[name = "12"]
+    Channel12,
+    #[name = "13"]
+    Channel13,
+    #[name = "14"]
+    Channel14,
+    #[name = "15"]
+    Channel15,
+    #[name = "16"]
+    Channel16,
+}
+
+impl TryInto<u8> for MIDIChannelParam {
+    type Error = ();
+    fn try_into(self) -> Result<u8, ()> {
+        Ok(match self {
+            MIDIChannelParam::All => return Err(()),
+            MIDIChannelParam::Channel1 => 0,
+            MIDIChannelParam::Channel2 => 1,
+            MIDIChannelParam::Channel3 => 2,
+            MIDIChannelParam::Channel4 => 3,
+            MIDIChannelParam::Channel5 => 4,
+            MIDIChannelParam::Channel6 => 5,
+            MIDIChannelParam::Channel7 => 6,
+            MIDIChannelParam::Channel8 => 7,
+            MIDIChannelParam::Channel9 => 8,
+            MIDIChannelParam::Channel10 => 9,
+            MIDIChannelParam::Channel11 => 10,
+            MIDIChannelParam::Channel12 => 11,
+            MIDIChannelParam::Channel13 => 12,
+            MIDIChannelParam::Channel14 => 13,
+            MIDIChannelParam::Channel15 => 14,
+            MIDIChannelParam::Channel16 => 15,
+        })
+    }
+}
+
+#[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum RecordingMode {
-    #[name = "Only when C-2 is held"]
+    #[name = "Only when C-2 is on"]
     NoteTriggered,
     #[name = "Always (last bar)"]
     AlwaysOn,
@@ -123,4 +186,28 @@ pub struct Info {
     pub last_recorded_indices: Vec<Option<usize>>,
     pub data_len: usize,
     pub waveform_summary: Arc<VersionedWaveformSummary>,
+}
+
+#[derive(Hash, PartialEq, Clone, Copy, Default, Debug)]
+pub struct Note {
+    pub note: u8,
+    pub channel: u8,
+}
+
+impl Note {
+    pub fn new(note: u8, channel: u8) -> Self {
+        debug_assert!(channel <= 15);
+        Self { note, channel }
+    }
+
+    pub fn into_u64(self) -> u64 {
+        (self.note as u64) << 8 | self.channel as u64
+    }
+
+    pub fn from_u64(value: u64) -> Self {
+        Self {
+            note: (value >> 8) as u8,
+            channel: value as u8,
+        }
+    }
 }
