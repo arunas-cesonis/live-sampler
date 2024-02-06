@@ -1,7 +1,5 @@
 use std::fmt::Debug;
 
-use nih_plug::nih_warn;
-
 use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
 use crate::common_types::{InitParams, Note, Params, RecordingMode};
@@ -13,14 +11,14 @@ use crate::voice::Voice;
 use crate::volume::Volume;
 
 #[derive(Clone, Debug)]
-struct Channel {
-    data: Vec<f32>,
-    reverse_speed: f32,
-    voices: Vec<Voice>,
-    now: usize,
-    passthru_on: bool,
-    passthru_volume: Volume,
-    recorder: Recorder,
+pub(crate) struct Channel {
+    pub(crate) data: Vec<f32>,
+    pub(crate) reverse_speed: f32,
+    pub(crate) voices: Vec<Voice>,
+    pub(crate) now: usize,
+    pub(crate) passthru_on: bool,
+    pub(crate) passthru_volume: Volume,
+    pub(crate) recorder: Recorder,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -74,6 +72,14 @@ pub fn loop_length(params: &Params, data_len: usize) -> f32 {
 }
 
 impl Channel {
+    fn reset(&mut self) {
+        self.data.clear();
+        self.voices.clear();
+        self.now = 0;
+        self.passthru_on = false;
+        self.passthru_volume = Volume::new(0.0);
+        self.recorder = Recorder::new();
+    }
     fn new(params: &InitParams) -> Self {
         Channel {
             data: vec![],
@@ -94,19 +100,6 @@ impl Channel {
         &self.recorder
     }
 
-    fn log(&self, params: &Params, s: String) {
-        nih_warn!(
-            "now={} voices={} voices(!finished)={} attack={} decay={} passthru_vol={:.2} {}",
-            self.now,
-            self.voices.len(),
-            self.voices.iter().filter(|v| !v.finished).count(),
-            params.attack_samples,
-            params.decay_samples,
-            self.passthru_volume.value(self.now),
-            s
-        );
-    }
-
     fn finish_voice(&mut self, now: usize, index: usize, params: &Params) {
         let voice = &mut self.voices[index];
         assert!(!voice.finished);
@@ -125,8 +118,6 @@ impl Channel {
         if self.data.is_empty() {
             return;
         }
-        #[cfg(debug_asserttions)]
-        eprintln!("start playing now={} note={}", self.now, note);
 
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
         let offset = loop_start_percent * self.data.len() as f32;
@@ -144,7 +135,6 @@ impl Channel {
         voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
         self.handle_passthru(params);
-        self.log(params, format!("START PLAYING note={:?}", note));
     }
 
     pub fn stop_playing(&mut self, note: Note, params: &Params) {
@@ -157,7 +147,6 @@ impl Channel {
         {
             self.finish_voice(self.now, i, params);
             //self.handle_passthru(params);
-            self.log(params, format!("STOP PLAYING note={:?}", note));
         }
     }
 
@@ -287,7 +276,7 @@ impl Channel {
 
 #[derive(Clone, Debug)]
 pub struct Sampler {
-    channels: Vec<Channel>,
+    pub(crate) channels: Vec<Channel>,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -298,8 +287,19 @@ pub struct WaveformSummary {
 }
 
 impl Sampler {
+    pub fn reset(&mut self) {
+        self.channels.iter_mut().for_each(|ch| {
+            ch.reset();
+        });
+    }
     pub fn print_error_info(&self) -> String {
         self.channels[0].recorder().print_error_info()
+    }
+    pub fn iter_active_notes(&self) -> impl Iterator<Item = Note> + '_ {
+        self.channels[0]
+            .voices
+            .iter()
+            .filter_map(|v| if !v.finished { Some(v.note) } else { None })
     }
     pub fn get_waveform_summary(&self, resolution: usize) -> WaveformSummary {
         let data = &self.channels[0].data;

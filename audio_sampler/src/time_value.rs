@@ -90,7 +90,7 @@ impl TimeValue {
     pub fn as_samples(&self, transport: &common_types::Transport) -> f32 {
         match self {
             TimeValue::QuarterNotes(quarter_notes) => {
-                calc_quarter_notes_per_bar(transport) * quarter_notes
+                calc_samples_per_quarter_note(transport) * quarter_notes
             }
             TimeValue::Samples(samples) => *samples,
             TimeValue::Seconds(seconds) => *seconds * transport.sample_rate,

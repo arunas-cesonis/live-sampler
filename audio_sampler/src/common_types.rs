@@ -188,35 +188,26 @@ pub struct Info {
     pub waveform_summary: Arc<VersionedWaveformSummary>,
 }
 
-#[repr(transparent)]
-#[derive(PartialEq, Clone, Copy, Default, Debug)]
-pub struct MIDIChannel(u8);
-impl Into<usize> for MIDIChannel {
-    fn into(self) -> usize {
-        self.0.into()
-    }
-}
-impl MIDIChannel {
-    pub fn new(channel: u8) -> Self {
-        assert!(channel <= 16);
-        Self(channel)
-    }
-    pub fn into_usize(self) -> usize {
-        self.into()
-    }
-}
-
-#[derive(PartialEq, Clone, Copy, Default, Debug)]
+#[derive(Hash, PartialEq, Clone, Copy, Default, Debug)]
 pub struct Note {
     pub note: u8,
-    pub channel: MIDIChannel,
+    pub channel: u8,
 }
 
 impl Note {
     pub fn new(note: u8, channel: u8) -> Self {
+        debug_assert!(channel <= 15);
+        Self { note, channel }
+    }
+
+    pub fn into_u64(self) -> u64 {
+        (self.note as u64) << 8 | self.channel as u64
+    }
+
+    pub fn from_u64(value: u64) -> Self {
         Self {
-            note,
-            channel: MIDIChannel::new(channel),
+            note: (value >> 8) as u8,
+            channel: value as u8,
         }
     }
 }
