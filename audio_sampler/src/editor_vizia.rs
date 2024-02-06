@@ -53,8 +53,12 @@ impl Model for Data {
         });
     }
 }
+#[cfg(debug_assertions)]
+const WINDOW_SIZE: (u32, u32) = (640 + 600, 380);
 
+#[cfg(not(debug_assertions))]
 const WINDOW_SIZE: (u32, u32) = (640 + 320, 380);
+
 const WINDOW_SIZEF: (f32, f32) = (WINDOW_SIZE.0 as f32, WINDOW_SIZE.1 as f32);
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
