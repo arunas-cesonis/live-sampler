@@ -4,7 +4,7 @@ use nih_plug::nih_warn;
 
 use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
-use crate::common_types::{InitParams, Params, RecordingMode};
+use crate::common_types::{InitParams, Note, Params, RecordingMode};
 use crate::recorder;
 use crate::recorder::Recorder;
 use crate::time_value::{TimeOrRatio, TimeValue};
@@ -107,7 +107,10 @@ impl Channel {
         );
     }
 
-    fn finish_voice(now: usize, voice: &mut Voice, params: &Params) {
+    fn finish_voice(&mut self, now: usize, index: usize, params: &Params) {
+        let voice = &mut self.voices[index];
+        assert!(!voice.finished);
+        let channel_index: usize = voice.note.channel.into();
         voice.volume.to(now, params.decay_samples, 0.0);
         voice.finished = true;
     }
@@ -115,7 +118,7 @@ impl Channel {
     pub fn start_playing(
         &mut self,
         loop_start_percent: f32,
-        note: u8,
+        note: Note,
         velocity: f32,
         params: &Params,
     ) {
@@ -141,24 +144,21 @@ impl Channel {
         voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
         self.handle_passthru(params);
-        self.log(params, format!("START PLAYING note={}", note));
+        self.log(params, format!("START PLAYING note={:?}", note));
     }
 
-    pub fn stop_playing(&mut self, note: u8, params: &Params) {
-        for i in 0..self.voices.len() {
-            let voice = &mut self.voices[i];
-            if voice.note == note && !voice.finished {
-                Self::finish_voice(self.now, voice, params);
-
-                self.handle_passthru(params);
-                self.log(params, format!("STOP PLAYING note={}", note));
-
-                return;
-            }
-        }
-        // This is not an error as some DAWs will send note off events for notes
+    pub fn stop_playing(&mut self, note: Note, params: &Params) {
+        // None is not an error here as some DAWs will send note off events for notes
         // that were never played, e.g. REAPER
-        nih_warn!("could not find voice {note}")
+        if let Some(i) = self
+            .voices
+            .iter()
+            .position(|v| v.note == note && !v.finished)
+        {
+            self.finish_voice(self.now, i, params);
+            //self.handle_passthru(params);
+            self.log(params, format!("STOP PLAYING note={:?}", note));
+        }
     }
 
     pub fn reverse(&mut self, _params: &Params) {
@@ -232,7 +232,7 @@ impl Channel {
 
         // remove voices that are finished and mute
         while let Some(j) = finished.pop() {
-            Self::finish_voice(self.now, &mut self.voices[j], params);
+            self.finish_voice(self.now, j, params);
         }
 
         // update voice volumes and find voices that can be removed (finished and mute)
@@ -298,6 +298,9 @@ pub struct WaveformSummary {
 }
 
 impl Sampler {
+    pub fn print_error_info(&self) -> String {
+        self.channels[0].recorder().print_error_info()
+    }
     pub fn get_waveform_summary(&self, resolution: usize) -> WaveformSummary {
         let data = &self.channels[0].data;
         let step = data.len() as f32 / resolution as f32;
@@ -330,11 +333,11 @@ impl Sampler {
         self.channels.iter_mut().for_each(f)
     }
 
-    pub fn start_playing(&mut self, pos: f32, note: u8, velocity: f32, params: &Params) {
+    pub fn start_playing(&mut self, pos: f32, note: Note, velocity: f32, params: &Params) {
         self.each(|ch| ch.start_playing(pos, note, velocity, params));
     }
 
-    pub fn stop_playing(&mut self, note: u8, params: &Params) {
+    pub fn stop_playing(&mut self, note: Note, params: &Params) {
         self.each(|ch| ch.stop_playing(note, params));
     }
 
@@ -411,12 +414,5 @@ impl Sampler {
                 VoiceInfo { start, end, pos }
             })
             .collect()
-    }
-
-    pub fn get_error_count(&self) -> usize {
-        self.channels
-            .iter()
-            .map(|x| x.recorder.errors().len())
-            .sum()
     }
 }
