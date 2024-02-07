@@ -2,12 +2,21 @@
 mod test {
     use std::f32::consts::PI;
 
-    use crate::common_types::{InitParams, Params, RecordingMode, Transport};
+    use crate::common_types::{InitParams, Note, Params, RecordingMode, Transport};
     use crate::sampler::{LoopMode, Sampler};
     use crate::time_value::{TimeOrRatio, TimeValue};
 
     pub fn one_to_ten() -> Vec<f32> {
-        (0..10).map(|x| x as f32).collect()
+        (1..=10).map(|x| x as f32).collect()
+    }
+    pub fn one_to_five() -> Vec<f32> {
+        (1..=5).map(|x| x as f32).collect()
+    }
+    pub fn ten_tens() -> Vec<f32> {
+        vec![100.0; 10]
+    }
+    pub fn five_tens() -> Vec<f32> {
+        vec![100.0; 5]
     }
 
     fn base_params() -> Params {
@@ -68,9 +77,12 @@ mod test {
                     for &(_, cmd) in &todo {
                         match cmd {
                             Cmd::StartPlaying { start_percent: pos } => {
-                                self.sampler.start_playing(pos, 11, 1.0, &self.params)
+                                self.sampler
+                                    .start_playing(pos, Note::new(11, 0), 1.0, &self.params)
                             }
-                            Cmd::StopPlaying => self.sampler.stop_playing(11, &self.params),
+                            Cmd::StopPlaying => {
+                                self.sampler.stop_playing(Note::new(11, 0), &self.params)
+                            }
                             Cmd::StartRecording => self.sampler.start_recording(&self.params),
                             Cmd::StopRecording => self.sampler.stop_recording(&self.params),
                             Cmd::SetLoopLength { length_percent } => {
@@ -100,27 +112,20 @@ mod test {
             loop_mode: LoopMode::PlayOnce,
             attack_samples: 0,
             decay_samples: 0,
-            loop_length: TimeOrRatio::Ratio(1.0),
+            loop_length: TimeOrRatio::Ratio(0.5),
             ..base_params()
         };
-        let ten_tens = vec![100.0; 10];
-        let five_tens = vec![100.0; 5];
-        let one_to_ten = one_to_ten();
-        let one_to_five = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let input = vec![one_to_ten.clone(), ten_tens.clone()].concat();
+        let input = vec![one_to_ten(), ten_tens()].concat();
 
         // record first 10 samples, then PlayOnce with loop length 50%
-        let mut host = Host::new(Params {
-            loop_length: TimeOrRatio::Ratio(0.5),
-            ..params.clone()
-        });
+        let mut host = Host::new(params.clone());
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
         host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
-        let output = host.run_input(input.clone());
+        let output = host.run_input(input.clone().clone());
         assert_eq!(
             output,
-            vec![one_to_ten.clone(), one_to_five.clone(), five_tens.clone()].concat(),
+            vec![one_to_ten(), one_to_five(), five_tens()].concat(),
         );
 
         // record first 10 samples, then PlayOnce with loop length 100%
@@ -132,10 +137,7 @@ mod test {
         host.schedule(10, Cmd::StopRecording);
         host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(input.clone());
-        assert_eq!(
-            output,
-            vec![one_to_ten.clone(), one_to_ten.clone()].concat()
-        );
+        assert_eq!(output, vec![one_to_ten(), one_to_ten()].concat());
 
         // record first 10 samples, then wait for 2 samples and PlayOnce with loop length 50%
         let mut host = Host::new(Params {
@@ -149,7 +151,7 @@ mod test {
         assert_eq!(
             output,
             vec![
-                one_to_ten.clone(),
+                one_to_ten(),
                 vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 100.0, 100.0, 100.0]
             ]
             .concat()
@@ -164,11 +166,11 @@ mod test {
         host.schedule(10, Cmd::StopRecording);
         host.schedule(12, Cmd::StartPlaying { start_percent: 0.0 });
         let tmp = host.clone();
-        let output = host.run_input(vec![input.clone(), ten_tens.clone()].concat());
+        let output = host.run_input(vec![input.clone(), ten_tens()].concat());
         assert_eq!(
             output,
             vec![
-                one_to_ten.clone(),
+                one_to_ten(),
                 vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
                 vec![9.0, 10.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
             ]
@@ -178,13 +180,13 @@ mod test {
         // same as above, but backwards
         let mut host = tmp;
         host.params.speed = -1.0;
-        let output = host.run_input(vec![input.clone(), ten_tens.clone()].concat());
+        let output = host.run_input(vec![input.clone(), ten_tens()].concat());
         assert_eq!(
             output,
             vec![
-                one_to_ten.clone(),
-                vec![100.0, 100.0, 10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0],
-                vec![2.0, 1.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+                one_to_ten(),
+                vec![100.0, 100.0, 10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0],
+                vec![1.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
             ]
             .concat()
         );
@@ -410,11 +412,8 @@ mod test {
             speed: -1.0,
             ..base_params()
         };
-        let ten_tens = vec![100.0; 10];
         let _five_tens = vec![100.0; 5];
-        let one_to_ten = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-        let one_to_five = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let input = vec![one_to_ten.clone(), ten_tens.clone()].concat();
+        let input = vec![one_to_ten(), ten_tens()].concat();
 
         // rec 10, play rev 10
         let mut host = Host::new(params.clone());
@@ -424,11 +423,7 @@ mod test {
         let output = host.run_input(input.clone());
         assert_eq!(
             output,
-            vec![
-                one_to_ten.clone(),
-                one_to_ten.clone().into_iter().rev().collect()
-            ]
-            .concat()
+            vec![one_to_ten(), one_to_ten().into_iter().rev().collect()].concat()
         );
 
         // rec 10, play rev 2x10 in 20
@@ -436,17 +431,27 @@ mod test {
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
         host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
-        let output = host.run_input(vec![input.clone(), ten_tens.clone()].concat());
+        let output = host.run_input(vec![input.clone(), ten_tens()].concat());
         assert_eq!(
             output,
             vec![
-                one_to_ten.clone(),
-                one_to_ten.clone().into_iter().rev().collect(),
-                one_to_ten.clone().into_iter().rev().collect(),
+                one_to_ten(),
+                one_to_ten().into_iter().rev().collect(),
+                one_to_ten().into_iter().rev().collect(),
             ]
-            .concat()
+            .concat(),
         );
-
+    }
+    #[test]
+    fn test_looping_rev3() {
+        let params = Params {
+            loop_mode: LoopMode::Loop,
+            attack_samples: 0,
+            decay_samples: 0,
+            loop_length: TimeOrRatio::Ratio(1.0),
+            speed: -1.0,
+            ..base_params()
+        };
         // rec 10, play rev 2x5 in 20
         let mut host = Host::new(Params {
             loop_length: TimeOrRatio::Ratio(0.5),
@@ -456,17 +461,23 @@ mod test {
         host.schedule(10, Cmd::StopRecording);
         host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         host.schedule(20, Cmd::StopPlaying);
-        let output = host.run_input(vec![input.clone(), ten_tens.clone()].concat());
-        assert_eq!(
-            output,
-            vec![
-                one_to_ten.clone(),
-                one_to_five.clone().into_iter().rev().collect(),
-                one_to_five.clone().into_iter().rev().collect(),
-                ten_tens.clone(),
-            ]
-            .concat()
-        );
+        let input = vec![one_to_ten(), ten_tens()].concat();
+        let input = vec![input.clone(), ten_tens()].concat();
+        let output = host.run_input(input.iter().copied());
+        let expected = vec![
+            one_to_ten(),
+            one_to_five().into_iter().rev().collect(),
+            one_to_five().into_iter().rev().collect(),
+            ten_tens(),
+        ]
+        .concat();
+        for i in 0..output.len() {
+            eprintln!(
+                "i: {} input: {} output: {} expected: {} ",
+                i, input[i], output[i], expected[i]
+            );
+        }
+        assert_eq!(output, expected);
     }
 
     #[test]
