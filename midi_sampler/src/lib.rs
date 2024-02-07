@@ -1,7 +1,6 @@
 extern crate core;
 
 //mod event_sampler3;
-mod count_map;
 mod event_sampler6;
 mod utils;
 
