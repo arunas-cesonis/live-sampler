@@ -1,12 +1,10 @@
-This project contains two CLAP/VST3 plugins that can be used to record and play back a buffer.
+This project contains two very generically named CLAP/VST3 plugins that can be used to record and play back a buffer.
 audio-sampler operates on audio buffers, midi-sampler operates on midi buffers.
 
+### audio-sampler
+Records audio and plays it back in a loop. Behavior is controlled by MIDI notes:
 
 ![image info](./docs/screenshot.png)
-
-*** audio-sampler ***
-
-MIDI bindings
 - Note 0 (C-2) records audio while held
 - Notes 12-27 (C#-1) start a new voice playing recorded audio back, each from next 16th offset of the buffer
 - Note 1 (C#-2) reverses playback
@@ -38,7 +36,7 @@ Plugin parameters
 - Show debug data - toggles displaying debug data on the plugin's UI
 - Loop mode - toggles between looping and playing the loop region once
 
-*** midi-sampler ***
+### midi-sampler
 
 This has similar concept as audio-sampler but is not as ready for usage.
 
