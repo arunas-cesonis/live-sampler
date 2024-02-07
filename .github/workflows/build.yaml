@@ -71,6 +71,8 @@ jobs:
         with:
           command: install
           args: '--git https://github.com/robbert-vdh/nih-plug.git cargo-nih-plug --target-dir ~/target-cargo-nih-plug'
+      - name: Run tests
+        run: cargo test --all --release
       - name: Package all targets from bundler.toml
         # Instead of hardcoding which targets to build and package, we'll
         # package everything that's got en entry in the `bundler.toml` file
