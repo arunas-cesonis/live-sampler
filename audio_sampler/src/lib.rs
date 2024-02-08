@@ -7,8 +7,6 @@ use nih_plug_vizia::vizia::entity;
 use nih_plug_vizia::vizia::prelude::Role::Time;
 use nih_plug_vizia::ViziaState;
 use num_traits::ToPrimitive;
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
 
 use crate::common_types::{
     Info, InitParams, LoopModeParam, MIDIChannelParam, Note, Params as SamplerParams,
@@ -18,10 +16,6 @@ use crate::editor_vizia::DebugData;
 use crate::sampler::{LoopMode, Sampler};
 use crate::time_value::{calc_samples_per_bar, TimeOrRatio, TimeOrRatioUnit, TimeUnit, TimeValue};
 use crate::utils::normalize_offset;
-
-#[cfg(not(target_env = "msvc"))]
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
 
 // mod editor;
 mod clip;
