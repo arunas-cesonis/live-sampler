@@ -22,8 +22,6 @@ git = "https://github.com/robbert-vdh/nih-plug"
 #[dependencies.nih_plug_iced]
 #git = "https://github.com/robbert-vdh/nih-plug"
 
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = "0.5.4"
 [dependencies]
 log = "0.4.20"
 
