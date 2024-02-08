@@ -12,29 +12,25 @@ pub struct Clip {
     updated_at: usize,
     // speed of the clip
     speed: f32,
+    ping_pong_speed: f32,
     //
     // given the above and current time 'now' sample index played is calculated as
     //
-    // (((now - updated_at) * speed + local_adjustment) % length + offset) % data.len()
+    // (((now - updated_at) * ping_pong_speed * speed + local_adjustment) % length + offset) % data.len()
     //
     // where in the calculation the '%" is modulo operator which flips negative values to positive
     // 'mirroring' against the second argument, e.g. -5 % 3 = -2 + 3 = 1
 }
 
 impl Clip {
-    pub fn new(
-        now: usize,
-        offset: usize,
-        length: usize,
-        offset_adjustment: usize,
-        speed: f32,
-    ) -> Self {
+    pub fn new(now: usize, offset: usize, length: usize, speed: f32) -> Self {
         Self {
             updated_at: now,
             offset,
             length,
-            local_adjustment: offset_adjustment,
+            local_adjustment: 0,
             speed,
+            ping_pong_speed: 1.0,
         }
     }
 
@@ -43,16 +39,6 @@ impl Clip {
         let elapsed_scaled = elapsed * self.speed;
 
         let local_offset = elapsed_scaled + self.local_adjustment as f32 + adjust;
-
-        // Alternative way to calculate ping pong
-        //
-        // let times = (local_offset / self.length as f32).floor() as usize;
-        // eprintln!("now={} times={} local_offset={}", now, times, local_offset);
-        //
-
-        // This does ping pong but sort of breaks reversing
-        ///
-        // (local_offset, _) = ping_pong3(local_offset, self.length as f32, self.speed);
         let local_offset = normalize_offset(local_offset, self.length as f32);
         debug_assert!(local_offset >= 0.0, "local_offset={}", local_offset);
         local_offset.abs().floor() as usize
@@ -115,9 +101,56 @@ mod test {
     }
 
     #[test]
+    fn test_loop() {
+        fn run(clip: &mut Clip, input: &[usize]) -> Vec<usize> {
+            input
+                .iter()
+                .map(|i| clip.sample_index(*i, 100))
+                .collect::<Vec<_>>()
+        }
+        let input = (0..20).collect::<Vec<_>>();
+
+        let mut clip = Clip::new(0, 0, 5, 1.0);
+        assert_eq!(
+            run(&mut clip, &input),
+            vec![vec![0, 1, 2, 3, 4]; 4].concat()
+        );
+        let mut clip = Clip::new(0, 2, 5, 1.0);
+        assert_eq!(
+            run(&mut clip, &input),
+            vec![vec![2, 3, 4, 5, 6]; 4].concat()
+        );
+        let mut clip = Clip::new(0, 97, 5, 1.0);
+        assert_eq!(
+            run(&mut clip, &input),
+            vec![vec![97, 98, 99, 0, 1]; 4].concat()
+        );
+        let mut clip = Clip::new(0, 97, 5, -1.0);
+        assert_eq!(
+            run(&mut clip, &input),
+            vec![vec![1, 0, 99, 98, 97]; 4].concat()
+        );
+        let mut clip = Clip::new(0, 0, 5, 3.0);
+        assert_eq!(
+            run(&mut clip, &input),
+            vec![vec![0, 3, 1, 4, 2]; 4].concat()
+        );
+        let mut clip = Clip::new(0, 0, 5, 0.5);
+        assert_eq!(
+            run(&mut clip, &input),
+            vec![vec![0, 0, 1, 1, 2, 2, 3, 3, 4, 4]; 2].concat()
+        );
+        let mut clip = Clip::new(0, 97, 5, -0.5);
+        assert_eq!(
+            run(&mut clip, &input),
+            vec![1, 0, 0, 99, 99, 98, 98, 97, 97, 1, 1, 0, 0, 99, 99, 98, 98, 97, 97, 1]
+        );
+    }
+
+    #[test]
     fn test_clip() {
         let mut now = 0;
-        let mut clip = Clip::new(now, 0, 10, 0, -1.0);
+        let mut clip = Clip::new(now, 0, 10, -1.0);
         //now: usize,
         //offset: usize,
         //length: usize,

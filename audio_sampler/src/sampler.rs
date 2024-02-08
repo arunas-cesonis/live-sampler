@@ -127,7 +127,7 @@ impl Channel {
             note,
             loop_start_percent,
             played: 0.0,
-            clip: Clip::new(self.now, offset as usize, length as usize, 0, params.speed),
+            clip: Clip::new(self.now, offset as usize, length as usize, params.speed),
             ping_pong_speed: 1.0,
             volume: Volume::new(0.0),
             finished: false,
