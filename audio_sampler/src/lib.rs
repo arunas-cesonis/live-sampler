@@ -27,6 +27,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 mod clip;
 mod common_types;
 mod editor_vizia;
+mod player;
 mod recorder;
 mod sampler;
 mod test_sampler;
@@ -34,6 +35,7 @@ mod time_value;
 mod utils;
 mod voice;
 mod volume;
+
 type SysEx = ();
 
 pub struct AudioSampler {

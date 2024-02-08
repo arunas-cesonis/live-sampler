@@ -1,6 +1,26 @@
 use num_traits::real::Real;
 use num_traits::Float;
 
+pub fn ping_pong3<T>(x: T, n: T, reverse: bool) -> (T, T)
+where
+    T: std::ops::Rem<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Sub<Output = T>
+        + PartialOrd
+        + std::ops::Neg<Output = T>
+        + num_traits::Zero
+        + Real
+        + Copy,
+{
+    let x = if reverse { x - n } else { x };
+    let y = normalize_offset(x, n + n);
+    if y < n {
+        (y, T::one())
+    } else {
+        (n + n - y - T::one(), -T::one())
+    }
+}
+
 pub fn ping_pong2<T>(x: T, n: T) -> (T, T)
 where
     T: std::ops::Rem<Output = T>
