@@ -95,8 +95,8 @@ pub enum LoopModeParam {
     PlayOnce,
     #[name = "Loop"]
     Loop,
-    // #[name = "Ping pong"]
-    // PingPong,
+    #[name = "Ping pong"]
+    PingPong,
 }
 
 impl LoopMode {

@@ -16,6 +16,7 @@ pub struct Voice {
     pub finished: bool,
     pub ping_pong_speed: f32,
     pub clip: Clip,
+    pub since: usize,
     pub phase: PhaseEnum,
     // this is only used by the UI to show loop points
     // its hack/workaround for not having loop information easily available

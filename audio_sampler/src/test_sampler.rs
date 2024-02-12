@@ -122,7 +122,7 @@ mod test {
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
         host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
-        let output = host.run_input(input.clone().clone());
+        let output = host.run_input(input.clone());
         assert_eq!(
             output,
             vec![one_to_ten(), one_to_five(), five_tens()].concat(),
@@ -390,7 +390,7 @@ mod test {
                 start_percent: 0.50,
             },
         );
-        let _tmp = host.clone();
+        eprintln!("input={:?}", input);
         let output = host.run_input(input.clone());
         assert_eq!(
             output,

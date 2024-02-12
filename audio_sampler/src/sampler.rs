@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
 use crate::common_types::{InitParams, Note, Params, RecordingMode};
+use crate::phase::{Phase, PhaseEnum};
 use crate::recorder::Recorder;
 use crate::time_value::{TimeOrRatio, TimeValue};
 use crate::utils::normalize_offset;
@@ -81,7 +82,6 @@ impl Channel {
     fn finish_voice(&mut self, now: usize, index: usize, params: &Params) {
         let voice = &mut self.voices[index];
         assert!(!voice.finished);
-        //eprintln!("now={} stop playing voice={:?}", self.now, voice);
         let channel_index: usize = voice.note.channel.into();
         voice.volume.to(now, params.decay_samples, 0.0);
         voice.finished = true;
@@ -106,13 +106,13 @@ impl Channel {
             loop_start_percent,
             played: 0.0,
             clip: Clip::new(self.now, offset as usize, length as usize, 0, params.speed),
-            phase: phase::saw(0.0, 0.0),
+            since: self.now,
+            phase: phase::saw(params.speed() as f64, length as f64),
             ping_pong_speed: 1.0,
             volume: Volume::new(0.0),
             finished: false,
             last_sample_index: 0,
         };
-        eprintln!("now={} start playing voice={:?}", self.now, voice);
         voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
         self.handle_passthru(params);
@@ -186,23 +186,37 @@ impl Channel {
             }
 
             let speed = params.speed();
-            let length: f32 = params.loop_length(self.data.len());
-            let len_f32: f32 = self.data.len() as f32;
+            let length: f64 = params.loop_length(self.data.len()) as f64;
+            let len_f64 = self.data.len() as f64;
 
-            voice.clip.update_speed(self.now, speed);
-            voice
-                .clip
-                .update_length(self.now, params.loop_length(self.data.len()) as usize);
-            let offset = ((params.start_offset_percent + voice.loop_start_percent) * len_f32)
-                .floor() as usize;
-            voice.clip.update_offset(offset);
+            let x = (self.now - voice.since) as f64;
+            match (params.loop_mode, &voice.phase) {
+                (LoopMode::Loop, PhaseEnum::Tri(_)) => voice.phase = voice.phase.to_saw(x),
+                (LoopMode::PlayOnce, PhaseEnum::Tri(_)) => voice.phase = voice.phase.to_saw(x),
+                (LoopMode::PingPong, PhaseEnum::Saw(_)) => voice.phase = voice.phase.to_tri(x),
+                _ => (),
+            };
+            let speed64 = speed as f64;
+            voice.phase = voice
+                .phase
+                .update_speed(x, speed64)
+                .update_length(x, length as f64);
+            let index = voice.phase.calc(x) as f64;
+            let index = if speed < 0.0 { index - 1.0 } else { index };
+            let index = normalize_offset(index, voice.phase.length());
+            let index = voice.loop_start_percent as f64 * len_f64 + index;
+            let index = (index as usize) % self.data.len();
 
-            let index = voice.clip.sample_index(self.now, self.data.len());
+            //voice.clip.update_speed(self.now, speed);
+            //voice
+            //    .clip
+            //    .update_length(self.now, params.loop_length(self.data.len()) as usize);
+            //let offset = ((params.start_offset_percent + voice.loop_start_percent) * len_f32)
+            //    .floor() as usize;
+            //voice.clip.update_offset(offset);
+
+            //let index = voice.clip.sample_index(self.now, self.data.len());
             let value = self.data[index] * voice.volume.value(self.now);
-            // eprintln!(
-            //     "self.now={} play value={} voice={:?}",
-            //     self.now, value, voice
-            // );
 
             output += value;
             //voice.read = read;
@@ -267,7 +281,6 @@ impl Channel {
             self.handle_passthru(params);
         }
 
-        //eprintln!("self.now={} play output={}", self.now, output);
         self.now += 1;
         *io = output;
     }
