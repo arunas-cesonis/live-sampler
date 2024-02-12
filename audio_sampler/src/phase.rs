@@ -158,7 +158,6 @@ impl Saw {
             length,
             shift,
         };
-        eprintln!("PHASE new {:?}", me);
         me
     }
     pub fn new(speed: f64, length: f64) -> Self {
@@ -169,7 +168,6 @@ impl Saw {
 impl Phase for Saw {
     fn calc(&self, x: f64) -> f64 {
         let y = wrap(x * self.speed + self.shift, self.length);
-        eprintln!("PHASE {} -> {} {:?}", x, y, self);
         y
     }
     fn update_speed(&self, x: f64, s: f64) -> PhaseEnum {
