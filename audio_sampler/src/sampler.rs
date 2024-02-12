@@ -107,10 +107,9 @@ impl Channel {
             played: 0.0,
             clip: Clip::new(self.now, offset as usize, length as usize, 0, params.speed),
             since: self.now,
-            loop_mode: params.loop_mode,
             phase: match params.loop_mode {
-                LoopMode::PingPong => phase::saw(params.speed() as f64, length as f64),
-                _ => phase::tri(params.speed() as f64, length as f64),
+                LoopMode::PingPong => phase::tri(params.speed() as f64, length as f64),
+                _ => phase::saw(params.speed() as f64, length as f64),
             },
             ping_pong_speed: 1.0,
             volume: Volume::new(0.0),

@@ -493,13 +493,16 @@ mod test {
         let mut host = Host::new(params);
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying { start_percent: 0.5 });
-        host.schedule(50, Cmd::StopPlaying);
-        host.schedule(70, Cmd::StartPlaying { start_percent: 0.0 });
-        host.schedule(80, Cmd::StopPlaying);
+        host.schedule(10, Cmd::StartPlaying {});
+        host.schedule(10, Cmd::StopRecording);
         let input = (0..10).map(|x| x as f32).collect::<Vec<_>>();
         let input = vec![input, vec![0.0; 100]].concat();
         let output = host.run_input(input);
+
+        eprintln!("{:?}", &output[10..20]);
+        eprintln!("{:?}", &output[20..30]);
+        eprintln!("{:?}", &output[30..40]);
+        eprintln!("{:?}", &output[40..50]);
 
         let mut i = 0;
         while i < output.len() {
