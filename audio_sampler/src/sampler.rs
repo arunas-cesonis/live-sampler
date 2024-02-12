@@ -107,7 +107,11 @@ impl Channel {
             played: 0.0,
             clip: Clip::new(self.now, offset as usize, length as usize, 0, params.speed),
             since: self.now,
-            phase: phase::saw(params.speed() as f64, length as f64),
+            loop_mode: params.loop_mode,
+            phase: match params.loop_mode {
+                LoopMode::PingPong => phase::saw(params.speed() as f64, length as f64),
+                _ => phase::tri(params.speed() as f64, length as f64),
+            },
             ping_pong_speed: 1.0,
             volume: Volume::new(0.0),
             finished: false,
@@ -191,9 +195,18 @@ impl Channel {
 
             let x = (self.now - voice.since) as f64;
             match (params.loop_mode, &voice.phase) {
-                (LoopMode::Loop, PhaseEnum::Tri(_)) => voice.phase = voice.phase.to_saw(x),
-                (LoopMode::PlayOnce, PhaseEnum::Tri(_)) => voice.phase = voice.phase.to_saw(x),
-                (LoopMode::PingPong, PhaseEnum::Saw(_)) => voice.phase = voice.phase.to_tri(x),
+                (LoopMode::Loop, PhaseEnum::Tri(_)) => {
+                    voice.phase = voice.phase.to_saw(x);
+                    voice.since = self.now;
+                }
+                (LoopMode::PlayOnce, PhaseEnum::Tri(_)) => {
+                    voice.phase = voice.phase.to_saw(x);
+                    voice.since = self.now;
+                }
+                (LoopMode::PingPong, PhaseEnum::Saw(_)) => {
+                    voice.phase = voice.phase.to_tri(x);
+                    voice.since = self.now;
+                }
                 _ => (),
             };
             let speed64 = speed as f64;

@@ -1,6 +1,6 @@
 use crate::clip::Clip;
-use crate::common_types::Note;
-use crate::phase::PhaseEnum;
+use crate::common_types::{LoopMode, Note};
+use crate::phase::{PhaseEnum, Saw, Tri};
 use crate::volume::Volume;
 
 #[repr(transparent)]
@@ -17,6 +17,7 @@ pub struct Voice {
     pub ping_pong_speed: f32,
     pub clip: Clip,
     pub since: usize,
+    pub loop_mode: LoopMode,
     pub phase: PhaseEnum,
     // this is only used by the UI to show loop points
     // its hack/workaround for not having loop information easily available
