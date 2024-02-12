@@ -197,10 +197,8 @@ impl Channel {
                 _ => (),
             };
             let speed64 = speed as f64;
-            voice.phase = voice
-                .phase
-                .update_speed(x, speed64)
-                .update_length(x, length as f64);
+            voice.phase.update_speed(x, speed64);
+            voice.phase.update_length(x, length);
             let index = voice.phase.calc(x) as f64;
             let index = if speed < 0.0 { index - 1.0 } else { index };
             let index = normalize_offset(index, voice.phase.length());
