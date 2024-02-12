@@ -1,0 +1,35 @@
+[package]
+name = "lua_plugin"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "lua_plugin"
+crate-type = ["cdylib", "lib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "lua_plugin"
+path = "src/main.rs"
+
+[dependencies.nih_plug]
+git = "https://github.com/robbert-vdh/nih-plug"
+features = ["standalone", "vst3"]
+
+[dependencies.serde]
+version = "1.0.192"
+features = ["derive"]
+
+[dependencies.mlua]
+version = "0.9.1"
+features = ["lua54", "vendored", "serialize", "parking_lot", "send"]
+
+[dependencies.parking_lot]
+version = "0.12.1"
+
+[dependencies.crossbeam-deque]
+version = "0.8.3"
+
+[dependencies.crossbeam-channel]
+version = "0.5.8"
+

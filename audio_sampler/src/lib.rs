@@ -21,6 +21,7 @@ use crate::utils::normalize_offset;
 mod clip;
 mod common_types;
 mod editor_vizia;
+mod phase;
 mod recorder;
 mod sampler;
 mod test_sampler;
@@ -28,6 +29,7 @@ mod time_value;
 mod utils;
 mod voice;
 mod volume;
+
 type SysEx = ();
 
 pub struct AudioSampler {
@@ -43,6 +45,7 @@ pub struct AudioSampler {
     last_frame_recorded: usize,
     last_waveform_updated: usize,
     active_notes: [[i16; 256]; 16],
+    reversing: bool,
 }
 
 const PEAK_METER_DECAY_MS: f64 = 150.0;
@@ -124,9 +127,9 @@ impl Plugin for AudioSampler {
         let mut next_event = context.next_event();
 
         for (sample_id, channel_samples) in buffer.iter_samples().enumerate() {
-            let params = self.sampler_params(sample_id, &context.transport());
+            let mut params = self.sampler_params(sample_id, &context.transport());
             let channel: Option<u8> = self.params.midi_channel.value().try_into().ok();
-            let params = &params;
+            let params = &mut params;
             while let Some(event) = next_event {
                 if event.timing() != sample_id as u32 {
                     break;
@@ -151,7 +154,8 @@ impl Plugin for AudioSampler {
                             }
                             1 => {
                                 self.set_note_active(&note, true);
-                                self.sampler.reverse(params);
+                                self.reversing = true;
+                                params.reverse_speed = -1.0;
                             }
                             12..=27 => {
                                 self.set_note_active(&note, true);
@@ -170,7 +174,10 @@ impl Plugin for AudioSampler {
                         if self.is_note_active(&note) {
                             match note.note {
                                 0 => self.sampler.stop_recording(params),
-                                1 => self.sampler.unreverse(params),
+                                1 => {
+                                    self.reversing = false;
+                                    params.reverse_speed = 1.0;
+                                }
                                 12..=27 => self.sampler.stop_playing(note, params),
                                 _ => (),
                             }
@@ -349,6 +356,7 @@ impl Default for AudioSampler {
             last_frame_recorded: 0,
             last_waveform_updated: 0,
             active_notes: [[0; 256]; 16],
+            reversing: false,
         }
     }
 }
@@ -453,6 +461,7 @@ impl AudioSampler {
             start_offset_percent: self.params.start_offset.value(),
             decay_samples,
             speed: params_speed,
+            reverse_speed: if self.reversing { -1.0 } else { 1.0 },
             recording_mode: self.params.recording_mode.value(),
             fixed_size_samples: TimeValue::bars(1.0)
                 .as_samples(&transport)

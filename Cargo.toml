@@ -1,5 +1,5 @@
 [workspace]
-members = ["audio_sampler", "midi_sampler", "xtask"]
+members = ["audio_sampler", "midi_sampler", "lua_plugin", "xtask"]
 resolver = "2"
 
 [workspace.package]

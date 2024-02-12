@@ -71,12 +71,16 @@ where
         + PartialOrd
         + std::ops::Neg<Output = T>
         + num_traits::Zero
+        + Real
         + Copy,
 {
     let x = offset % n;
-    let x = if x < T::zero() { x + n } else { x };
-    // to avoid -0.0
-    // x.abs()
+    let x = if x >= T::zero() {
+        x
+    } else {
+        debug_assert!(n > x.abs());
+        x + n
+    };
     x
 }
 

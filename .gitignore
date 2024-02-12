@@ -2,5 +2,4 @@
 Cargo.lock
 .idea
 test_vizia
-lua_plugin
 python

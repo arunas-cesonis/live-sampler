@@ -363,7 +363,7 @@ mod test {
 
     #[test]
     fn test_looping_rev() {
-        let params = Params {
+        let mut params = Params {
             loop_mode: LoopMode::Loop,
             attack_samples: 0,
             decay_samples: 0,
@@ -378,9 +378,10 @@ mod test {
         // record first 10 samples, then play loop length 50% from 80% in reverse
         let mut host = Host::new(Params {
             loop_length: TimeOrRatio::Ratio(0.6),
-            speed: -1.0,
+            speed: 1.0,
             ..params.clone()
         });
+        host.params.reverse_speed = -1.0;
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
         host.schedule(
