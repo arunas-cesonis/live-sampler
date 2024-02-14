@@ -72,7 +72,7 @@ mod test {
         {
             input
                 .into_iter()
-                .map(|x| {
+                .map(|mut x| {
                     let (todo, rem) = self.cmds.iter().partition(|(at, _)| *at == self.now);
                     for &(_, cmd) in &todo {
                         match cmd {
@@ -92,10 +92,11 @@ mod test {
                         }
                     }
                     self.cmds = rem;
-                    let mut frame = vec![x];
-                    self.sampler.process_sample(&mut frame, &self.params);
+                    let mut frame = vec![&mut x];
+                    self.sampler
+                        .process_frame(frame.as_mut_slice(), &self.params);
                     self.now += 1;
-                    frame[0]
+                    *frame[0]
                 })
                 .collect::<Vec<_>>()
         }
@@ -493,7 +494,7 @@ mod test {
         let mut host = Host::new(params);
         host.schedule(0, Cmd::StartRecording);
         host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying {});
+        host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         host.schedule(10, Cmd::StopRecording);
         let input = (0..10).map(|x| x as f32).collect::<Vec<_>>();
         let input = vec![input, vec![0.0; 100]].concat();

@@ -1,6 +1,7 @@
 use crate::common_types;
 use crate::common_types::RecordingMode;
 use crate::utils::normalize_offset;
+use nih_plug::nih_error;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum State {
@@ -9,6 +10,7 @@ pub(crate) enum State {
     Idle,
 }
 
+#[derive(Debug)]
 pub struct Params {
     pub transport_pos_samples: f32,
     pub sample_id: usize,
@@ -192,7 +194,7 @@ impl Recorder {
                     transport_pos_samples + params.sample_id as f32,
                     params.fixed_size_samples as f32,
                 );
-                assert!(i >= 0.0, "i={}", i);
+                assert!(i >= 0.0, "i={} params={:?}", i, params);
                 let i = i as usize;
                 data[i] = sample;
                 if let Some(prev_offset) = *last_recorded_offset {

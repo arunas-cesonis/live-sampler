@@ -58,18 +58,18 @@ impl Plugin for AudioSampler {
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
     const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[
         AudioIOLayout {
-            main_input_channels: NonZeroU32::new(2),
-            main_output_channels: NonZeroU32::new(2),
+            main_input_channels: NonZeroU32::new(16),
+            main_output_channels: NonZeroU32::new(16),
 
             aux_input_ports: &[],
             aux_output_ports: &[],
             names: PortNames::const_default(),
         },
-        AudioIOLayout {
-            main_input_channels: NonZeroU32::new(1),
-            main_output_channels: NonZeroU32::new(1),
-            ..AudioIOLayout::const_default()
-        },
+        //AudioIOLayout {
+        //    main_input_channels: NonZeroU32::new(1),
+        //    main_output_channels: NonZeroU32::new(1),
+        //    ..AudioIOLayout::const_default()
+        //},
     ];
     const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
@@ -211,12 +211,6 @@ impl Plugin for AudioSampler {
                     self.update_waveform();
                     self.last_waveform_updated = self.last_frame_recorded;
                 }
-                let debug_message = if self.params.show_debug_data.value() {
-                    let message = mk_message(&self.sampler, params);
-                    message
-                } else {
-                    None
-                };
                 let voice_info = self.sampler.get_voice_info(params);
                 let info = Info {
                     voices: voice_info,
@@ -224,10 +218,6 @@ impl Plugin for AudioSampler {
                     data_len: self.sampler.get_data_len(),
                     waveform_summary: self.waveform_summary.clone(),
                 };
-                self.debug_data_in.lock().write(DebugData {
-                    info,
-                    message: debug_message,
-                });
 
                 let amplitude = (frame.iter().fold(0.0, |z, x| z + **x) / frame.len() as f32).abs();
 
@@ -252,8 +242,6 @@ impl Plugin for AudioSampler {
 pub struct AudioSamplerParams {
     #[id = "auto_passthru"]
     pub auto_passthru: BoolParam,
-    #[id = "show_debug_data"]
-    pub show_debug_data: BoolParam,
     #[id = "speed"]
     pub speed: FloatParam,
     #[id = "attack"]
@@ -288,7 +276,6 @@ impl Default for AudioSamplerParams {
         Self {
             editor_state: editor_vizia::default_state(),
             auto_passthru: BoolParam::new("Pass through", true),
-            show_debug_data: BoolParam::new("Show debug data", false),
             speed: FloatParam::new(
                 "Speed",
                 1.0,
@@ -495,7 +482,13 @@ impl AudioSampler {
     }
 }
 
-fn mk_message(sampler: &Sampler, params: &SamplerParams) -> Option<String> {
+#[derive(Debug, Clone)]
+pub struct DebugDump<'a> {
+    transport: &'a common_types::Transport,
+    params: &'a SamplerParams,
+}
+
+fn mk_message(sampler: &Sampler, params: &SamplerParams, info: &Info) -> Option<String> {
     let pos_samples = params.transport.pos_samples;
     let samples_per_bar = TimeValue::bars(1.0).as_samples(&params.transport);
     let current_bar = (pos_samples / samples_per_bar).floor();
@@ -541,6 +534,7 @@ fn mk_message(sampler: &Sampler, params: &SamplerParams) -> Option<String> {
         "bar_offset",
         format!("{:.3}", normalize_offset(pos_samples, samples_per_bar)),
     ));
+    tmp.push(("voices", format!("{:#?}", info.voices)));
     let mut res = String::new();
     for (k, v) in tmp {
         res.push_str(&format!("{}={}\n", k, v));

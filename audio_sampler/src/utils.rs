@@ -74,13 +74,9 @@ where
         + Real
         + Copy,
 {
+    assert!(n >= T::zero());
     let x = offset % n;
-    let x = if x >= T::zero() {
-        x
-    } else {
-        debug_assert!(n > x.abs());
-        x + n
-    };
+    let x = if x >= T::zero() { x } else { x + n };
     x
 }
 

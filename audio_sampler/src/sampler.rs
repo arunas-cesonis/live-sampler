@@ -1,4 +1,8 @@
+use nih_plug::nih_warn;
 use std::fmt::Debug;
+use std::io::{BufWriter, Write};
+use std::ops::Add;
+use std::time::{Duration, Instant};
 
 use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
@@ -7,7 +11,7 @@ use crate::phase::{Phase, PhaseEnum};
 use crate::recorder::Recorder;
 use crate::time_value::{TimeOrRatio, TimeValue};
 use crate::utils::normalize_offset;
-use crate::voice::Voice;
+use crate::voice::{Voice, VoiceLog, VoiceLogItem};
 use crate::volume::Volume;
 use crate::{phase, recorder};
 
@@ -85,6 +89,17 @@ impl Channel {
         let channel_index: usize = voice.note.channel.into();
         voice.volume.to(now, params.decay_samples, 0.0);
         voice.finished = true;
+
+        let mut out = BufWriter::new(
+            std::fs::File::create(format!("/Users/arunas/debug/voice_{}", self.now)).unwrap(),
+        );
+        let mut log = std::mem::take(&mut voice.log);
+        out.write(format!("{:#?}", voice).as_bytes());
+        for item in log.iter() {
+            out.write(format!("{:?}\n", item).as_bytes()).unwrap();
+        }
+
+        nih_warn!("finish_voice: voice={:?}", voice);
     }
 
     pub fn start_playing(
@@ -107,6 +122,7 @@ impl Channel {
             played: 0.0,
             clip: Clip::new(self.now, offset as usize, length as usize, 0, params.speed),
             since: self.now,
+            log: vec![],
             phase: match params.loop_mode {
                 LoopMode::PingPong => phase::tri(params.speed() as f64, length as f64),
                 _ => phase::saw(params.speed() as f64, length as f64),
@@ -116,7 +132,11 @@ impl Channel {
             finished: false,
             last_sample_index: 0,
         };
+
         voice.volume.to(self.now, params.attack_samples, velocity);
+
+        nih_warn!("start_playing : voice={:?}", voice);
+
         self.voices.push(voice);
         self.handle_passthru(params);
     }
@@ -197,25 +217,58 @@ impl Channel {
                 (LoopMode::Loop, PhaseEnum::Tri(_)) => {
                     voice.phase = voice.phase.to_saw(x);
                     voice.since = self.now;
+                    voice.log.push(VoiceLog {
+                        time: self.now,
+                        item: VoiceLogItem::ChangeMode {
+                            phase: voice.phase.clone(),
+                            prev: LoopMode::Loop,
+                            mode: LoopMode::PlayOnce,
+                        },
+                    });
                 }
                 (LoopMode::PlayOnce, PhaseEnum::Tri(_)) => {
                     voice.phase = voice.phase.to_saw(x);
                     voice.since = self.now;
+                    voice.log.push(VoiceLog {
+                        time: self.now,
+                        item: VoiceLogItem::ChangeMode {
+                            phase: voice.phase.clone(),
+                            prev: LoopMode::PlayOnce,
+                            mode: LoopMode::Loop,
+                        },
+                    });
                 }
                 (LoopMode::PingPong, PhaseEnum::Saw(_)) => {
                     voice.phase = voice.phase.to_tri(x);
                     voice.since = self.now;
+                    voice.log.push(VoiceLog {
+                        time: self.now,
+                        item: VoiceLogItem::ChangeMode {
+                            phase: voice.phase.clone(),
+                            prev: LoopMode::PingPong,
+                            mode: LoopMode::Loop,
+                        },
+                    });
                 }
                 _ => (),
             };
+            let x = (self.now - voice.since) as f64;
             let speed64 = speed as f64;
             voice.phase.update_speed(x, speed64);
             voice.phase.update_length(x, length);
-            let index = voice.phase.calc(x) as f64;
-            let index = if speed < 0.0 { index - 1.0 } else { index };
+            let y = voice.phase.calc(x) as f64;
+            let index = if speed < 0.0 { y - 1.0 } else { y };
             let index = normalize_offset(index, voice.phase.length());
             let index = voice.loop_start_percent as f64 * len_f64 + index;
             let index = (index as usize) % self.data.len();
+            voice.log.push(VoiceLog {
+                time: self.now,
+                item: VoiceLogItem::PlayIndex {
+                    phase: voice.phase.clone(),
+                    x,
+                    index,
+                },
+            });
 
             //voice.clip.update_speed(self.now, speed);
             //voice
@@ -296,16 +349,45 @@ impl Channel {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Sampler {
-    pub(crate) channels: Vec<Channel>,
-}
-
 #[derive(Default, Clone, Debug)]
 pub struct WaveformSummary {
     pub data: Vec<f32>,
     pub min: f32,
     pub max: f32,
+}
+
+#[derive(Clone, Debug)]
+struct Timer {
+    next: Instant,
+}
+
+impl Default for Timer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Timer {
+    pub fn new() -> Self {
+        Self {
+            next: Instant::now(),
+        }
+    }
+    pub fn tick(&mut self) -> bool {
+        if self.next.elapsed() >= Duration::from_secs(1) {
+            self.next = self.next.add(Duration::from_secs(1));
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Sampler {
+    pub(crate) channels: Vec<Channel>,
+    //#[cfg(debug_assertions)]
+    pub(crate) timer: Timer,
 }
 
 impl Sampler {
@@ -346,6 +428,8 @@ impl Sampler {
     pub fn new(channel_count: usize, params: &InitParams) -> Self {
         Self {
             channels: vec![Channel::new(&params); channel_count],
+            //#[cfg(debug_assertions)]
+            timer: Timer::new(),
         }
     }
     fn each<F>(&mut self, f: F)
@@ -371,19 +455,21 @@ impl Sampler {
         self.each(|ch| Channel::stop_recording(ch, params));
     }
 
-    pub fn process_sample<'a>(
-        &mut self,
-        iter: impl IntoIterator<Item = &'a mut f32>,
-        params: &Params,
-    ) {
-        for (i, sample) in iter.into_iter().enumerate() {
-            self.channels[i].process_sample(sample, params);
-        }
-    }
-
     pub fn process_frame<'a>(&mut self, frame: &mut [&'a mut f32], params: &Params) {
         for j in 0..frame.len() {
             self.channels[j].process_sample(frame[j], params);
+        }
+
+        //#[cfg(debug_assertions)]
+        if self.timer.tick() {
+            let n = self.channels[0].voices.len();
+            if n == 0 {
+                nih_warn!("no voices active");
+            } else {
+                for (i, v) in self.channels[0].voices.iter().enumerate() {
+                    nih_warn!("voice {:<2} of {:<2}: {:#?}", i + 1, n, v);
+                }
+            }
         }
     }
 

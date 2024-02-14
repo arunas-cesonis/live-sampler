@@ -13,10 +13,12 @@ path = "src/main.rs"
 
 
 [dependencies.nih_plug]
+#path = "/Users/arunas/git/nih-plug"
 git = "https://github.com/robbert-vdh/nih-plug"
 features = ["standalone", "vst3"]
 
 [dependencies.nih_plug_vizia]
+#cjpath = "/Users/arunas/git/nih-plug/nih_plug_vizia"
 git = "https://github.com/robbert-vdh/nih-plug"
 
 #[dependencies.nih_plug_iced]

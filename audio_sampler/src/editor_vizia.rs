@@ -11,7 +11,7 @@ use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
 use nih_plug_vizia::vizia::vg::imgref::Img;
 use nih_plug_vizia::vizia::vg::rgb::RGBA8;
-use nih_plug_vizia::vizia::vg::{Color, ImageId};
+use nih_plug_vizia::vizia::vg::ImageId;
 use nih_plug_vizia::vizia::vg::{ImageFlags, ImageSource, Paint, Path, PixelFormat, RenderTarget};
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
@@ -53,12 +53,12 @@ impl Model for Data {
         });
     }
 }
+
 #[cfg(debug_assertions)]
-const WINDOW_SIZE: (u32, u32) = (640 + 600, 380);
+const WINDOW_SIZE: (u32, u32) = (960, 380 + 380);
 
 #[cfg(not(debug_assertions))]
-const WINDOW_SIZE: (u32, u32) = (640 + 320, 380);
-
+const WINDOW_SIZE: (u32, u32) = (960, 380);
 const WINDOW_SIZEF: (f32, f32) = (WINDOW_SIZE.0 as f32, WINDOW_SIZE.1 as f32);
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
@@ -189,7 +189,7 @@ where
         if let Ok((imgw, imgh)) = canvas.image_size(img) {
             let mut path = Path::new();
             //path.rect(bounds.x, bounds.y, imgw as f32, imgh as f32);
-            path.rect(bounds.x, bounds.y, imgw as f32, imgh as f32);
+            path.rect(bounds.x, bounds.y, bounds.w, bounds.h);
             canvas.fill_path(
                 &path,
                 &Paint::image(
@@ -266,7 +266,7 @@ where
         let color = Color::rgba(255, 0, 0, 128);
         let rec_paint = Paint::color(color.into());
 
-        canvas.fill_text(0.0, 0.0, "HELLO", &Paint::color(Color::rgb(0, 255, 0)));
+        canvas.fill_text(0.0, 0.0, "HELLO", &Paint::color(vg::Color::rgb(0, 255, 0)));
 
         for i in 1..16 {
             let width = 5.0;
@@ -401,41 +401,14 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     ParamSlider::new(cx, Data::params, |params| &params.midi_channel)
                         .width(Stretch(1.0))
                         .right(Pixels(10.0));
-                    Label::new(cx, "Show debug data").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.show_debug_data)
-                        .width(Stretch(1.0))
-                        .right(Pixels(10.0));
                 })
                 .width(Percentage(25.0));
-                Label::new(
-                    cx,
-                    Data::debug_data_out
-                        .map(|d| d.lock().read().message.clone().unwrap_or("".to_string())),
-                )
-                .top(Pixels(10.0));
-                //VStack::new(cx, |cx| {
-                //    Label::new(cx, "Dropdown").top(Pixels(10.0));
-                //    Dropdown::new(
-                //        cx,
-                //        |cx| Label::new(cx, "Go"),
-                //        |cx| {
-                //            for i in 0..5 {
-                //                Label::new(cx, i)
-                //                    .on_press(move |cx| {
-                //                        cx.emit(EditorEvent::Choice(i));
-                //                        cx.emit(PopupEvent::Close); // close the popup
-                //                    })
-                //                    .width(Stretch(1.0));
-                //            }
-                //        },
-                //    )
-                //    .width(Pixels(100.0));
-                //})
-                //.width(Percentage(25.0));
+            })
+            .height(Pixels(270.0));
+
+            HStack::new(cx, |cx| {
+                WaveformView::new(cx, Data::debug_data_out, Data::xy).height(Pixels(50.0));
             });
-            //HStack::new(cx, |cx| {
-            //});
-            WaveformView::new(cx, Data::debug_data_out, Data::xy).height(Pixels(50.0));
         })
         .border_width(Pixels(10.0));
 

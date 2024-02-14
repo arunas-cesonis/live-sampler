@@ -27,6 +27,7 @@ pub trait Phase {
     fn to_tri(&self, x: f64) -> PhaseEnum;
     fn to_saw(&self, x: f64) -> PhaseEnum;
     fn length(&self) -> f64;
+    fn speed(&self) -> f64;
 }
 
 pub fn saw(speed: f64, length: f64) -> PhaseEnum {
@@ -37,7 +38,7 @@ pub fn tri(speed: f64, length: f64) -> PhaseEnum {
     PhaseEnum::Tri(Tri::new(speed, length))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Tri {
     speed: f64,
     length: f64,
@@ -68,7 +69,7 @@ fn align_tri(speed: f64, length: f64, x: f64, y: f64, sec: bool) -> f64 {
     let shift = if !sec {
         y / speed - x
     } else {
-        x * length / speed - y / speed - x
+        2.0 * length / speed - y / speed - x - 1.0
     };
     shift
 }
@@ -103,7 +104,7 @@ fn mirror(x: f64, n: f64) -> f64 {
     let r = if (tmp < n) { tmp } else { nn - tmp - 1.0 };
     // clamping solves edge cases with fractional speeds, e.g. 0.5
     // slightly overshooting 0.0 and n
-    let r = r.clamp(0.0, n - 1.0);
+    // let r = r.clamp(0.0, n - 1.0);
     ///debug_assert!(r >= 0.0 && r < n, "r={} x={} n={}", r, x, n);
     r
     //r.clamp(0.0, n - f64::epsilon())
@@ -116,14 +117,23 @@ impl Phase for Tri {
         mirror((x + self.shift) * self.speed, self.length)
     }
     fn update_speed(&mut self, x: f64, s: f64) {
-        // TODO: short circuit
+        let same = self.speed == s;
+        let mut before = self.clone();
         let y = self.calc(x);
         let sec = (x * self.speed) % (2.0 * self.length) >= self.length;
         self.speed = s;
         self.shift = align_tri(s, self.length, x, y, sec);
+        if same && self != &mut before {
+            panic!(
+                "unsable: x={:?} y={} sec={} {:?} -> {:?}",
+                x, y, sec, before, self
+            )
+        }
     }
     fn update_length(&mut self, x: f64, l: f64) {
-        // TODO: short circuit
+        if self.length == l {
+            return;
+        }
         let y = self.calc(x);
         let sec = (x * self.speed) % (2.0 * self.length - 0.0) >= self.length;
 
@@ -149,6 +159,9 @@ impl Phase for Tri {
     }
     fn length(&self) -> f64 {
         self.length
+    }
+    fn speed(&self) -> f64 {
+        self.speed
     }
 }
 
@@ -179,13 +192,17 @@ impl Phase for Saw {
         y
     }
     fn update_speed(&mut self, x: f64, s: f64) {
-        // TODO: short circuit
+        if s == self.speed {
+            return;
+        }
         let y = self.calc(x);
         self.speed = s;
         self.shift = align_saw(s, self.length, x, y);
     }
     fn update_length(&mut self, x: f64, l: f64) {
-        // TODO: short circuit
+        if l == self.length {
+            return;
+        }
         let y = self.calc(x);
         let y1 = if y >= l { 0.0 } else { y };
         self.length = l;
@@ -205,11 +222,34 @@ impl Phase for Saw {
     fn length(&self) -> f64 {
         self.length
     }
+    fn speed(&self) -> f64 {
+        self.speed
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_bug() {
+        let test = Tri {
+            speed: -1.0,
+            length: 20834.646484375,
+            shift: -38.0,
+        };
+        let l = 101;
+        let mut a = test;
+
+        for i in 0..10 {
+            let x = i as f64;
+            eprintln!("{:?}", a);
+            a.update_speed(x, a.speed());
+            eprintln!("{:?}", a);
+            a.update_length(x, a.length());
+            eprintln!("{:?}", a);
+        }
+    }
 
     #[test]
     fn test_essential() {
@@ -219,7 +259,7 @@ mod test {
         let mut p2 = tri(1.0, l as f64);
         let mut p3 = saw(1.0, l as f64);
         let mut p4 = tri(1.0, l as f64);
-        for i in 0..(3 * l) {
+        for i in 101..(3 * l) {
             let x = i as f64;
             p3.update_speed(x, 1.0);
             p3.update_length(x, l as f64);
@@ -235,12 +275,12 @@ mod test {
             assert_eq!(index1, index3);
 
             // FIXME: triangle looses 1 on sec case
-            //assert_eq!(index2, index4);
-            //eprintln!(
-            //    "index1={} index2={} index3={} index4={}",
-            //    index1, index2, index3, index4
-            //);
-            //assert_eq!(index3, i % l);
+            assert_eq!(index2, index4, "i={} l={}", i, l);
+            eprintln!(
+                "i={} index1={} index2={} index3={} index4={}",
+                i, index1, index2, index3, index4
+            );
+            assert_eq!(index3, i % l);
         }
     }
 
