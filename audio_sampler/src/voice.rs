@@ -1,5 +1,6 @@
 use crate::clip::Clip;
 use crate::common_types::Note;
+use crate::player::Player;
 use crate::volume::Volume;
 
 #[repr(transparent)]
@@ -15,6 +16,7 @@ pub struct Voice {
     pub finished: bool,
     pub ping_pong_speed: f32,
     pub clip: Clip,
+    pub player: Player,
     // this is only used by the UI to show loop points
     // its hack/workaround for not having loop information easily available
     pub last_sample_index: usize,

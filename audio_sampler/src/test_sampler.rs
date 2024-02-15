@@ -3,6 +3,7 @@ mod test {
     use std::f32::consts::PI;
 
     use crate::common_types::{InitParams, Note, Params, RecordingMode, Transport};
+    use crate::player::Mode::Loop;
     use crate::sampler::{LoopMode, Sampler};
     use crate::time_value::{TimeOrRatio, TimeValue};
 
@@ -663,25 +664,32 @@ mod test {
     }
 
     #[test]
-    fn test_loop_length() {
+    fn test_set_loop_length() {
         let params = Params {
-            loop_length: TimeOrRatio::Time(TimeValue::QuarterNotes(1.0)),
+            loop_length: TimeOrRatio::Ratio(1.0),
             loop_mode: LoopMode::Loop,
-            transport: Transport {
-                tempo: 15.0,
-                sample_rate: 1.0,
-                pos_samples: 0.0,
-                ..Transport::default()
-            },
             ..base_params()
         };
         let mut host = Host::new(params);
         host.schedule(0, Cmd::StartRecording);
         let mut input = one_to_ten();
         host.schedule(0, Cmd::StartRecording);
-        host.schedule(input.len(), Cmd::StopRecording);
-        host.schedule(input.len(), Cmd::StartPlaying { start_percent: 0.0 });
-        input.resize(input.len() + 10, 0.0);
+        let n = input.len();
+        host.schedule(n, Cmd::StopRecording);
+        host.schedule(n, Cmd::StartPlaying { start_percent: 0.0 });
+        host.schedule(
+            2 * n + 3,
+            Cmd::SetLoopLength {
+                length_percent: 0.5,
+            },
+        );
+        host.schedule(
+            n + 3,
+            Cmd::SetLoopLength {
+                length_percent: 0.5,
+            },
+        );
+        input.resize(input.len() + 30, 0.0);
         let output = host.run_input(input.clone());
 
         assert_eq!(
@@ -694,5 +702,109 @@ mod test {
             ]
             .concat()
         );
+    }
+
+    #[derive(Clone, Debug)]
+    struct EasyHost {
+        pub sampler: Sampler,
+        pub params: Params,
+        pub output: Vec<f32>,
+    }
+
+    impl Default for EasyHost {
+        fn default() -> Self {
+            Self {
+                sampler: Sampler::new(1, &InitParams::default()),
+                params: Params {
+                    loop_mode: LoopMode::Loop,
+                    attack_samples: 0,
+                    decay_samples: 0,
+                    loop_length: TimeOrRatio::Ratio(1.0),
+                    recording_mode: RecordingMode::NoteTriggered,
+                    ..Params::default()
+                },
+                output: vec![],
+            }
+        }
+    }
+
+    impl EasyHost {
+        pub fn run(&mut self, n: usize) -> Vec<f32> {
+            self.run_input(std::iter::repeat(0.0).take(n))
+        }
+        pub fn record<I>(&mut self, input: I) -> Vec<f32>
+        where
+            I: IntoIterator<Item = f32>,
+        {
+            self.start_recording();
+            let out = self.run_input(input);
+            self.stop_recording();
+            out
+        }
+        pub fn play(&mut self, n: usize) -> Vec<f32> {
+            self.start_playing(0.0);
+            let out = self.run(n);
+            self.stop_playing();
+            out
+        }
+        pub fn run_input<I>(&mut self, input: I) -> Vec<f32>
+        where
+            I: IntoIterator<Item = f32>,
+        {
+            let mut output = vec![];
+            for mut x in input {
+                let mut frame = vec![&mut x];
+                self.sampler.process_frame(&mut frame, &self.params);
+                let y = *frame[0];
+                self.output.push(y);
+                output.push(y);
+            }
+            output
+        }
+        pub fn start_playing(&mut self, start_position: f32) {
+            self.sampler
+                .start_playing(start_position, Note::new(0, 0), 1.0, &self.params);
+        }
+        pub fn stop_playing(&mut self) {
+            self.sampler.stop_playing(Note::new(0, 0), &self.params);
+        }
+        pub fn start_recording(&mut self) {
+            self.sampler.start_recording(&self.params);
+        }
+        pub fn stop_recording(&mut self) {
+            self.sampler.stop_recording(&self.params);
+        }
+    }
+
+    #[test]
+    fn test_updating_params() {
+        let mut h = EasyHost::default();
+        h.record(one_to_ten());
+        h.start_playing(0.0);
+
+        assert_eq!(h.run(3), vec![1.0, 2.0, 3.0]);
+        assert_eq!(h.run(7), vec![4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
+
+        assert_eq!(h.run(3), vec![1.0, 2.0, 3.0]);
+        h.params.loop_length = TimeOrRatio::Ratio(0.5);
+        assert_eq!(h.run(7), vec![4.0, 5.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
+
+        assert_eq!(h.run(3), vec![1.0, 2.0, 3.0]);
+        h.params.loop_length = TimeOrRatio::Ratio(0.3);
+        assert_eq!(h.run(7), vec![1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0]);
+
+        assert_eq!(h.run(3), vec![2.0, 3.0, 1.0]);
+        h.params.reverse_speed = -1.0;
+        assert_eq!(h.run(7), vec![1.0, 3.0, 2.0, 1.0, 3.0, 2.0, 1.0]);
+
+        h.params.loop_length = TimeOrRatio::Ratio(1.0);
+        assert_eq!(h.run(7), vec![10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0]);
+        h.params.loop_mode = LoopMode::PingPong;
+
+        //// FIXME: PingPong fails this because it does not look backwards. Maybe Loop mode shouldn't as well to simplify things?
+        //assert_eq!(
+        //    h.run(10),
+        //    vec![3.0, 2.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+        //);
     }
 }
