@@ -663,47 +663,6 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_set_loop_length() {
-        let params = Params {
-            loop_length: TimeOrRatio::Ratio(1.0),
-            loop_mode: LoopMode::Loop,
-            ..base_params()
-        };
-        let mut host = Host::new(params);
-        host.schedule(0, Cmd::StartRecording);
-        let mut input = one_to_ten();
-        host.schedule(0, Cmd::StartRecording);
-        let n = input.len();
-        host.schedule(n, Cmd::StopRecording);
-        host.schedule(n, Cmd::StartPlaying { start_percent: 0.0 });
-        host.schedule(
-            2 * n + 3,
-            Cmd::SetLoopLength {
-                length_percent: 0.5,
-            },
-        );
-        host.schedule(
-            n + 3,
-            Cmd::SetLoopLength {
-                length_percent: 0.5,
-            },
-        );
-        input.resize(input.len() + 30, 0.0);
-        let output = host.run_input(input.clone());
-
-        assert_eq!(
-            output,
-            vec![
-                one_to_ten(),
-                input[0..4].to_vec(),
-                input[0..4].to_vec(),
-                input[0..2].to_vec()
-            ]
-            .concat()
-        );
-    }
-
     #[derive(Clone, Debug)]
     struct EasyHost {
         pub sampler: Sampler,

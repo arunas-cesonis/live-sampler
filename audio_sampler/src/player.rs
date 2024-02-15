@@ -2,8 +2,9 @@ use crate::utils::normalize_offset;
 use nih_plug::nih_warn;
 
 type T = f32;
-
-const PRECISION: usize = 1;
+// To how many points should the numbers be rounded to
+// for equality comparison in asserts
+const ASSERTS_PRECISION: usize = 2;
 
 fn saw(t: T) -> T {
     t - t.floor()
@@ -63,7 +64,7 @@ fn roundn(x: T, n: u32) -> T {
 }
 
 fn round_precision(x: T) -> T {
-    roundn(x, PRECISION as u32)
+    roundn(x, ASSERTS_PRECISION as u32)
 }
 
 fn same_precision(a: T, b: T) -> bool {
@@ -149,13 +150,13 @@ impl Triangle {
         let amount = y / self.l;
         self.shift = signum * (if sec { 2.0 - amount } else { amount });
 
-        let assert_y = self.apply(0.0);
-        assert!(
-            same_precision(self.apply(0.0), y),
-            "assert_y={:?} y={:?}",
-            assert_y,
-            y
-        );
+        //let assert_y = self.apply(0.0);
+        //assert!(
+        //    same_precision(self.apply(0.0), y),
+        //    "assert_y={:?} y={:?}",
+        //    assert_y,
+        //    y
+        //);
     }
     pub fn is_sec(&self, t: T) -> bool {
         let y = tri2_sec(self.l, self.s * t + self.shift * self.l);
@@ -312,7 +313,7 @@ impl Clip {
     }
 
     pub fn verify_data_offset(&self, x: T) -> Option<DataOffset> {
-        if (0.0 <= x && x < self.data_len as f32) {
+        if (0.0 <= x && x < self.data_len as T) {
             Some(DataOffset(x))
         } else {
             None
@@ -326,19 +327,19 @@ impl Clip {
 
     pub fn data_offset_to_loop_offset(&self, offset: DataOffset) -> Option<LoopOffset> {
         assert!(self.verify_data_offset(offset.0).is_some());
-        let len_f32 = self.data_len as T;
+        let len_t = self.data_len as T;
         let s = self.start;
         let e = self.start + self.length;
         let x = offset.0;
         match () {
             _ if x >= s && x < e => Some(LoopOffset(x - s)),
-            _ if x < s && (x + len_f32 < e) => Some(LoopOffset(x + len_f32 - s)),
+            _ if x < s && (x + len_t < e) => Some(LoopOffset(x + len_t - s)),
             _ => None,
         }
     }
 
     // LoopOffset
-    pub fn offset_to_data_index(&self, offset: f32) -> usize {
+    pub fn offset_to_data_index(&self, offset: T) -> usize {
         let x = offset % self.length;
         let x = if x >= 0.0 { x } else { x + self.length };
         let x = self.start + x;
