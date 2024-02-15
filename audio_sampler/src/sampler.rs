@@ -13,7 +13,6 @@ use crate::volume::Volume;
 #[derive(Clone, Debug)]
 pub(crate) struct Channel {
     pub(crate) data: Vec<f32>,
-    pub(crate) reverse_speed: f32,
     pub(crate) voices: Vec<Voice>,
     pub(crate) now: usize,
     pub(crate) passthru_on: bool,
@@ -47,30 +46,6 @@ fn starting_offset(loop_start_percent: f32, data_len: usize) -> f32 {
     start
 }
 
-pub fn loop_length(params: &Params, data_len: usize) -> f32 {
-    let t = &params.transport;
-    match params.loop_length {
-        TimeOrRatio::Time(time) => match time {
-            TimeValue::Samples(samples) => samples as f32,
-            TimeValue::Seconds(seconds) => seconds as f32 * t.sample_rate as f32,
-            TimeValue::QuarterNotes(quarter_notes) => {
-                let samples_per_quarter_note = t.sample_rate as f32 * 60.0 / t.tempo;
-                quarter_notes as f32 * samples_per_quarter_note
-            }
-            TimeValue::Bars(bars) => {
-                let samples_per_bar = t.sample_rate as f32 * 60.0 / t.tempo
-                    * t.time_sig_numerator as f32
-                    / t.time_sig_denominator as f32;
-                bars as f32 * samples_per_bar
-            }
-        },
-        TimeOrRatio::Ratio(ratio) => {
-            let len_f32 = data_len as f32;
-            len_f32 * ratio
-        }
-    }
-}
-
 impl Channel {
     fn reset(&mut self) {
         self.data.clear();
@@ -83,7 +58,6 @@ impl Channel {
     fn new(params: &InitParams) -> Self {
         Channel {
             data: vec![],
-            reverse_speed: 1.0,
             voices: vec![],
             now: 0,
             passthru_on: false,
@@ -122,7 +96,7 @@ impl Channel {
 
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
         let offset = loop_start_percent * self.data.len() as f32;
-        let length: f32 = loop_length(params, self.data.len());
+        let length: f32 = params.loop_length(self.data.len());
         let mut voice = Voice {
             note,
             loop_start_percent,
@@ -150,14 +124,6 @@ impl Channel {
             self.finish_voice(self.now, i, params);
             self.handle_passthru(params);
         }
-    }
-
-    pub fn reverse(&mut self, _params: &Params) {
-        self.reverse_speed = -1.0;
-    }
-
-    pub fn unreverse(&mut self, _params: &Params) {
-        self.reverse_speed = 1.0;
     }
 
     pub fn start_recording(&mut self, params: &Params) {
@@ -205,14 +171,14 @@ impl Channel {
                 continue;
             }
 
-            let speed = self.reverse_speed * params.speed;
+            let speed = params.speed();
 
             let len_f32 = self.data.len() as f32;
 
             voice.clip.update_speed(self.now, speed);
             voice
                 .clip
-                .update_length(self.now, loop_length(params, self.data.len()) as usize);
+                .update_length(self.now, params.loop_length(self.data.len()) as usize);
             let offset = ((params.start_offset_percent + voice.loop_start_percent) * len_f32)
                 .floor() as usize;
             voice.clip.update_offset(offset);
@@ -362,14 +328,6 @@ impl Sampler {
         self.each(|ch| Channel::start_recording(ch, params));
     }
 
-    pub fn reverse(&mut self, params: &Params) {
-        self.each(|ch| Channel::reverse(ch, params));
-    }
-
-    pub fn unreverse(&mut self, params: &Params) {
-        self.each(|ch| Channel::unreverse(ch, params));
-    }
-
     pub fn stop_recording(&mut self, params: &Params) {
         self.each(|ch| Channel::stop_recording(ch, params));
     }
@@ -420,7 +378,7 @@ impl Sampler {
     pub fn get_voice_info(&self, params: &Params) -> Vec<VoiceInfo> {
         let data_len_f32 = self.channels[0].data.len() as f32;
 
-        let l = loop_length(params, self.get_data_len());
+        let l = params.loop_length(self.get_data_len());
         self.channels[0]
             .voices
             .iter()
