@@ -1,4 +1,7 @@
+use crate::player::Player;
+use nih_plug::{nih_trace, nih_warn};
 use std::fmt::Debug;
+use std::ops::Add;
 
 use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
@@ -18,6 +21,8 @@ pub(crate) struct Channel {
     pub(crate) passthru_on: bool,
     pub(crate) passthru_volume: Volume,
     pub(crate) recorder: Recorder,
+    pub(crate) index: usize,
+    pub(crate) next_voice_id: usize,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -55,7 +60,7 @@ impl Channel {
         self.passthru_volume = Volume::new(0.0);
         self.recorder = Recorder::new();
     }
-    fn new(params: &InitParams) -> Self {
+    fn new(params: &InitParams, index: usize) -> Self {
         Channel {
             data: vec![],
             voices: vec![],
@@ -63,6 +68,8 @@ impl Channel {
             passthru_on: false,
             passthru_volume: Volume::new(if params.auto_passthru { 1.0 } else { 0.0 }),
             recorder: Recorder::new(),
+            index,
+            next_voice_id: 0,
         }
     }
 
@@ -83,6 +90,24 @@ impl Channel {
         voice.finished = true;
     }
 
+    fn player_clip(
+        params: &Params,
+        loop_start_percent: f32,
+        data_len: usize,
+    ) -> crate::player::Clip {
+        crate::player::Clip {
+            speed: params.speed(),
+            length: params.loop_length(data_len),
+            start: starting_offset(loop_start_percent, data_len),
+            data_len: data_len,
+            mode: match params.loop_mode {
+                LoopMode::Loop => crate::player::Mode::Loop,
+                LoopMode::PlayOnce => crate::player::Mode::Loop,
+                LoopMode::PingPong => crate::player::Mode::PingPong,
+            },
+        }
+    }
+
     pub fn start_playing(
         &mut self,
         loop_start_percent: f32,
@@ -98,16 +123,21 @@ impl Channel {
         let offset = loop_start_percent * self.data.len() as f32;
         let length: f32 = params.loop_length(self.data.len());
         let mut voice = Voice {
-            note,
+            note: note,
             loop_start_percent,
             played: 0.0,
+            player: Player::new(
+                self.now,
+                &Self::player_clip(&params, loop_start_percent, self.data.len()),
+            ),
             clip: Clip::new(self.now, offset as usize, length as usize, 0, params.speed),
             ping_pong_speed: 1.0,
             volume: Volume::new(0.0),
             finished: false,
             last_sample_index: 0,
         };
-        eprintln!("now={} start playing voice={:?}", self.now, voice);
+        self.next_voice_id += 1;
+        nih_warn!("now={} adding voice={:?}", self.now, voice);
         voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
         self.handle_passthru(params);
@@ -121,6 +151,10 @@ impl Channel {
             .iter()
             .position(|v| v.note == note && !v.finished)
         {
+            {
+                let voice = &self.voices[i];
+                nih_warn!("now={} finished note-off voice={:?}", self.now, voice);
+            }
             self.finish_voice(self.now, i, params);
             self.handle_passthru(params);
         }
@@ -172,17 +206,20 @@ impl Channel {
             }
 
             let speed = params.speed();
+            let clip = Self::player_clip(params, voice.loop_start_percent, self.data.len());
+            let index = voice.player.sample_index(self.now, &clip);
+            //eprintln!("index={} loop_mode={:?}", index, params.loop_mode);
 
-            let len_f32 = self.data.len() as f32;
+            //let len_f32 = self.data.len() as f32;
 
-            voice.clip.update_speed(self.now, speed);
-            voice
-                .clip
-                .update_length(self.now, params.loop_length(self.data.len()) as usize);
-            let offset = ((params.start_offset_percent + voice.loop_start_percent) * len_f32)
-                .floor() as usize;
-            voice.clip.update_offset(offset);
-            let index = voice.clip.sample_index(self.now, self.data.len());
+            //voice.clip.update_speed(self.now, speed);
+            //voice
+            //    .clip
+            //    .update_length(self.now, params.loop_length(self.data.len()) as usize);
+            //let offset = ((params.start_offset_percent + voice.loop_start_percent) * len_f32)
+            //    .floor() as usize;
+            //voice.clip.update_offset(offset);
+            //let index = voice.clip.sample_index(self.now, self.data.len());
             let value = self.data[index] * voice.volume.value(self.now);
             // eprintln!(
             //     "self.now={} play value={} voice={:?}",
@@ -203,6 +240,10 @@ impl Channel {
 
         // remove voices that are finished and mute
         while let Some(j) = finished.pop() {
+            {
+                let voice = &self.voices[j];
+                nih_warn!("now={} finished play once voice={:?}", self.now, voice);
+            }
             self.finish_voice(self.now, j, params);
         }
 
@@ -217,6 +258,10 @@ impl Channel {
 
         // remove voices that are finished and mute
         while let Some(j) = removed.pop() {
+            {
+                let voice = &self.voices[j];
+                nih_warn!("now={} removing voice={:?}", self.now, voice);
+            }
             self.voices.remove(j);
         }
         output
@@ -306,7 +351,9 @@ impl Sampler {
 
     pub fn new(channel_count: usize, params: &InitParams) -> Self {
         Self {
-            channels: vec![Channel::new(&params); channel_count],
+            channels: (0..channel_count)
+                .map(|i| Channel::new(params, i))
+                .collect(),
         }
     }
     fn each<F>(&mut self, f: F)
