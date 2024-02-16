@@ -1,19 +1,20 @@
 extern crate core;
 
-mod common_types;
-mod editor_vizia;
-
-use nih_plug::params::persist::PersistentField;
 use std::num::NonZeroU32;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use crate::common_types::{EvalError, EvalStatus, FileStatus, Status};
+use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
+use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyList};
 use pyo3::{PyErr, Python};
+
+use crate::common_types::{EvalError, EvalStatus, FileStatus, Status};
+
+mod common_types;
+mod editor_vizia;
 
 type SysEx = ();
 
@@ -32,14 +33,14 @@ pub struct PyO3Plugin {
 pub struct SourcePath(Arc<parking_lot::Mutex<String>>);
 
 impl<'a> PersistentField<'a, String> for SourcePath {
+    fn set(&self, new_value: String) {
+        *self.0.lock() = new_value;
+    }
     fn map<F, R>(&self, f: F) -> R
     where
         F: Fn(&String) -> R,
     {
         f(&self.0.lock())
-    }
-    fn set(&self, new_value: String) {
-        *self.0.lock() = new_value;
     }
 }
 
@@ -80,19 +81,17 @@ impl Default for PyO3Plugin {
     }
 }
 
-use pyo3::prelude::*;
-
-#[pyfunction]
-#[pyo3(name = "print")]
-fn python_print(a: &PyAny) {
-    nih_warn!("python: {:?}", a);
-}
-
-#[pymodule]
-fn module_with_functions(py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(python_print, m)?)?;
-    Ok(())
-}
+// #[pyfunction]
+// #[pyo3(name = "print")]
+// fn python_print(a: &PyAny) {
+//     nih_warn!("python: {:?}", a);
+// }
+//
+// #[pymodule]
+// fn module_with_functions(_py: Python, m: &PyModule) -> PyResult<()> {
+//     m.add_function(wrap_pyfunction!(python_print, m)?)?;
+//     Ok(())
+// }
 
 impl PyO3Plugin {
     fn update_file_status(&mut self, file_status: FileStatus) {
@@ -165,10 +164,10 @@ impl PyO3Plugin {
         Ok(())
     }
 
-    fn run_python(&mut self, buffer: &mut Buffer) -> std::result::Result<(), EvalError> {
+    fn run_python(&mut self, buffer: &mut Buffer) -> Result<(), EvalError> {
         if let Some(python_source) = &self.python_source {
             let buf = buffer.as_slice();
-            let result = Python::with_gil(|py| -> std::result::Result<Vec<Vec<f32>>, PyErr> {
+            let result = Python::with_gil(|py| -> Result<Vec<Vec<f32>>, PyErr> {
                 //let m = py.import("module_with_functions")?;
                 //let globals = [("module_with_functions", m)].into_py_dict(py);
                 py.run(python_source.as_str(), None, None)?;
@@ -219,6 +218,10 @@ impl Plugin for PyO3Plugin {
 
     type BackgroundTask = ();
 
+    fn params(&self) -> Arc<dyn Params> {
+        self.params.clone()
+    }
+
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         let data = editor_vizia::Data {
             version: self.data_version.clone(),
@@ -227,10 +230,6 @@ impl Plugin for PyO3Plugin {
         };
 
         editor_vizia::create(self.params.editor_state.clone(), data)
-    }
-
-    fn params(&self) -> Arc<dyn Params> {
-        self.params.clone()
     }
 
     fn initialize(

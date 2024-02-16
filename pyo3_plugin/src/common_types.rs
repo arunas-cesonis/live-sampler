@@ -15,7 +15,6 @@ pub enum EvalError {
 pub enum EvalStatus {
     Ok,
     NotExecuted,
-    NotSourceLoaded,
     Error(EvalError),
 }
 
