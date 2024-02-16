@@ -38,6 +38,10 @@ impl Model for Data {
                 eprintln!("Choice: {}", i);
                 //self.debug_data_out.lock().write().message = format!("Choice: {}", i);
             }
+            EditorEvent::Reload => {
+                self.version.fetch_add(1, Ordering::Relaxed);
+                //self.debug_data_out.lock().write().message = format!("Reload");
+            }
             EditorEvent::UpdatePath(s) => {
                 *self.params.source_path.0.lock() = s.to_string();
                 self.version.fetch_add(1, Ordering::Relaxed);
@@ -96,6 +100,7 @@ pub enum EditorEvent {
     UpdateY(f32),
     Choice(usize),
     UpdatePath(String),
+    Reload,
 }
 
 pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dyn Editor>> {
@@ -126,13 +131,28 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     .width(Stretch(1.0))
                     .right(Pixels(10.0))
                     .on_edit(|ctx, s| ctx.emit(EditorEvent::UpdatePath(s.to_string())));
-                    Label::new(cx, "Status").top(Pixels(10.0));
+                    Label::new(cx, "File status").top(Pixels(10.0));
                     Label::new(
                         cx,
                         Data::status_out.map(|x| {
                             let files_status = x.lock().read().file_status.clone();
                             format!("{:?}", files_status)
                         }),
+                    )
+                    .top(Pixels(10.0));
+                    Label::new(cx, "Eval status").top(Pixels(10.0));
+                    Label::new(
+                        cx,
+                        Data::status_out.map(|x| {
+                            let eval_status = x.lock().read().eval_status.clone();
+                            format!("{:?}", eval_status)
+                        }),
+                    )
+                    .top(Pixels(10.0));
+                    Button::new(
+                        cx,
+                        |ctx| ctx.emit(EditorEvent::Reload),
+                        |cx| Label::new(cx, "Reload"),
                     )
                     .top(Pixels(10.0));
                 });
