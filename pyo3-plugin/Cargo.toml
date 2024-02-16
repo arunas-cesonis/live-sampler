@@ -21,6 +21,14 @@ tikv-jemallocator = "0.5.4"
 [dependencies.intmap]
 version = "2.0.0"
 
+[dependencies.pyo3]
+version = "0.15.1"
+features = ["auto-initialize"]
+
+
+
+
+
 
 
 
