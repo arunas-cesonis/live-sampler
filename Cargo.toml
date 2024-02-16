@@ -1,5 +1,5 @@
 [workspace]
-members = ["audio_sampler", "midi_sampler", "pyo3-plugin", "xtask"]
+members = ["audio_sampler", "midi_sampler", "pyo3_plugin", "xtask"]
 resolver = "2"
 
 [workspace.package]
