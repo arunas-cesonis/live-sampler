@@ -1,7 +1,7 @@
 use crate::utils::normalize_offset;
 use nih_plug::nih_warn;
 
-type T = f32;
+pub type T = f32;
 // To how many points should the numbers be rounded to
 // for equality comparison in asserts
 const ASSERTS_PRECISION: usize = 2;
@@ -29,7 +29,7 @@ fn tri(t: T) -> T {
 }
 
 #[allow(unused)]
-fn saw2(a: T, t: T) -> T {
+pub fn saw2(a: T, t: T) -> T {
     let z = t % a;
     if z >= 0.0 {
         z
@@ -39,16 +39,16 @@ fn saw2(a: T, t: T) -> T {
 }
 
 #[allow(unused)]
-fn tri2(a: T, t: T) -> T {
+pub fn tri2(a: T, t: T) -> T {
     let aa = 2.0 * a;
     let z = t.abs() % aa;
-    let r = if z < a { z } else { aa - z };
+    let r = if z < a { z } else { z - a };
     // eprintln!("tri2 a={:?} t={:?} aa={:?} z={:?} r={:?}", a, t, aa, z, r);
     r
 }
 
 #[allow(unused)]
-fn tri2_sec(a: T, t: T) -> bool {
+pub fn tri2_sec(a: T, t: T) -> bool {
     let aa = 2.0 * a;
     let z = t.abs() % aa;
     if z < a {
@@ -73,11 +73,6 @@ fn same_precision(a: T, b: T) -> bool {
 
 fn same_n(a: T, b: T, n: u32) -> bool {
     roundn(a, n) == roundn(b, n)
-}
-
-#[allow(unused)]
-fn same_eq(a: T, b: T) -> bool {
-    a == b
 }
 
 fn index(a: T, n: usize) -> usize {
@@ -171,113 +166,6 @@ impl Triangle {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    pub fn run_saw(s: T, l: T) -> usize {
-        let mut v: Vec<(Saw, T)> = vec![];
-        let mut iter = 0;
-
-        for i in 0..(3 * (l as usize)) {
-            let x = i as T;
-            let a = Saw::new(s, l);
-            let y = a.apply(x);
-            for (q, dx) in &v {
-                let y2 = q.apply(x - dx);
-
-                let i1 = index(y, l as usize);
-                let i2 = index(y2, l as usize);
-                assert_eq!(
-                    i1,
-                    i2,
-                    "a {:?} q {:?} x {:?} dx {:?} y {:?} y2 {:?} y2-l={:?}",
-                    a,
-                    q,
-                    x,
-                    dx,
-                    y,
-                    y2,
-                    same_n(l, y2, 4)
-                );
-                iter += 1;
-            }
-            v.push((a.to_shifted(x), x));
-        }
-        iter
-    }
-
-    pub fn run_triangle(s: T, l: T) -> usize {
-        let mut v: Vec<(Triangle, T)> = vec![];
-        let mut iter = 0;
-
-        for i in 0..(3 * (l as usize)) {
-            let x = i as T;
-            let a = Triangle::new(s, l);
-            let y = a.apply(x);
-            for (q, dx) in &v {
-                let y2 = q.apply(x - dx);
-                let i1 = index(y, l as usize);
-                let i2 = index(y2, l as usize);
-                assert_eq!(round_precision(y), round_precision(y2));
-                assert_eq!(
-                    i1,
-                    i2,
-                    "a {:?} q {:?} x {:?} dx {:?} y {:?} y2 {:?} y2-l={:?}",
-                    a,
-                    q,
-                    x,
-                    dx,
-                    y,
-                    y2,
-                    same_n(l, y2, 4)
-                );
-                iter += 1;
-            }
-            v.push((a.to_shifted(x), x));
-        }
-        iter
-    }
-
-    fn variants() -> Vec<(T, T)> {
-        let speeds = vec![0.25, 0.5, 1.0, 2.0, 3.0, 40.0, 50.0];
-        let speeds = vec![
-            speeds.clone(),
-            speeds.iter().map(|s| -*s).collect::<Vec<_>>(),
-        ]
-        .concat();
-        let lengths = vec![1.0, 2.0, 3.0, 40.0, 50.0];
-        let variants = speeds.iter().flat_map(|s| lengths.iter().map(|l| (*s, *l)));
-        variants.collect()
-    }
-
-    #[test]
-    pub fn test2() {
-        let iterations = variants()
-            .into_iter()
-            .map(|(s, l)| run_triangle(s, l) + run_saw(s, l))
-            .sum::<usize>();
-        eprintln!("{}", iterations);
-    }
-
-    #[test]
-    pub fn test() {
-        let mut iter = 0;
-        for (s, l) in variants() {
-            let a = Triangle::new(s, l);
-            let mut b = Triangle::new(s, l);
-            let c = Saw::new(s, l);
-            let mut d = Saw::new(s, l);
-            for i in 0..(3 * (l as usize)) {
-                let x = i as T;
-                let y = a.apply(x);
-                let sec = a.is_sec(x);
-                b.shift_to(y, sec, a.s.signum());
-                assert!(same_n(y, b.apply(0.0), 4));
-                let y = c.apply(x);
-                d.shift_to(y);
-                assert!(same_n(y, d.apply(0.0), 4));
-                iter += 1;
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -346,6 +234,17 @@ impl Clip {
         let index = (x.round() as usize) % self.data_len;
         index
     }
+
+    // LoopOffset
+    pub fn offset_to_data_index_tri(&self, offset: T) -> usize {
+        eprintln!("{} {}", self.start, offset);
+        let ll = 2.0 * self.length;
+        let z = offset.abs() % ll;
+        let r = if z < self.length { z } else { ll - z };
+        let x = self.start + r;
+        let index = (x.round() as usize) % self.data_len;
+        index
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -398,25 +297,11 @@ impl Player {
     fn calc_index(&self, now: usize) -> usize {
         let mut offset = self.offset(now);
         match self.clip.mode {
-            Mode::Loop if self.speed() < 0.0 => {
-                offset -= 1.0;
-            }
-            Mode::PingPong if self.speed() < 0.0 => {
-                // FIXME: figure out the PingPong case when playing backwards
-                /*
-                let prev = offset;
-                if offset >= 0.0 && offset - 1.0 < 0.0 {
-                    offset = -(offset - 1.0);
-                } else {
-                    offset -= 1.0;
-                }
-                 */
-            }
-            Mode::Loop => (),
-            Mode::PingPong => (),
-        };
-        // eprintln!("calc_index offset={:?}", offset);
-        self.clip.offset_to_data_index(offset)
+            Mode::Loop if self.speed() < 0.0 => self.clip.offset_to_data_index(offset - 1.0),
+            Mode::Loop => self.clip.offset_to_data_index(offset),
+            Mode::PingPong if self.speed() < 0.0 => self.clip.offset_to_data_index_tri(offset),
+            Mode::PingPong => self.clip.offset_to_data_index_tri(offset),
+        }
     }
 
     fn calc_available_offset(&self, now: usize, clip: &Clip) -> T {
@@ -464,28 +349,5 @@ impl Player {
             *self = new_self;
             index
         }
-    }
-}
-
-#[cfg(test)]
-mod test2 {
-    use super::*;
-    #[test]
-    pub fn test_clip() {
-        let clip = Clip {
-            speed: 0.0,
-            start: 190.0,
-            length: 50.0,
-            data_len: 200,
-            mode: Mode::Loop,
-        };
-        let x = clip.verify_loop_offset(40.0);
-        eprintln!("{:?}", x);
-
-        eprintln!("{:?}", clip.loop_offset_to_data_offset(x.unwrap()));
-        eprintln!(
-            "{:?}",
-            clip.data_offset_to_loop_offset(clip.loop_offset_to_data_offset(x.unwrap()))
-        );
     }
 }
