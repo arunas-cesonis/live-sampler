@@ -21,6 +21,9 @@ pub struct Data {
 impl Model for Data {
     fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
         event.map(|editor_event, _| match editor_event {
+            EditorEvent::ToggleBypass => {
+                self.params.bypass.value.fetch_not(Ordering::Relaxed);
+            }
             EditorEvent::Reload => {
                 self.version.fetch_add(1, Ordering::Relaxed);
             }
@@ -40,6 +43,7 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
 
 pub enum EditorEvent {
     UpdatePath(String),
+    ToggleBypass,
     Reload,
 }
 
@@ -107,28 +111,50 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                 .height(Pixels(30.0))
                 .width(Stretch(1.0))
                 .top(Pixels(10.0));
-                Button::new(
-                    cx,
-                    |ctx| ctx.emit(EditorEvent::Reload),
-                    |cx| Label::new(cx, "Reload"),
-                )
-                .top(Pixels(10.0));
+                HStack::new(cx, |cx| {
+                    Button::new(
+                        cx,
+                        |ctx| ctx.emit(EditorEvent::Reload),
+                        |cx| Label::new(cx, "Reload"),
+                    )
+                    .top(Pixels(10.0));
+                    Checkbox::new(
+                        cx,
+                        Data::params.map(|p| p.bypass.value.load(Ordering::Relaxed)),
+                    )
+                    .on_toggle(|ctx| ctx.emit(EditorEvent::ToggleBypass))
+                    .top(Pixels(10.0))
+                    .left(Pixels(10.0));
+                    Label::new(cx, "Bypass")
+                        .top(Pixels(10.0))
+                        .left(Pixels(10.0))
+                        .on_mouse_up(|ctx, _| {
+                            ctx.emit(EditorEvent::ToggleBypass);
+                        });
+                });
                 Label::new(
                     cx,
                     Data::status_out.map(|x| {
-                        let stats = x.lock().read().stats.clone();
-                        let total = stats.duration.as_secs_f64();
+                        let stats = match x.lock().read().runtime_stats.clone() {
+                            Some(stats) => stats,
+                            None => return "".to_string(),
+                        };
+                        let total = stats.total_duration.as_secs_f64();
                         let last = stats.last_duration.as_secs_f64();
                         let last_sec = stats.last_rolling_avg.as_secs_f64();
-                        let avg = stats.duration.as_secs_f64() / stats.iterations as f64;
-                        vec![
+                        let loaded = stats.source_loaded.elapsed().as_secs_f64();
+                        let avg = stats.total_duration.as_secs_f64() / stats.iterations as f64;
+                        let out = vec![
+                            format!("loaded: {:.1}s ago", loaded),
                             format!("avg_last_10sec {:.3}ms", last_sec * 1000.0),
                             format!("avg: {:.3}ms", avg * 1000.0),
                             format!("last: {:.3}ms", last * 1000.0),
                             format!("total: {:.3}ms", total * 1000.0),
+                            format!("window_size: {}", stats.window_size),
+                            format!("sample_rate: {}", stats.sample_rate),
                             format!("iter: {}", stats.iterations),
-                        ]
-                        .join("\n")
+                        ];
+                        out.join("\n")
                     }),
                 )
                 .top(Pixels(10.0));
