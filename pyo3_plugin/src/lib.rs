@@ -127,6 +127,7 @@ impl PyO3Plugin {
             nih_warn!("data_version={:?} path={:?}", data_version, path);
             if path == "" {
                 self.update_file_status(FileStatus::Unloaded);
+                self.python_source = None;
                 return;
             }
             let ret = std::fs::read_to_string(&*path);
