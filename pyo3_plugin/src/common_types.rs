@@ -1,6 +1,6 @@
 use nih_plug::prelude::Params;
 use pyo3::ffi::PyWideStringList;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum FileStatus {
@@ -22,19 +22,36 @@ pub enum EvalStatus {
     Error(EvalError),
 }
 
-#[derive(PartialEq, Clone, Debug, Default)]
-pub struct Stats {
-    pub duration: Duration,
+#[derive(PartialEq, Clone, Debug)]
+pub struct RuntimeStats {
+    pub total_duration: Duration,
     pub last_duration: Duration,
     pub last_rolling_avg: Duration,
     pub iterations: usize,
+    pub source_loaded: Instant,
+    pub window_size: usize,
+    pub sample_rate: f32,
+}
+
+impl RuntimeStats {
+    pub fn new() -> Self {
+        Self {
+            total_duration: Duration::from_secs(0),
+            last_duration: Duration::from_secs(0),
+            last_rolling_avg: Duration::from_secs(0),
+            iterations: 0,
+            source_loaded: Instant::now(),
+            window_size: 0,
+            sample_rate: 0.0,
+        }
+    }
 }
 
 #[derive(PartialEq, Clone, Debug, Default)]
 pub struct Status {
     pub file_status: FileStatus,
     pub eval_status: EvalStatus,
-    pub stats: Stats,
+    pub runtime_stats: Option<RuntimeStats>,
 }
 
 impl Default for FileStatus {

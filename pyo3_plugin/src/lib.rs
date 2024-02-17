@@ -1,23 +1,26 @@
+#![feature(atomic_bool_fetch_not)]
 extern crate core;
 
+use nih_plug::params::persist::PersistentField;
 use std::collections::VecDeque;
 use std::num::NonZeroU32;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
-use nih_plug_vizia::vizia::style::LengthValue::In;
+
 use nih_plug_vizia::ViziaState;
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyList};
 use pyo3::{PyErr, Python};
 
-use crate::common_types::{EvalError, EvalStatus, FileStatus, Status};
+use crate::common_types::{EvalError, EvalStatus, FileStatus, RuntimeStats, Status};
+use crate::source_path::SourcePath;
 
 mod common_types;
 mod editor_vizia;
+mod source_path;
 
 type SysEx = ();
 
@@ -34,21 +37,7 @@ pub struct PyO3Plugin {
     last_sec: VecDeque<(usize, Duration)>,
     last_sec_sum: Duration,
     stats_updated: usize,
-}
-
-#[derive(Default)]
-pub struct SourcePath(Arc<parking_lot::Mutex<String>>);
-
-impl<'a> PersistentField<'a, String> for SourcePath {
-    fn set(&self, new_value: String) {
-        *self.0.lock() = new_value;
-    }
-    fn map<F, R>(&self, f: F) -> R
-    where
-        F: Fn(&String) -> R,
-    {
-        f(&self.0.lock())
-    }
+    stats_update_every: Duration,
 }
 
 #[derive(Params)]
@@ -57,6 +46,24 @@ pub struct PyO3PluginParams {
     source_path: SourcePath,
     #[persist = "editor-state"]
     editor_state: Arc<ViziaState>,
+    #[persist = "bypass-param"]
+    bypass: MyBoolParam,
+}
+
+pub struct MyBoolParam {
+    value: AtomicBool,
+}
+
+impl<'a> PersistentField<'a, bool> for MyBoolParam {
+    fn set(&self, new_value: bool) {
+        self.value.store(new_value, Ordering::Relaxed);
+    }
+    fn map<F, R>(&self, f: F) -> R
+    where
+        F: Fn(&bool) -> R,
+    {
+        f(&self.value.load(Ordering::Relaxed))
+    }
 }
 
 impl Default for PyO3PluginParams {
@@ -66,8 +73,10 @@ impl Default for PyO3PluginParams {
             #[cfg(debug_assertions)]
             source_path: SourcePath(Arc::new(parking_lot::Mutex::new("./a.py".to_string()))),
             #[cfg(not(debug_assertions))]
-            source_path: SourcePath::default(), //#[cfg(not(debug_assertions))]
-                                                //            source_path: SourcePath::default(),
+            source_path: SourcePath::default(),
+            bypass: MyBoolParam {
+                value: AtomicBool::new(false),
+            },
         }
     }
 }
@@ -88,6 +97,7 @@ impl Default for PyO3Plugin {
             status: Status::default(),
             now: 0,
             stats_updated: 0,
+            stats_update_every: Duration::from_secs(1),
         }
     }
 }
@@ -105,17 +115,25 @@ impl Default for PyO3Plugin {
 // }
 
 impl PyO3Plugin {
-    fn update_file_status(&mut self, file_status: FileStatus) {
+    fn publish_status(&mut self) {
+        self.status_in.lock().write(self.status.clone());
+    }
+    fn update_file_status(&mut self, file_status: FileStatus, always_publish: bool) {
         if self.status.file_status != file_status {
             self.status.file_status = file_status;
-            self.status_in.lock().write(self.status.clone());
+            if !always_publish {
+                self.publish_status();
+            }
+        }
+        if always_publish {
+            self.publish_status();
         }
     }
 
     fn update_eval_status(&mut self, eval_status: EvalStatus) {
         if self.status.eval_status != eval_status {
             self.status.eval_status = eval_status;
-            self.status_in.lock().write(self.status.clone());
+            self.publish_status();
         }
     }
 
@@ -126,8 +144,9 @@ impl PyO3Plugin {
             let path = { self.params.source_path.0.lock().clone() };
             nih_warn!("data_version={:?} path={:?}", data_version, path);
             if path == "" {
-                self.update_file_status(FileStatus::Unloaded);
+                self.update_file_status(FileStatus::Unloaded, false);
                 self.python_source = None;
+                self.status.runtime_stats = None;
                 return;
             }
             let ret = std::fs::read_to_string(&*path);
@@ -135,15 +154,18 @@ impl PyO3Plugin {
                 Ok(source) => {
                     let size = source.len();
                     self.python_source = Some(source);
+                    self.status.runtime_stats = Some(RuntimeStats::new());
+                    self.last_sec = Default::default();
+                    self.last_sec_sum = Default::default();
                     nih_log!("python source: {}", self.python_source.as_ref().unwrap());
-                    self.update_file_status(FileStatus::Loaded(
-                        path.to_string(),
-                        size.try_into().unwrap(),
-                    ));
+                    self.update_file_status(
+                        FileStatus::Loaded(path.to_string(), size.try_into().unwrap()),
+                        true,
+                    );
                 }
                 Err(e) => {
                     nih_log!("python not laoded: {}", e);
-                    self.update_file_status(FileStatus::Error(e.to_string()));
+                    self.update_file_status(FileStatus::Error(e.to_string()), false);
                 }
             }
         }
@@ -259,7 +281,13 @@ impl Plugin for PyO3Plugin {
         true
     }
 
-    fn reset(&mut self) {}
+    fn reset(&mut self) {
+        self.python_source = None;
+        self.status = Default::default();
+        self.last_sec = Default::default();
+        self.last_sec_sum = Default::default();
+        self.seen_data_version = 0;
+    }
 
     fn process(
         &mut self,
@@ -268,16 +296,22 @@ impl Plugin for PyO3Plugin {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         self.update_python_source();
-        let elapsed = Instant::now();
-        let result = self.run_python(buffer);
-        let d = elapsed.elapsed();
-        match result {
-            Ok(()) => {
-                self.update_eval_status(EvalStatus::Ok);
-            }
-            Err(e) => {
-                self.update_eval_status(EvalStatus::Error(e));
-            }
+        let bypass = self.params.bypass.value.load(Ordering::Relaxed);
+        let d = if !bypass {
+            let elapsed = Instant::now();
+            let result = self.run_python(buffer);
+            let d = elapsed.elapsed();
+            match result {
+                Ok(()) => {
+                    self.update_eval_status(EvalStatus::Ok);
+                }
+                Err(e) => {
+                    self.update_eval_status(EvalStatus::Error(e));
+                }
+            };
+            Some(d)
+        } else {
+            None
         };
 
         let mut next_event = context.next_event();
@@ -297,25 +331,33 @@ impl Plugin for PyO3Plugin {
             }
         }
 
-        self.status.stats.iterations += 1;
-        self.status.stats.duration += d;
-        self.status.stats.last_duration = d;
-        self.last_sec.push_back((self.now, d));
-        self.last_sec_sum += d;
-        while let Some((t, d)) = self.last_sec.front().clone() {
-            if self.now - t >= (10.0 * self.sample_rate) as usize {
-                self.last_sec_sum -= *d;
-                self.last_sec.pop_front();
-            } else {
-                break;
+        if let (Some(d), Some(rt)) = (d, self.status.runtime_stats.as_mut()) {
+            rt.iterations += 1;
+            rt.total_duration += d;
+            rt.last_duration = d;
+            // this gets up to 938 at 48.0kHz - must be more efficient way.
+            // e.g. could sum to more coarse elements as only stats_update_every second's precision is needed
+            self.last_sec.push_back((self.now, d));
+            self.last_sec_sum += d;
+            while let Some((t, d)) = self.last_sec.front().clone() {
+                if self.now - t >= (10.0 * self.sample_rate) as usize {
+                    self.last_sec_sum -= *d;
+                    self.last_sec.pop_front();
+                } else {
+                    break;
+                }
             }
-        }
-        self.status.stats.last_rolling_avg = self.last_sec_sum / self.last_sec.len() as u32;
+            rt.last_rolling_avg = self.last_sec_sum / self.last_sec.len() as u32;
+            rt.window_size = self.last_sec.len();
+            rt.sample_rate = self.sample_rate;
 
-        if self.params.editor_state.is_open() {
-            if self.now - self.stats_updated >= self.sample_rate as usize {
-                self.status_in.lock().write(self.status.clone());
-                self.stats_updated = self.now;
+            if self.params.editor_state.is_open() {
+                if self.now - self.stats_updated
+                    >= (self.stats_update_every.as_secs_f64() * self.sample_rate as f64) as usize
+                {
+                    self.status_in.lock().write(self.status.clone());
+                    self.stats_updated = self.now;
+                }
             }
         }
 
