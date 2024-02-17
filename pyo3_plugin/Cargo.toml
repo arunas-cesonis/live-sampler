@@ -34,7 +34,8 @@ version = "7.0.0"
 version = "0.15.1"
 features = ["auto-initialize"]
 
-
+[dependencies.crossbeam-channel]
+version = "0.5.11"
 
 
 

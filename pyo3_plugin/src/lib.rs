@@ -1,11 +1,14 @@
 extern crate core;
 
+use std::collections::VecDeque;
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
+use nih_plug_vizia::vizia::style::LengthValue::In;
 use nih_plug_vizia::ViziaState;
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyList};
@@ -27,6 +30,10 @@ pub struct PyO3Plugin {
     seen_data_version: usize,
     python_source: Option<String>,
     status: Status,
+    now: usize,
+    last_sec: VecDeque<(usize, Duration)>,
+    last_sec_sum: Duration,
+    stats_updated: usize,
 }
 
 #[derive(Default)]
@@ -76,7 +83,11 @@ impl Default for PyO3Plugin {
             data_version: Arc::new(AtomicUsize::new(1)),
             seen_data_version: 0,
             python_source: None,
+            last_sec: VecDeque::new(),
+            last_sec_sum: Duration::from_secs(0),
             status: Status::default(),
+            now: 0,
+            stats_updated: 0,
         }
     }
 }
@@ -95,13 +106,17 @@ impl Default for PyO3Plugin {
 
 impl PyO3Plugin {
     fn update_file_status(&mut self, file_status: FileStatus) {
-        self.status.file_status = file_status;
-        self.status_in.lock().write(self.status.clone());
+        if self.status.file_status != file_status {
+            self.status.file_status = file_status;
+            self.status_in.lock().write(self.status.clone());
+        }
     }
 
     fn update_eval_status(&mut self, eval_status: EvalStatus) {
-        self.status.eval_status = eval_status;
-        self.status_in.lock().write(self.status.clone());
+        if self.status.eval_status != eval_status {
+            self.status.eval_status = eval_status;
+            self.status_in.lock().write(self.status.clone());
+        }
     }
 
     fn update_python_source(&mut self) {
@@ -226,6 +241,7 @@ impl Plugin for PyO3Plugin {
         let data = editor_vizia::Data {
             version: self.data_version.clone(),
             params: self.params.clone(),
+            status: self.status_out.lock().read().clone(),
             status_out: self.status_out.clone(),
         };
 
@@ -251,7 +267,9 @@ impl Plugin for PyO3Plugin {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         self.update_python_source();
+        let elapsed = Instant::now();
         let result = self.run_python(buffer);
+        let d = elapsed.elapsed();
         match result {
             Ok(()) => {
                 self.update_eval_status(EvalStatus::Ok);
@@ -277,6 +295,30 @@ impl Plugin for PyO3Plugin {
                 context.send_event(e);
             }
         }
+
+        self.status.stats.iterations += 1;
+        self.status.stats.duration += d;
+        self.status.stats.last_duration = d;
+        self.last_sec.push_back((self.now, d));
+        self.last_sec_sum += d;
+        while let Some((t, d)) = self.last_sec.front().clone() {
+            if self.now - t >= (10.0 * self.sample_rate) as usize {
+                self.last_sec_sum -= *d;
+                self.last_sec.pop_front();
+            } else {
+                break;
+            }
+        }
+        self.status.stats.last_rolling_avg = self.last_sec_sum / self.last_sec.len() as u32;
+
+        if self.params.editor_state.is_open() {
+            if self.now - self.stats_updated >= self.sample_rate as usize {
+                self.status_in.lock().write(self.status.clone());
+                self.stats_updated = self.now;
+            }
+        }
+
+        self.now += buffer.samples();
 
         ProcessStatus::Normal
     }
