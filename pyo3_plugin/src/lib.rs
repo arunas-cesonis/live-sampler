@@ -41,11 +41,7 @@ pub struct PyO3Plugin {
     runtime_stats_in: Arc<parking_lot::Mutex<triple_buffer::Input<Option<RuntimeStats>>>>,
     runtime_stats_out: Arc<parking_lot::Mutex<triple_buffer::Output<Option<RuntimeStats>>>>,
     seen_data_version: usize,
-    python_source: Option<String>,
-    python_state: Option<Py<PyAny>>,
     now: usize,
-    last_sec: VecDeque<(usize, Duration)>,
-    last_sec_sum: Duration,
     stats_updated: usize,
     stats_update_every: Duration,
     paused_on_error: bool,
@@ -67,10 +63,6 @@ impl Default for PyO3Plugin {
             runtime_stats_out: Arc::new(parking_lot::Mutex::new(runtime_stats_out)),
             data_version: Arc::new(AtomicUsize::new(1)),
             seen_data_version: 0,
-            python_source: None,
-            python_state: None,
-            last_sec: VecDeque::new(),
-            last_sec_sum: Duration::from_secs(0),
             now: 0,
             stats_updated: 0,
             stats_update_every: Duration::from_secs(1),
@@ -83,93 +75,6 @@ impl Default for PyO3Plugin {
 impl PyO3Plugin {
     fn publish_status(&mut self) {
         self.status_in.lock().write(self.host.status().clone());
-    }
-
-    fn update_python_source(&mut self) {
-        let data_version = self.data_version.load(Ordering::Relaxed);
-        if data_version != self.seen_data_version {
-            self.seen_data_version = data_version;
-            let path = { self.params.source_path.0.lock().clone() };
-            self.host.load_source(&path);
-        }
-    }
-
-    fn copyback_buffer(&self, buf: &mut Buffer, result: &[Vec<f32>]) -> Result<(), EvalError> {
-        let nc = buf.channels();
-        let ns = buf.samples();
-        if nc != result.len() {
-            return Err(EvalError::OtherError(format!(
-                "Number of channels returned from python ({}) does not match the buffer ({}):",
-                result.len(),
-                nc
-            )));
-        }
-        if let Some((i, xlen)) = result.iter().enumerate().find_map(|(i, x)| {
-            if x.len() != ns {
-                Some((i, x.len()))
-            } else {
-                None
-            }
-        }) {
-            return Err(EvalError::OtherError(format!(
-                "Number of samples returned from python ({}) does not match the number of samples in the buffer ({}) at channel {}",
-                xlen, ns, i
-            )));
-        }
-        let sl = buf.as_slice();
-        for i in 0..ns {
-            for j in 0..nc {
-                sl[j][i] = result[j][i];
-            }
-        }
-        Ok(())
-    }
-
-    fn run_python(
-        &mut self,
-        buffer: &mut Buffer,
-        events: Vec<PyO3NoteEvent>,
-    ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
-        #[derive(FromPyObject)]
-        struct PythonProcessResult(Py<PyAny>, Vec<Vec<f32>>, Vec<PyO3NoteEvent>);
-
-        if let Some(python_source) = &self.python_source {
-            let buf = buffer.as_slice();
-            let result = Python::with_gil(|py| -> Result<PythonProcessResult, PyErr> {
-                //let host_module = PyModule::new(py, "host")?;
-                //host_module.add_function(wrap_pyfunction!(host_print, host_module)?)?;
-                let tmp = buf.iter().map(|x| x.to_vec()).collect::<Vec<_>>();
-                let pybuf: Py<PyAny> = PyList::new(py, tmp).into_py(py);
-                let events: Py<PyAny> = PyList::new(py, events).into_py(py);
-                let state = self
-                    .python_state
-                    .take()
-                    .unwrap_or(PyList::empty(py).to_object(py));
-                //let globals = [("host", host_module)].into_py_dict(py);
-                let locals =
-                    [("state", state), ("buffer", pybuf), ("events", events)].into_py_dict(py);
-                py.run(python_source.as_str(), None, Some(locals))?;
-
-                let result: &PyAny =
-                    py.eval("process(state, buffer, events)", None, Some(locals))?;
-                let result: Result<PythonProcessResult, PyErr> = result.extract();
-
-                Ok(result?)
-            });
-            match result {
-                Ok(PythonProcessResult(new_state, in_buffer, events)) => {
-                    self.copyback_buffer(buffer, &in_buffer)?;
-                    self.python_state = Some(new_state);
-                    Ok(events)
-                }
-                Err(e) => {
-                    nih_error!("python error: {}", e);
-                    Err(EvalError::PythonError(e.to_string()))
-                }
-            }
-        } else {
-            Err(EvalError::OtherError("no source loaded".to_string()))
-        }
     }
 }
 
@@ -236,7 +141,6 @@ impl Plugin for PyO3Plugin {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        self.update_python_source();
         let mode = self.params.mode.value();
 
         if mode == ModeParam::Run && !self.host.status().paused_on_error {
