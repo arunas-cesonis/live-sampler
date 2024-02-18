@@ -37,8 +37,12 @@ features = ["auto-initialize"]
 [dependencies.crossbeam-channel]
 version = "0.5.11"
 
+# FIXME: implement this
 [dependencies.hotwatch]
 version = "0.5.0"
+
+[dependencies.serde]
+version = "1.0.196"
 
 
 
