@@ -2,6 +2,7 @@ extern crate core;
 
 //mod event_sampler3;
 mod event_sampler6;
+mod params;
 mod utils;
 
 use std::sync::Arc;

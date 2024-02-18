@@ -1,7 +1,7 @@
 #![feature(atomic_bool_fetch_not)]
+#![feature(associated_type_bounds)]
 extern crate core;
 
-use nih_plug::params::persist::PersistentField;
 use std::collections::VecDeque;
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -16,16 +16,20 @@ use pyo3::types::{IntoPyDict, PyList};
 use pyo3::{PyErr, Python};
 
 use crate::common_types::{EvalError, EvalStatus, FileStatus, RuntimeStats, Status};
+use crate::event::{note_event_to_pyo3_note_event, pyo3_note_event_to_note_event, PyO3NoteEvent};
+use crate::params::{ModeParam, PyO3PluginParams2};
 use crate::source_path::SourcePath;
 
 mod common_types;
 mod editor_vizia;
+mod event;
+mod params;
 mod source_path;
 
 type SysEx = ();
 
 pub struct PyO3Plugin {
-    params: Arc<PyO3PluginParams>,
+    params: Arc<PyO3PluginParams2>,
     sample_rate: f32,
     data_version: Arc<AtomicUsize>,
     status_in: Arc<parking_lot::Mutex<triple_buffer::Input<Status>>>,
@@ -38,45 +42,46 @@ pub struct PyO3Plugin {
     last_sec_sum: Duration,
     stats_updated: usize,
     stats_update_every: Duration,
+    paused_on_error: bool,
 }
 
 #[derive(Params)]
 pub struct PyO3PluginParams {
-    #[persist = "source-path"]
-    source_path: SourcePath,
-    #[persist = "editor-state"]
-    editor_state: Arc<ViziaState>,
-    #[persist = "bypass-param"]
-    bypass: MyBoolParam,
+    //    #[persist = "intparam"]
+    //    intparam: IntParam,
+    //#[persist = "editor-state"]
+    //editor_state: Arc<ViziaState>,
+    //#[persist = "bypass-param"]
+    //bypass: MyBoolParam,
+    //#[persist = "source-path"]
+    //source_path: SourcePath,
 }
 
 pub struct MyBoolParam {
     value: AtomicBool,
 }
 
-impl<'a> PersistentField<'a, bool> for MyBoolParam {
-    fn set(&self, new_value: bool) {
-        self.value.store(new_value, Ordering::Relaxed);
-    }
-    fn map<F, R>(&self, f: F) -> R
-    where
-        F: Fn(&bool) -> R,
-    {
-        f(&self.value.load(Ordering::Relaxed))
-    }
-}
+// impl<'a> PersistentField<'a, bool> for MyBoolParam {
+//     fn set(&self, new_value: bool) {
+//         self.value.store(new_value, Ordering::Relaxed);
+//     }
+//     fn map<F, R>(&self, f: F) -> R
+//     where
+//         F: Fn(&bool) -> R,
+//     {
+//         f(&self.value.load(Ordering::Relaxed))
+//     }
+// }
 
 impl Default for PyO3PluginParams {
     fn default() -> Self {
         Self {
-            editor_state: editor_vizia::default_state(),
-            #[cfg(debug_assertions)]
-            source_path: SourcePath(Arc::new(parking_lot::Mutex::new("./a.py".to_string()))),
-            #[cfg(not(debug_assertions))]
-            source_path: SourcePath::default(),
-            bypass: MyBoolParam {
-                value: AtomicBool::new(false),
-            },
+            //intparam: IntParam::new("ok", 0, IntRange::Linear { min: 0, max: 100 }),
+            //editor_state: editor_vizia::default_state(),
+            //source_path: SourcePath(Arc::new(parking_lot::Mutex::new("".to_string()))),
+            //bypass: MyBoolParam {
+            //    value: AtomicBool::new(false),
+            //},
         }
     }
 }
@@ -85,7 +90,7 @@ impl Default for PyO3Plugin {
     fn default() -> Self {
         let (status_in, status_out) = triple_buffer::triple_buffer(&Status::default());
         Self {
-            params: Arc::new(PyO3PluginParams::default()),
+            params: Arc::new(PyO3PluginParams2::default()),
             sample_rate: 0.0,
             status_in: Arc::new(parking_lot::Mutex::new(status_in)),
             status_out: Arc::new(parking_lot::Mutex::new(status_out)),
@@ -98,6 +103,7 @@ impl Default for PyO3Plugin {
             now: 0,
             stats_updated: 0,
             stats_update_every: Duration::from_secs(1),
+            paused_on_error: false,
         }
     }
 }
@@ -118,24 +124,6 @@ impl PyO3Plugin {
     fn publish_status(&mut self) {
         self.status_in.lock().write(self.status.clone());
     }
-    fn update_file_status(&mut self, file_status: FileStatus, always_publish: bool) {
-        if self.status.file_status != file_status {
-            self.status.file_status = file_status;
-            if !always_publish {
-                self.publish_status();
-            }
-        }
-        if always_publish {
-            self.publish_status();
-        }
-    }
-
-    fn update_eval_status(&mut self, eval_status: EvalStatus) {
-        if self.status.eval_status != eval_status {
-            self.status.eval_status = eval_status;
-            self.publish_status();
-        }
-    }
 
     fn update_python_source(&mut self) {
         let data_version = self.data_version.load(Ordering::Relaxed);
@@ -144,9 +132,10 @@ impl PyO3Plugin {
             let path = { self.params.source_path.0.lock().clone() };
             nih_warn!("data_version={:?} path={:?}", data_version, path);
             if path == "" {
-                self.update_file_status(FileStatus::Unloaded, false);
                 self.python_source = None;
+                self.status.file_status = FileStatus::Unloaded;
                 self.status.runtime_stats = None;
+                self.publish_status();
                 return;
             }
             let ret = std::fs::read_to_string(&*path);
@@ -158,20 +147,20 @@ impl PyO3Plugin {
                     self.last_sec = Default::default();
                     self.last_sec_sum = Default::default();
                     nih_log!("python source: {}", self.python_source.as_ref().unwrap());
-                    self.update_file_status(
-                        FileStatus::Loaded(path.to_string(), size.try_into().unwrap()),
-                        true,
-                    );
+                    self.status.file_status =
+                        FileStatus::Loaded(path.to_string(), size.try_into().unwrap());
+                    self.status.paused_on_error = false;
+                    self.publish_status();
                 }
                 Err(e) => {
-                    nih_log!("python not laoded: {}", e);
-                    self.update_file_status(FileStatus::Error(e.to_string()), false);
+                    nih_log!("python not loaded: {}", e);
+                    self.status.file_status = FileStatus::Error(e.to_string());
                 }
             }
         }
     }
 
-    fn copyback_buffer(&self, buf: &mut Buffer, result: Vec<Vec<f32>>) -> Result<(), EvalError> {
+    fn copyback_buffer(&self, buf: &mut Buffer, result: &[Vec<f32>]) -> Result<(), EvalError> {
         let nc = buf.channels();
         let ns = buf.samples();
         if nc != result.len() {
@@ -202,29 +191,43 @@ impl PyO3Plugin {
         Ok(())
     }
 
-    fn run_python(&mut self, buffer: &mut Buffer) -> Result<(), EvalError> {
+    fn run_python(
+        &mut self,
+        buffer: &mut Buffer,
+        events: Vec<PyO3NoteEvent>,
+    ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
+        #[derive(FromPyObject)]
+        struct PythonProcessResult(Vec<Vec<f32>>, Vec<PyO3NoteEvent>);
+
         if let Some(python_source) = &self.python_source {
             let buf = buffer.as_slice();
-            let result = Python::with_gil(|py| -> Result<Vec<Vec<f32>>, PyErr> {
+            let result = Python::with_gil(|py| -> Result<PythonProcessResult, PyErr> {
                 //let m = py.import("module_with_functions")?;
                 //let globals = [("module_with_functions", m)].into_py_dict(py);
                 py.run(python_source.as_str(), None, None)?;
                 let tmp = buf.iter().map(|x| x.to_vec()).collect::<Vec<_>>();
                 let pybuf = PyList::new(py, tmp);
-                let locals = [("buffer", pybuf)].into_py_dict(py);
+                let events = PyList::new(py, events);
+                let locals = [("buffer", pybuf), ("events", events)].into_py_dict(py);
 
-                let result: Vec<Vec<f32>> =
-                    py.eval("process(buffer)", None, Some(locals))?.extract()?;
+                let result = py.eval("process(buffer, events)", None, Some(locals))?;
+                //eprintln!("{:?}", result);
+                let result: PythonProcessResult = result.extract()?;
                 Ok(result)
             });
-            self.copyback_buffer(
-                buffer,
-                result.map_err(|e| EvalError::PythonError(e.to_string()))?,
-            )?;
+            match result {
+                Ok(PythonProcessResult(in_buffer, events)) => {
+                    self.copyback_buffer(buffer, &in_buffer)?;
+                    Ok(events)
+                }
+                Err(e) => {
+                    nih_error!("python error: {}", e);
+                    Err(EvalError::PythonError(e.to_string()))
+                }
+            }
         } else {
-            return Err(EvalError::OtherError("no source loaded".to_string()));
+            Err(EvalError::OtherError("no source loaded".to_string()))
         }
-        Ok(())
     }
 }
 
@@ -263,12 +266,13 @@ impl Plugin for PyO3Plugin {
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         let data = editor_vizia::Data {
             version: self.data_version.clone(),
+            //source_path: self.params.source_path.clone(),
             params: self.params.clone(),
             status: self.status_out.lock().read().clone(),
             status_out: self.status_out.clone(),
         };
 
-        editor_vizia::create(self.params.editor_state.clone(), data)
+        editor_vizia::create2(self.params.editor_state.clone(), data)
     }
 
     fn initialize(
@@ -278,16 +282,18 @@ impl Plugin for PyO3Plugin {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = buffer_config.sample_rate;
+
+        //#[cfg(debug_assertions)]
+        //if let Ok(path) = std::env::var("PYO3_PLUGIN_SOURCE_PATH") {
+        //    let mut current = self.params.source_path.0.lock();
+        //    if *current == "" {
+        //        *current = path;
+        //    }
+        //}
         true
     }
 
-    fn reset(&mut self) {
-        self.python_source = None;
-        self.status = Default::default();
-        self.last_sec = Default::default();
-        self.last_sec_sum = Default::default();
-        self.seen_data_version = 0;
-    }
+    fn reset(&mut self) {}
 
     fn process(
         &mut self,
@@ -296,40 +302,54 @@ impl Plugin for PyO3Plugin {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         self.update_python_source();
-        let bypass = self.params.bypass.value.load(Ordering::Relaxed);
-        let d = if !bypass {
+        let mode = self.params.mode.value();
+        let bypass = false; //self.params.bypass.value.load(Ordering::Relaxed);
+                            //eprintln!("{:?}", self.params.mode.value());
+        let d = if mode == ModeParam::Run && !self.status.paused_on_error {
+            let mut events = vec![];
+            while let Some(next_event) = context.next_event() {
+                events.push(note_event_to_pyo3_note_event(next_event));
+            }
+
             let elapsed = Instant::now();
-            let result = self.run_python(buffer);
+            let result = self.run_python(buffer, events);
             let d = elapsed.elapsed();
             match result {
-                Ok(()) => {
-                    self.update_eval_status(EvalStatus::Ok);
+                Ok(processed_events) => {
+                    self.status.eval_status = EvalStatus::Ok;
+                    if !processed_events.is_empty() {
+                        nih_warn!("python returned {} events", processed_events.len());
+                    }
+                    processed_events
+                        .into_iter()
+                        .for_each(|e| context.send_event(pyo3_note_event_to_note_event(e)));
                 }
                 Err(e) => {
-                    self.update_eval_status(EvalStatus::Error(e));
+                    self.status.eval_status = (EvalStatus::Error(e));
+                    self.status.paused_on_error = true;
+                    self.publish_status();
                 }
             };
             Some(d)
+        } else if mode == ModeParam::Bypass {
+            let mut next_event = context.next_event();
+            for (sample_id, _channel_samples) in buffer.iter_samples().enumerate() {
+                let mut events = vec![];
+                while let Some(event) = next_event {
+                    if event.timing() != sample_id as u32 {
+                        break;
+                    }
+                    events.push(event);
+                    next_event = context.next_event();
+                }
+                for e in events {
+                    context.send_event(e);
+                }
+            }
+            None
         } else {
             None
         };
-
-        let mut next_event = context.next_event();
-
-        for (sample_id, _channel_samples) in buffer.iter_samples().enumerate() {
-            let mut events = vec![];
-            while let Some(event) = next_event {
-                if event.timing() != sample_id as u32 {
-                    break;
-                }
-                events.push(event);
-                next_event = context.next_event();
-            }
-
-            for e in events {
-                context.send_event(e);
-            }
-        }
 
         if let (Some(d), Some(rt)) = (d, self.status.runtime_stats.as_mut()) {
             rt.iterations += 1;

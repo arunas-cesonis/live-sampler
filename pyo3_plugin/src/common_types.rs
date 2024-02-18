@@ -1,5 +1,9 @@
-use nih_plug::prelude::Params;
+use crate::params::ModeParam;
+use crate::source_path::SourcePath;
+use nih_plug::params::persist::PersistentField;
+use nih_plug::prelude::{Enum, Params};
 use pyo3::ffi::PyWideStringList;
+use std::sync::atomic::{AtomicU8, AtomicUsize};
 use std::time::{Duration, Instant};
 
 #[derive(PartialEq, Clone, Debug)]
@@ -51,6 +55,7 @@ impl RuntimeStats {
 pub struct Status {
     pub file_status: FileStatus,
     pub eval_status: EvalStatus,
+    pub paused_on_error: bool,
     pub runtime_stats: Option<RuntimeStats>,
 }
 
