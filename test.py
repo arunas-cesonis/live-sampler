@@ -1,4 +1,4 @@
-def process(buf, events):
+def process(state, buf, events):
   nc = len(buf)
   if nc == 0:
     return buf
@@ -8,4 +8,8 @@ def process(buf, events):
   for i in range(ns):
     for j in range(nc):
       buf[j][i] = buf[j][i] * 0.5
-  return (buf, events)
+  if not isinstance(state, dict):
+    state = {"counter": 0}
+  state["counter"] += 1
+  host.print(("counter", state["counter"]))
+  return (state, buf, events)
