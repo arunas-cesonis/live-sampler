@@ -5,13 +5,17 @@ extern crate core;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::num::NonZeroU32;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::thread::{JoinHandle, Thread, ThreadId};
 use std::time::{Duration, Instant};
 
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
+use notify::event::{CreateKind, ModifyKind};
+use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use pyo3::ffi::{PyObject_Repr, Py_None};
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict, PyList, PyTuple};
@@ -46,6 +50,11 @@ pub struct PyO3Plugin {
     stats_update_every: Duration,
     paused_on_error: bool,
     host: Host,
+    recommended_watcher: Option<(
+        PathBuf,
+        crossbeam_channel::Receiver<Result<notify::Event, notify::Error>>,
+        RecommendedWatcher,
+    )>,
 }
 
 // unsafe impl Send for PyO3Plugin {}
@@ -68,7 +77,25 @@ impl Default for PyO3Plugin {
             stats_update_every: Duration::from_secs(1),
             paused_on_error: false,
             host: Host::default(),
+            recommended_watcher: None,
         }
+    }
+}
+
+fn check_watcher(
+    rx: &crossbeam_channel::Receiver<Result<notify::Event, notify::Error>>,
+    w: &RecommendedWatcher,
+) -> bool {
+    match rx.try_recv() {
+        Ok(Ok(notify::Event {
+            kind: notify::EventKind::Create(CreateKind::File),
+            ..
+        })) => true,
+        Ok(Ok(notify::Event {
+            kind: notify::EventKind::Modify(ModifyKind::Data(_)),
+            ..
+        })) => true,
+        _ => false,
     }
 }
 
@@ -77,12 +104,49 @@ impl PyO3Plugin {
         self.status_in.lock().write(self.host.status().clone());
     }
 
-    fn update_python_source(&mut self) {
+    fn ensure_watcher_created<A: AsRef<Path>>(&mut self, path: &A) {
+        let pb = path.as_ref().to_path_buf();
+        if let Some((current, _, _)) = &self.recommended_watcher {
+            if current == &pb {
+                return;
+            }
+        }
+        self.recommended_watcher = {
+            let (tx, rx) = crossbeam_channel::bounded(5);
+            let mut w = RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
+            let pb = path.as_ref().to_path_buf();
+            w.watch(&pb, RecursiveMode::NonRecursive).unwrap();
+            Some((pb, rx, w))
+        };
+    }
+
+    fn read_souce_path(&self) -> String {
+        self.params.source_path.0.lock().clone()
+    }
+
+    fn update_python_source(&mut self, watch_source_path: bool) {
         let data_version = self.data_version.load(Ordering::Relaxed);
         if data_version != self.seen_data_version {
             self.seen_data_version = data_version;
             let path = { self.params.source_path.0.lock().clone() };
-            self.host.load_source(&path);
+            if self.host.load_source(&path) && watch_source_path {
+                self.ensure_watcher_created(&path);
+            }
+        } else {
+            if watch_source_path {
+                if let Some((pb, rx, w)) = &self.recommended_watcher {
+                    let path = pb.to_str().unwrap();
+                    assert_eq!(path, self.params.source_path.0.lock().as_str());
+                    if check_watcher(rx, w) {
+                        self.host.load_source(&path);
+                    }
+                } else {
+                    self.ensure_watcher_created(&self.read_souce_path());
+                }
+            }
+        }
+        if !watch_source_path && self.recommended_watcher.is_some() {
+            self.recommended_watcher = None;
         }
     }
 }
@@ -150,8 +214,11 @@ impl Plugin for PyO3Plugin {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        self.update_python_source();
+        // FIXME: oops this is not per sample! make this per sample when introducing generic parameters
+
         let mode = self.params.mode.value();
+        let watch_source_path = self.params.watch_source_path.value();
+        self.update_python_source(watch_source_path);
 
         if mode == ModeParam::Run && !self.host.status().paused_on_error {
             let mut events: Vec<PyO3NoteEvent> = vec![];

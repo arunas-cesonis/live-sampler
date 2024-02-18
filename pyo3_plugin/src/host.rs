@@ -45,6 +45,7 @@ impl Stats {
         &self.rt
     }
     pub fn record(&mut self, frame_stats: FrameStats) {
+        assert!(frame_stats.sample_rate > 0.0);
         self.rt.iterations += 1;
         self.rt.total_duration += frame_stats.d;
         self.rt.last_duration = frame_stats.d;
@@ -91,7 +92,7 @@ impl Host {
         self.stats = None;
     }
 
-    pub fn load_source_from_string(&mut self, source: String) {
+    fn load_source_from_string(&mut self, source: String) {
         self.unload_source();
         self.python_source = Some(source);
         self.python_state = None;
@@ -100,7 +101,7 @@ impl Host {
         self.stats = Some(Stats::default());
     }
 
-    pub fn load_source<A: AsRef<Path>>(&mut self, path: &A) {
+    pub fn load_source<A: AsRef<Path>>(&mut self, path: &A) -> bool {
         self.unload_source();
         let source = std::fs::read_to_string(&path);
         match source {
@@ -110,9 +111,11 @@ impl Host {
                     source.len(),
                 );
                 self.load_source_from_string(source);
+                true
             }
             Err(e) => {
                 self.status.file_status = FileStatus::Error(e.to_string());
+                false
             }
         }
     }
@@ -124,6 +127,7 @@ impl Host {
         buffer: &mut Buffer,
         events: Vec<PyO3NoteEvent>,
     ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
+        assert!(sample_rate > 0.0);
         #[derive(FromPyObject)]
         struct PythonProcessResult(Py<PyAny>, Vec<Vec<f32>>, Vec<PyO3NoteEvent>);
 

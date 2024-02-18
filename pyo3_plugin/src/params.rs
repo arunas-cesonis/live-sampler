@@ -21,6 +21,8 @@ impl Default for ModeParam {
 
 #[derive(Params)]
 pub struct PyO3PluginParams2 {
+    #[id = "watch-file"]
+    pub(crate) watch_source_path: BoolParam,
     #[id = "mode"]
     pub mode: EnumParam<ModeParam>,
     #[persist = "editor-state"]
@@ -29,9 +31,16 @@ pub struct PyO3PluginParams2 {
     pub(crate) source_path: SourcePath,
 }
 
+impl PyO3PluginParams2 {
+    pub fn source_path(&self) -> &SourcePath {
+        &self.source_path
+    }
+}
+
 impl Default for PyO3PluginParams2 {
     fn default() -> Self {
         Self {
+            watch_source_path: BoolParam::new("Watch file", false),
             editor_state: editor_vizia::default_state(),
             mode: EnumParam::new("Mode", ModeParam::default()),
             source_path: SourcePath::default(),

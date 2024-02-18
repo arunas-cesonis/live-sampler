@@ -32,7 +32,7 @@ impl Model for Data {
                 self.version.fetch_add(1, Ordering::Relaxed);
             }
             EditorEvent::UpdatePath(s) => {
-                *self.params.source_path.0.lock() = s.to_string();
+                *self.params.source_path().0.lock() = s.to_string();
                 self.version.fetch_add(1, Ordering::Relaxed);
             }
         });
@@ -98,23 +98,29 @@ pub(crate) fn create2(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<d
         data.clone().build(cx);
 
         VStack::new(cx, |cx| {
-            Label::new(cx, "PyO3")
-                .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
-                .font_weight(FontWeightKeyword::Bold)
-                .font_size(30.0)
-                .text_align(TextAlign::Left)
-                .height(Pixels(42.0))
-                .child_top(Stretch(1.0))
-                .child_bottom(Pixels(0.0));
             VStack::new(cx, |cx| {
+                HStack::new(cx, |cx| {
+                    Label::new(cx, "PyO3")
+                        .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+                        .font_weight(FontWeightKeyword::Bold)
+                        .font_size(30.0)
+                        .text_align(TextAlign::Left)
+                        .height(Pixels(42.0))
+                        .child_top(Stretch(1.0))
+                        .child_bottom(Pixels(0.0));
+                })
+                .height(Pixels(42.0));
                 HStack::new(cx, |cx| {
                     VStack::new(cx, |cx| {
                         Label::new(cx, "File").top(Pixels(10.0));
-                        Textbox::new(cx, Data::params.map(|x| x.source_path.0.lock().to_string()))
-                            //Textbox::new(cx, Data::params.map(|x| "source_path".to_string()))
-                            .width(Stretch(1.0))
-                            .right(Pixels(10.0))
-                            .on_edit(|ctx, s| ctx.emit(EditorEvent::UpdatePath(s.to_string())));
+                        Textbox::new(
+                            cx,
+                            Data::params.map(|x| x.source_path().0.lock().to_string()),
+                        )
+                        //Textbox::new(cx, Data::params.map(|x| "source_path".to_string()))
+                        .width(Stretch(1.0))
+                        .right(Pixels(10.0))
+                        .on_edit(|ctx, s| ctx.emit(EditorEvent::UpdatePath(s.to_string())));
                         Label::new(cx, "File status").top(Pixels(10.0));
                         Label::new(
                             cx,
@@ -137,12 +143,15 @@ pub(crate) fn create2(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<d
                             |cx| Label::new(cx, "Reload"),
                         )
                         .top(Pixels(10.0));
+                        ParamButton::new(cx, Data::params, |params| &params.watch_source_path)
+                            .top(Pixels(10.0));
                     });
-                });
+                })
+                .top(Pixels(10.0));
                 HStack::new(cx, |cx| {
                     VStack::new(cx, |cx| {
-                        Label::new(cx, "Eval status").top(Pixels(10.0));
-                        Label::new(
+                        Label::new(cx, "Eval status");
+                        Textbox::new(
                             cx,
                             Data::status_out.map(|x| {
                                 let mut m = x.lock();
@@ -156,8 +165,9 @@ pub(crate) fn create2(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<d
                         .border_width(Pixels(1.0))
                         .child_left(Pixels(8.0))
                         .child_top(Pixels(6.0))
-                        .height(Pixels(30.0))
+                        .height(Pixels(60.0))
                         .width(Stretch(1.0))
+                        .read_only(true)
                         .top(Pixels(10.0));
                         HStack::new(cx, |cx| {
                             mode_button(cx, "Run", ModeParam::Run);
@@ -167,46 +177,47 @@ pub(crate) fn create2(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<d
                     });
                 })
                 .top(Pixels(50.0));
-                Label::new(
-                    cx,
-                    Data::runtime_stats_out.map(|x| {
-                        let stats = match x.lock().read().clone() {
-                            Some(stats) => stats,
-                            None => return "".to_string(),
-                        };
-                        let total = stats.total_duration.as_secs_f64();
-                        let last = stats.last_duration.as_secs_f64();
-                        let last_sec = stats.last_rolling_avg.as_secs_f64();
-                        //let loaded = stats.source_loaded.elapsed().as_secs_f64();
-                        let avg = stats.total_duration.as_secs_f64() / stats.iterations as f64;
-                        let out = vec![
-                            ///format!("loaded: {:.1}s ago", loaded),
-                            format!("avg_last_10sec {:.3}ms", last_sec * 1000.0),
-                            format!("avg: {:.3}ms", avg * 1000.0),
-                            format!("last: {:.3}ms", last * 1000.0),
-                            format!("total: {:.3}ms", total * 1000.0),
-                            format!("window_size: {}", stats.window_size),
-                            format!("events_to_pyo3: {}", stats.events_to_pyo3),
-                            format!("events_from_pyo3: {}", stats.events_from_pyo3),
-                            format!("sample_rate: {}", stats.sample_rate),
-                            format!("iter: {}", stats.iterations),
-                        ];
-                        out.join("\n")
-                    }),
-                )
-                .top(Pixels(10.0));
-                //Label::new(cx, Data).top(Pixels(10.0));
-                Label::new(
-                    cx,
-                    Data::status_out.map(|x| {
-                        if x.lock().read().paused_on_error {
-                            "Paused on error. Reload to  resume".to_string()
-                        } else {
-                            "".to_string()
-                        }
-                    }),
-                );
-                StatusView::new(cx);
+                VStack::new(cx, |cx| {
+                    Label::new(
+                        cx,
+                        Data::runtime_stats_out.map(|x| {
+                            let stats = match x.lock().read().clone() {
+                                Some(stats) => stats,
+                                None => return "".to_string(),
+                            };
+                            let total = stats.total_duration.as_secs_f64();
+                            let last = stats.last_duration.as_secs_f64();
+                            let last_sec = stats.last_rolling_avg.as_secs_f64();
+                            //let loaded = stats.source_loaded.elapsed().as_secs_f64();
+                            let avg = stats.total_duration.as_secs_f64() / stats.iterations as f64;
+                            let out = vec![
+                                ///format!("loaded: {:.1}s ago", loaded),
+                                format!("avg_last_10sec {:.3}ms", last_sec * 1000.0),
+                                format!("avg: {:.3}ms", avg * 1000.0),
+                                format!("last: {:.3}ms", last * 1000.0),
+                                format!("total: {:.3}ms", total * 1000.0),
+                                format!("window_size: {}", stats.window_size),
+                                format!("events_to_pyo3: {}", stats.events_to_pyo3),
+                                format!("events_from_pyo3: {}", stats.events_from_pyo3),
+                                format!("sample_rate: {}", stats.sample_rate),
+                                format!("iter: {}", stats.iterations),
+                            ];
+                            out.join("\n")
+                        }),
+                    )
+                    .top(Pixels(10.0));
+                    //Label::new(cx, Data).top(Pixels(10.0));
+                    Label::new(
+                        cx,
+                        Data::status_out.map(|x| {
+                            if x.lock().read().paused_on_error {
+                                "Paused on error. Reload to  resume".to_string()
+                            } else {
+                                "".to_string()
+                            }
+                        }),
+                    );
+                });
             });
         })
         .border_width(Pixels(10.0));

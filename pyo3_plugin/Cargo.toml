@@ -18,6 +18,12 @@ features = ["standalone", "vst3"]
 [dependencies.atomic_float]
 version = "0.1"
 
+[dependencies.notify]
+version = "6.1.1"
+
+[dependencies.crossbeam-channel]
+version = "0.5.0"
+
 [dependencies.nih_plug_vizia]
 git = "https://github.com/robbert-vdh/nih-plug"
 
@@ -34,17 +40,5 @@ version = "7.0.0"
 version = "0.15.1"
 features = ["auto-initialize", "macros"]
 
-# FIXME: implement this
-[dependencies.hotwatch]
-version = "0.5.0"
-
 [dependencies.serde]
 version = "1.0.196"
-
-
-
-
-
-
-
-
