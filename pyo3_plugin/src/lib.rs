@@ -76,6 +76,15 @@ impl PyO3Plugin {
     fn publish_status(&mut self) {
         self.status_in.lock().write(self.host.status().clone());
     }
+
+    fn update_python_source(&mut self) {
+        let data_version = self.data_version.load(Ordering::Relaxed);
+        if data_version != self.seen_data_version {
+            self.seen_data_version = data_version;
+            let path = { self.params.source_path.0.lock().clone() };
+            self.host.load_source(&path);
+        }
+    }
 }
 
 impl Plugin for PyO3Plugin {
@@ -141,6 +150,7 @@ impl Plugin for PyO3Plugin {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        self.update_python_source();
         let mode = self.params.mode.value();
 
         if mode == ModeParam::Run && !self.host.status().paused_on_error {
