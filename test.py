@@ -10,6 +10,6 @@ def process(state, buf, events):
       buf[j][i] = buf[j][i] * 0.5
   if not isinstance(state, dict):
     state = {"counter": 0}
-  state["counter"] += 1
-  host.print(("counter", state["counter"]))
+  state["counter"] += 5
+  host.print((state, 2))
   return (state, buf, events)
