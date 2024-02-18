@@ -20,13 +20,13 @@ pub enum EvalStatus {
     Error(EvalError),
 }
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct RuntimeStats {
     pub total_duration: Duration,
     pub last_duration: Duration,
     pub last_rolling_avg: Duration,
     pub iterations: usize,
-    pub source_loaded: Instant,
+    pub source_loaded: Option<Instant>,
     pub events_to_pyo3: usize,
     pub events_from_pyo3: usize,
     pub window_size: usize,
@@ -40,7 +40,7 @@ impl RuntimeStats {
             last_duration: Duration::from_secs(0),
             last_rolling_avg: Duration::from_secs(0),
             iterations: 0,
-            source_loaded: Instant::now(),
+            source_loaded: None,
             events_to_pyo3: 0,
             events_from_pyo3: 0,
             window_size: 0,
@@ -49,12 +49,11 @@ impl RuntimeStats {
     }
 }
 
-#[derive(PartialEq, Clone, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Status {
     pub file_status: FileStatus,
     pub eval_status: EvalStatus,
     pub paused_on_error: bool,
-    pub runtime_stats: Option<RuntimeStats>,
 }
 
 impl Default for FileStatus {
