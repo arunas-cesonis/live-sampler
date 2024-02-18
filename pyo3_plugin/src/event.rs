@@ -6,165 +6,165 @@ use pyo3::{pyclass, FromPyObject, IntoPy, Py, PyObject, Python, ToPyObject};
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct NoteOn {
-    timing: u32,
-    voice_id: Option<i32>,
-    channel: u8,
-    note: u8,
-    velocity: f32,
+    pub timing: u32,
+    pub voice_id: Option<i32>,
+    pub channel: u8,
+    pub note: u8,
+    pub velocity: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct NoteOff {
-    timing: u32,
-    voice_id: Option<i32>,
-    channel: u8,
-    note: u8,
-    velocity: f32,
+    pub timing: u32,
+    pub voice_id: Option<i32>,
+    pub channel: u8,
+    pub note: u8,
+    pub velocity: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct Choke {
-    timing: u32,
-    voice_id: Option<i32>,
-    channel: u8,
-    note: u8,
+    pub timing: u32,
+    pub voice_id: Option<i32>,
+    pub channel: u8,
+    pub note: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct VoiceTerminated {
-    timing: u32,
-    voice_id: Option<i32>,
-    channel: u8,
-    note: u8,
+    pub timing: u32,
+    pub voice_id: Option<i32>,
+    pub channel: u8,
+    pub note: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct PolyModulation {
-    timing: u32,
-    voice_id: i32,
-    poly_modulation_id: u32,
-    normalized_offset: f32,
+    pub timing: u32,
+    pub voice_id: i32,
+    pub poly_modulation_id: u32,
+    pub normalized_offset: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct MonoAutomation {
-    timing: u32,
-    poly_modulation_id: u32,
-    normalized_value: f32,
+    pub timing: u32,
+    pub poly_modulation_id: u32,
+    pub normalized_value: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct PolyPressure {
-    timing: u32,
-    voice_id: Option<i32>,
-    channel: u8,
-    note: u8,
-    pressure: f32,
+    pub timing: u32,
+    pub voice_id: Option<i32>,
+    pub channel: u8,
+    pub note: u8,
+    pub pressure: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct PolyVolume {
-    timing: u32,
-    voice_id: Option<i32>,
-    channel: u8,
-    note: u8,
-    gain: f32,
+    pub timing: u32,
+    pub voice_id: Option<i32>,
+    pub channel: u8,
+    pub note: u8,
+    pub gain: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct PolyPan {
-    timing: u32,
-    voice_id: Option<i32>,
-    channel: u8,
-    note: u8,
-    pan: f32,
+    pub timing: u32,
+    pub voice_id: Option<i32>,
+    pub channel: u8,
+    pub note: u8,
+    pub pan: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct PolyTuning {
-    timing: u32,
-    voice_id: Option<i32>,
-    channel: u8,
-    note: u8,
-    tuning: f32,
+    pub timing: u32,
+    pub voice_id: Option<i32>,
+    pub channel: u8,
+    pub note: u8,
+    pub tuning: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct PolyVibrato {
-    timing: u32,
-    voice_id: Option<i32>,
-    channel: u8,
-    note: u8,
-    vibrato: f32,
+    pub timing: u32,
+    pub voice_id: Option<i32>,
+    pub channel: u8,
+    pub note: u8,
+    pub vibrato: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct PolyExpression {
-    timing: u32,
-    voice_id: Option<i32>,
-    channel: u8,
-    note: u8,
-    expression: f32,
+    pub timing: u32,
+    pub voice_id: Option<i32>,
+    pub channel: u8,
+    pub note: u8,
+    pub expression: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct PolyBrightness {
-    timing: u32,
-    voice_id: Option<i32>,
-    channel: u8,
-    note: u8,
-    brightness: f32,
+    pub timing: u32,
+    pub voice_id: Option<i32>,
+    pub channel: u8,
+    pub note: u8,
+    pub brightness: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct MidiChannelPressure {
-    timing: u32,
-    channel: u8,
-    pressure: f32,
+    pub timing: u32,
+    pub channel: u8,
+    pub pressure: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct MidiPitchBend {
-    timing: u32,
-    channel: u8,
-    value: f32,
+    pub timing: u32,
+    pub channel: u8,
+    pub value: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct MidiCC {
-    timing: u32,
-    channel: u8,
-    cc: u8,
-    value: f32,
+    pub timing: u32,
+    pub channel: u8,
+    pub cc: u8,
+    pub value: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct MidiProgramChange {
-    timing: u32,
-    channel: u8,
-    program: u8,
+    pub timing: u32,
+    pub channel: u8,
+    pub program: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass]
 pub struct MidiSysEx {
-    timing: u32,
+    pub timing: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, FromPyObject)]

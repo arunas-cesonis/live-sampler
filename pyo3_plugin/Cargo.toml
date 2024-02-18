@@ -32,10 +32,7 @@ version = "7.0.0"
 
 [dependencies.pyo3]
 version = "0.15.1"
-features = ["auto-initialize"]
-
-[dependencies.crossbeam-channel]
-version = "0.5.11"
+features = ["auto-initialize", "macros"]
 
 # FIXME: implement this
 [dependencies.hotwatch]

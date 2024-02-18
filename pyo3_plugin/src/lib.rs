@@ -3,19 +3,22 @@
 extern crate core;
 
 use std::collections::VecDeque;
+use std::io::Write;
 use std::num::NonZeroU32;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
+use pyo3::ffi::{PyObject_Repr, Py_None};
 use pyo3::prelude::*;
-use pyo3::types::{IntoPyDict, PyList};
+use pyo3::types::{IntoPyDict, PyDict, PyList, PyTuple};
 use pyo3::{PyErr, Python};
 
 use crate::common_types::{EvalError, EvalStatus, FileStatus, RuntimeStats, Status};
-use crate::event::PyO3NoteEvent;
+use crate::event::{NoteOn, PyO3NoteEvent};
 use crate::params::{ModeParam, PyO3PluginParams2};
 use crate::source_path::SourcePath;
 
@@ -35,6 +38,7 @@ pub struct PyO3Plugin {
     status_out: Arc<parking_lot::Mutex<triple_buffer::Output<Status>>>,
     seen_data_version: usize,
     python_source: Option<String>,
+    python_state: Option<Py<PyAny>>,
     status: Status,
     now: usize,
     last_sec: VecDeque<(usize, Duration)>,
@@ -42,7 +46,10 @@ pub struct PyO3Plugin {
     stats_updated: usize,
     stats_update_every: Duration,
     paused_on_error: bool,
+    // gil: Arc<parking_lot::Mutex<GILGuard>>,
 }
+
+// unsafe impl Send for PyO3Plugin {}
 
 impl Default for PyO3Plugin {
     fn default() -> Self {
@@ -55,6 +62,7 @@ impl Default for PyO3Plugin {
             data_version: Arc::new(AtomicUsize::new(1)),
             seen_data_version: 0,
             python_source: None,
+            python_state: None,
             last_sec: VecDeque::new(),
             last_sec_sum: Duration::from_secs(0),
             status: Status::default(),
@@ -62,8 +70,23 @@ impl Default for PyO3Plugin {
             stats_updated: 0,
             stats_update_every: Duration::from_secs(1),
             paused_on_error: false,
+            // gil: Arc::new(parking_lot::Mutex::new(Python::acquire_gil())),
         }
     }
+}
+
+// FIXME: host.print() has to be called single tuple, e.g. host.print((1, 2, 3)); it should work with multiple args
+#[pyfunction(name = "print")]
+#[pyo3(text_signature = "(*args)")]
+fn host_print(args: &PyTuple) {
+    let mut iter = args.iter();
+    if let Some(a) = iter.next() {
+        print!("{}", a);
+        for a in iter {
+            print!(" {}", a);
+        }
+    }
+    print!("\n");
 }
 
 impl PyO3Plugin {
@@ -79,6 +102,7 @@ impl PyO3Plugin {
             nih_warn!("data_version={:?} path={:?}", data_version, path);
             if path == "" {
                 self.python_source = None;
+                self.python_state = None;
                 self.status.file_status = FileStatus::Unloaded;
                 self.status.runtime_stats = None;
                 self.publish_status();
@@ -89,10 +113,10 @@ impl PyO3Plugin {
                 Ok(source) => {
                     let size = source.len();
                     self.python_source = Some(source);
+                    self.python_state = None;
                     self.status.runtime_stats = Some(RuntimeStats::new());
                     self.last_sec = Default::default();
                     self.last_sec_sum = Default::default();
-                    nih_log!("python source: {}", self.python_source.as_ref().unwrap());
                     self.status.file_status =
                         FileStatus::Loaded(path.to_string(), size.try_into().unwrap());
                     self.status.paused_on_error = false;
@@ -143,26 +167,38 @@ impl PyO3Plugin {
         events: Vec<PyO3NoteEvent>,
     ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
         #[derive(FromPyObject)]
-        struct PythonProcessResult(Vec<Vec<f32>>, Vec<PyO3NoteEvent>);
+        struct PythonProcessResult(Py<PyAny>, Vec<Vec<f32>>, Vec<PyO3NoteEvent>);
 
         if let Some(python_source) = &self.python_source {
             let buf = buffer.as_slice();
             let result = Python::with_gil(|py| -> Result<PythonProcessResult, PyErr> {
-                py.run(python_source.as_str(), None, None)?;
+                let host_module = PyModule::new(py, "host")?;
+                host_module.add_function(wrap_pyfunction!(host_print, host_module)?)?;
                 let tmp = buf.iter().map(|x| x.to_vec()).collect::<Vec<_>>();
-                let pybuf = PyList::new(py, tmp);
-                let had_events = !events.is_empty();
-                let events = PyList::new(py, events);
-                let locals = [("buffer", pybuf), ("events", events)].into_py_dict(py);
+                let pybuf: Py<PyAny> = PyList::new(py, tmp).into_py(py);
+                let events: Py<PyAny> = PyList::new(py, events).into_py(py);
+                let state = self
+                    .python_state
+                    .take()
+                    .unwrap_or(PyList::empty(py).to_object(py));
+                let globals = [("host", host_module)].into_py_dict(py);
+                let locals =
+                    [("state", state), ("buffer", pybuf), ("events", events)].into_py_dict(py);
+                py.run(python_source.as_str(), Some(globals), Some(locals))?;
 
-                let result: &PyAny = py.eval("process(buffer, events)", None, Some(locals))?;
+                let result: &PyAny = py.eval(
+                    "process(state, buffer, events)",
+                    Some(globals),
+                    Some(locals),
+                )?;
                 let result: Result<PythonProcessResult, PyErr> = result.extract();
 
                 Ok(result?)
             });
             match result {
-                Ok(PythonProcessResult(in_buffer, events)) => {
+                Ok(PythonProcessResult(new_state, in_buffer, events)) => {
                     self.copyback_buffer(buffer, &in_buffer)?;
+                    self.python_state = Some(new_state);
                     Ok(events)
                 }
                 Err(e) => {
@@ -271,7 +307,7 @@ impl Plugin for PyO3Plugin {
                     });
                 }
                 Err(e) => {
-                    self.status.eval_status = (EvalStatus::Error(e));
+                    self.status.eval_status = EvalStatus::Error(e);
                     self.status.paused_on_error = true;
                     self.publish_status();
                 }
@@ -298,7 +334,7 @@ impl Plugin for PyO3Plugin {
             None
         };
 
-        if let (Some(frame_stats), Some(rt)) = ((ret, self.status.runtime_stats.as_mut())) {
+        if let (Some(frame_stats), Some(rt)) = (ret, self.status.runtime_stats.as_mut()) {
             rt.iterations += 1;
             rt.total_duration += frame_stats.d;
             rt.last_duration = frame_stats.d;
