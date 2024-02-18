@@ -19,12 +19,14 @@ use pyo3::{PyErr, Python};
 
 use crate::common_types::{EvalError, EvalStatus, FileStatus, RuntimeStats, Status};
 use crate::event::{NoteOn, PyO3NoteEvent};
+use crate::host::{Host, Stats};
 use crate::params::{ModeParam, PyO3PluginParams2};
 use crate::source_path::SourcePath;
 
 mod common_types;
 mod editor_vizia;
 pub mod event;
+mod host;
 mod params;
 mod source_path;
 
@@ -36,17 +38,19 @@ pub struct PyO3Plugin {
     data_version: Arc<AtomicUsize>,
     status_in: Arc<parking_lot::Mutex<triple_buffer::Input<Status>>>,
     status_out: Arc<parking_lot::Mutex<triple_buffer::Output<Status>>>,
+    runtime_stats_in: Arc<parking_lot::Mutex<triple_buffer::Input<Option<RuntimeStats>>>>,
+    runtime_stats_out: Arc<parking_lot::Mutex<triple_buffer::Output<Option<RuntimeStats>>>>,
     seen_data_version: usize,
     python_source: Option<String>,
     python_state: Option<Py<PyAny>>,
-    status: Status,
     now: usize,
     last_sec: VecDeque<(usize, Duration)>,
     last_sec_sum: Duration,
     stats_updated: usize,
     stats_update_every: Duration,
     paused_on_error: bool,
-    // gil: Arc<parking_lot::Mutex<GILGuard>>,
+    host: Host,
+    stats: Stats,
 }
 
 // unsafe impl Send for PyO3Plugin {}
@@ -54,44 +58,33 @@ pub struct PyO3Plugin {
 impl Default for PyO3Plugin {
     fn default() -> Self {
         let (status_in, status_out) = triple_buffer::triple_buffer(&Status::default());
+        let (runtime_stats_in, runtime_stats_out) = triple_buffer::triple_buffer(&None);
         Self {
             params: Arc::new(PyO3PluginParams2::default()),
             sample_rate: 0.0,
             status_in: Arc::new(parking_lot::Mutex::new(status_in)),
             status_out: Arc::new(parking_lot::Mutex::new(status_out)),
+            runtime_stats_in: Arc::new(parking_lot::Mutex::new(runtime_stats_in)),
+            runtime_stats_out: Arc::new(parking_lot::Mutex::new(runtime_stats_out)),
             data_version: Arc::new(AtomicUsize::new(1)),
             seen_data_version: 0,
             python_source: None,
             python_state: None,
             last_sec: VecDeque::new(),
             last_sec_sum: Duration::from_secs(0),
-            status: Status::default(),
             now: 0,
             stats_updated: 0,
             stats_update_every: Duration::from_secs(1),
             paused_on_error: false,
-            // gil: Arc::new(parking_lot::Mutex::new(Python::acquire_gil())),
+            host: Host::default(),
+            stats: Stats::default(),
         }
     }
-}
-
-// FIXME: host.print() has to be called single tuple, e.g. host.print((1, 2, 3)); it should work with multiple args
-#[pyfunction(name = "print")]
-#[pyo3(text_signature = "(*args)")]
-fn host_print(args: &PyTuple) {
-    let mut iter = args.iter();
-    if let Some(a) = iter.next() {
-        print!("{}", a);
-        for a in iter {
-            print!(" {}", a);
-        }
-    }
-    print!("\n");
 }
 
 impl PyO3Plugin {
     fn publish_status(&mut self) {
-        self.status_in.lock().write(self.status.clone());
+        self.status_in.lock().write(self.host.status().clone());
     }
 
     fn update_python_source(&mut self) {
@@ -99,34 +92,7 @@ impl PyO3Plugin {
         if data_version != self.seen_data_version {
             self.seen_data_version = data_version;
             let path = { self.params.source_path.0.lock().clone() };
-            nih_warn!("data_version={:?} path={:?}", data_version, path);
-            if path == "" {
-                self.python_source = None;
-                self.python_state = None;
-                self.status.file_status = FileStatus::Unloaded;
-                self.status.runtime_stats = None;
-                self.publish_status();
-                return;
-            }
-            let ret = std::fs::read_to_string(&*path);
-            match ret {
-                Ok(source) => {
-                    let size = source.len();
-                    self.python_source = Some(source);
-                    self.python_state = None;
-                    self.status.runtime_stats = Some(RuntimeStats::new());
-                    self.last_sec = Default::default();
-                    self.last_sec_sum = Default::default();
-                    self.status.file_status =
-                        FileStatus::Loaded(path.to_string(), size.try_into().unwrap());
-                    self.status.paused_on_error = false;
-                    self.publish_status();
-                }
-                Err(e) => {
-                    nih_log!("python not loaded: {}", e);
-                    self.status.file_status = FileStatus::Error(e.to_string());
-                }
-            }
+            self.host.load_source(&path);
         }
     }
 
@@ -172,8 +138,8 @@ impl PyO3Plugin {
         if let Some(python_source) = &self.python_source {
             let buf = buffer.as_slice();
             let result = Python::with_gil(|py| -> Result<PythonProcessResult, PyErr> {
-                let host_module = PyModule::new(py, "host")?;
-                host_module.add_function(wrap_pyfunction!(host_print, host_module)?)?;
+                //let host_module = PyModule::new(py, "host")?;
+                //host_module.add_function(wrap_pyfunction!(host_print, host_module)?)?;
                 let tmp = buf.iter().map(|x| x.to_vec()).collect::<Vec<_>>();
                 let pybuf: Py<PyAny> = PyList::new(py, tmp).into_py(py);
                 let events: Py<PyAny> = PyList::new(py, events).into_py(py);
@@ -181,16 +147,13 @@ impl PyO3Plugin {
                     .python_state
                     .take()
                     .unwrap_or(PyList::empty(py).to_object(py));
-                let globals = [("host", host_module)].into_py_dict(py);
+                //let globals = [("host", host_module)].into_py_dict(py);
                 let locals =
                     [("state", state), ("buffer", pybuf), ("events", events)].into_py_dict(py);
-                py.run(python_source.as_str(), Some(globals), Some(locals))?;
+                py.run(python_source.as_str(), None, Some(locals))?;
 
-                let result: &PyAny = py.eval(
-                    "process(state, buffer, events)",
-                    Some(globals),
-                    Some(locals),
-                )?;
+                let result: &PyAny =
+                    py.eval("process(state, buffer, events)", None, Some(locals))?;
                 let result: Result<PythonProcessResult, PyErr> = result.extract();
 
                 Ok(result?)
@@ -251,6 +214,7 @@ impl Plugin for PyO3Plugin {
             params: self.params.clone(),
             status: self.status_out.lock().read().clone(),
             status_out: self.status_out.clone(),
+            runtime_stats_out: self.runtime_stats_out.clone(),
         };
 
         editor_vizia::create2(self.params.editor_state.clone(), data)
@@ -276,44 +240,37 @@ impl Plugin for PyO3Plugin {
     ) -> ProcessStatus {
         self.update_python_source();
         let mode = self.params.mode.value();
-        struct FrameStats {
-            d: Duration,
-            events_to_pyo3: usize,
-            events_from_pyo3: usize,
-        }
-        let ret = if mode == ModeParam::Run && !self.status.paused_on_error {
-            let mut frame_stats = FrameStats {
-                d: Duration::from_secs(0),
-                events_to_pyo3: 0,
-                events_from_pyo3: 0,
-            };
+
+        if mode == ModeParam::Run && !self.host.status().paused_on_error {
             let mut events: Vec<PyO3NoteEvent> = vec![];
             while let Some(next_event) = context.next_event() {
-                frame_stats.events_to_pyo3 += 1;
                 events.push(next_event.into());
             }
-            let elapsed = Instant::now();
-            let result = self.run_python(buffer, events);
-            let d = elapsed.elapsed();
+            let result = self.host.run(self.now, self.sample_rate, buffer, events);
             match result {
                 Ok(processed_events) => {
-                    self.status.eval_status = EvalStatus::Ok;
                     if !processed_events.is_empty() {
                         nih_warn!("python returned {} events", processed_events.len());
                     }
-                    processed_events.into_iter().for_each(|e| {
-                        frame_stats.events_from_pyo3 += 1;
-                        context.send_event(e.into())
-                    });
+                    processed_events
+                        .into_iter()
+                        .for_each(|e| context.send_event(e.into()));
                 }
                 Err(e) => {
-                    self.status.eval_status = EvalStatus::Error(e);
-                    self.status.paused_on_error = true;
                     self.publish_status();
                 }
             };
-            frame_stats.d = d;
-            Some(frame_stats)
+            if self.params.editor_state.is_open() {
+                if self.now - self.stats_updated
+                    >= (self.stats_update_every.as_secs_f64() * self.sample_rate as f64) as usize
+                {
+                    self.runtime_stats_in
+                        .lock()
+                        .write(self.host.runtime_stats().cloned());
+                    self.status_in.lock().write(self.host.status().clone());
+                    self.stats_updated = self.now;
+                }
+            }
         } else if mode == ModeParam::Bypass {
             let mut next_event = context.next_event();
             for (sample_id, _channel_samples) in buffer.iter_samples().enumerate() {
@@ -327,41 +284,6 @@ impl Plugin for PyO3Plugin {
                 }
                 for e in events {
                     context.send_event(e);
-                }
-            }
-            None
-        } else {
-            None
-        };
-
-        if let (Some(frame_stats), Some(rt)) = (ret, self.status.runtime_stats.as_mut()) {
-            rt.iterations += 1;
-            rt.total_duration += frame_stats.d;
-            rt.last_duration = frame_stats.d;
-            rt.events_to_pyo3 += frame_stats.events_to_pyo3;
-            rt.events_from_pyo3 += frame_stats.events_from_pyo3;
-            // this gets up to 938 at 48.0kHz - must be more efficient way.
-            // e.g. could sum to more coarse elements as only stats_update_every second's precision is needed
-            self.last_sec.push_back((self.now, frame_stats.d));
-            self.last_sec_sum += frame_stats.d;
-            while let Some((t, d)) = self.last_sec.front().clone() {
-                if self.now - t >= (10.0 * self.sample_rate) as usize {
-                    self.last_sec_sum -= *d;
-                    self.last_sec.pop_front();
-                } else {
-                    break;
-                }
-            }
-            rt.last_rolling_avg = self.last_sec_sum / self.last_sec.len() as u32;
-            rt.window_size = self.last_sec.len();
-            rt.sample_rate = self.sample_rate;
-
-            if self.params.editor_state.is_open() {
-                if self.now - self.stats_updated
-                    >= (self.stats_update_every.as_secs_f64() * self.sample_rate as f64) as usize
-                {
-                    self.status_in.lock().write(self.status.clone());
-                    self.stats_updated = self.now;
                 }
             }
         }

@@ -12,7 +12,7 @@ use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
-use crate::common_types::Status;
+use crate::common_types::{RuntimeStats, Status};
 use crate::params::{ModeParam, PyO3PluginParams2};
 
 #[derive(Clone, Lens)]
@@ -21,6 +21,8 @@ pub struct Data {
     pub(crate) params: Arc<PyO3PluginParams2>,
     pub(crate) status: Status,
     pub(crate) status_out: Arc<parking_lot::Mutex<triple_buffer::Output<Status>>>,
+    pub(crate) runtime_stats_out:
+        Arc<parking_lot::Mutex<triple_buffer::Output<Option<RuntimeStats>>>>,
 }
 
 impl Model for Data {
@@ -167,8 +169,8 @@ pub(crate) fn create2(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<d
                 .top(Pixels(50.0));
                 Label::new(
                     cx,
-                    Data::status_out.map(|x| {
-                        let stats = match x.lock().read().runtime_stats.clone() {
+                    Data::runtime_stats_out.map(|x| {
+                        let stats = match x.lock().read().clone() {
                             Some(stats) => stats,
                             None => return "".to_string(),
                         };
