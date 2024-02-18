@@ -9,20 +9,19 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use nih_plug::prelude::*;
-
 use nih_plug_vizia::ViziaState;
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyList};
 use pyo3::{PyErr, Python};
 
 use crate::common_types::{EvalError, EvalStatus, FileStatus, RuntimeStats, Status};
-use crate::event::{note_event_to_pyo3_note_event, pyo3_note_event_to_note_event, PyO3NoteEvent};
+use crate::event::PyO3NoteEvent;
 use crate::params::{ModeParam, PyO3PluginParams2};
 use crate::source_path::SourcePath;
 
 mod common_types;
 mod editor_vizia;
-mod event;
+pub mod event;
 mod params;
 mod source_path;
 
@@ -43,47 +42,6 @@ pub struct PyO3Plugin {
     stats_updated: usize,
     stats_update_every: Duration,
     paused_on_error: bool,
-}
-
-#[derive(Params)]
-pub struct PyO3PluginParams {
-    //    #[persist = "intparam"]
-    //    intparam: IntParam,
-    //#[persist = "editor-state"]
-    //editor_state: Arc<ViziaState>,
-    //#[persist = "bypass-param"]
-    //bypass: MyBoolParam,
-    //#[persist = "source-path"]
-    //source_path: SourcePath,
-}
-
-pub struct MyBoolParam {
-    value: AtomicBool,
-}
-
-// impl<'a> PersistentField<'a, bool> for MyBoolParam {
-//     fn set(&self, new_value: bool) {
-//         self.value.store(new_value, Ordering::Relaxed);
-//     }
-//     fn map<F, R>(&self, f: F) -> R
-//     where
-//         F: Fn(&bool) -> R,
-//     {
-//         f(&self.value.load(Ordering::Relaxed))
-//     }
-// }
-
-impl Default for PyO3PluginParams {
-    fn default() -> Self {
-        Self {
-            //intparam: IntParam::new("ok", 0, IntRange::Linear { min: 0, max: 100 }),
-            //editor_state: editor_vizia::default_state(),
-            //source_path: SourcePath(Arc::new(parking_lot::Mutex::new("".to_string()))),
-            //bypass: MyBoolParam {
-            //    value: AtomicBool::new(false),
-            //},
-        }
-    }
 }
 
 impl Default for PyO3Plugin {
@@ -107,18 +65,6 @@ impl Default for PyO3Plugin {
         }
     }
 }
-
-// #[pyfunction]
-// #[pyo3(name = "print")]
-// fn python_print(a: &PyAny) {
-//     nih_warn!("python: {:?}", a);
-// }
-//
-// #[pymodule]
-// fn module_with_functions(_py: Python, m: &PyModule) -> PyResult<()> {
-//     m.add_function(wrap_pyfunction!(python_print, m)?)?;
-//     Ok(())
-// }
 
 impl PyO3Plugin {
     fn publish_status(&mut self) {
@@ -202,18 +148,17 @@ impl PyO3Plugin {
         if let Some(python_source) = &self.python_source {
             let buf = buffer.as_slice();
             let result = Python::with_gil(|py| -> Result<PythonProcessResult, PyErr> {
-                //let m = py.import("module_with_functions")?;
-                //let globals = [("module_with_functions", m)].into_py_dict(py);
                 py.run(python_source.as_str(), None, None)?;
                 let tmp = buf.iter().map(|x| x.to_vec()).collect::<Vec<_>>();
                 let pybuf = PyList::new(py, tmp);
+                let had_events = !events.is_empty();
                 let events = PyList::new(py, events);
                 let locals = [("buffer", pybuf), ("events", events)].into_py_dict(py);
 
-                let result = py.eval("process(buffer, events)", None, Some(locals))?;
-                //eprintln!("{:?}", result);
-                let result: PythonProcessResult = result.extract()?;
-                Ok(result)
+                let result: &PyAny = py.eval("process(buffer, events)", None, Some(locals))?;
+                let result: Result<PythonProcessResult, PyErr> = result.extract();
+
+                Ok(result?)
             });
             match result {
                 Ok(PythonProcessResult(in_buffer, events)) => {
@@ -282,14 +227,6 @@ impl Plugin for PyO3Plugin {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = buffer_config.sample_rate;
-
-        //#[cfg(debug_assertions)]
-        //if let Ok(path) = std::env::var("PYO3_PLUGIN_SOURCE_PATH") {
-        //    let mut current = self.params.source_path.0.lock();
-        //    if *current == "" {
-        //        *current = path;
-        //    }
-        //}
         true
     }
 
@@ -303,14 +240,22 @@ impl Plugin for PyO3Plugin {
     ) -> ProcessStatus {
         self.update_python_source();
         let mode = self.params.mode.value();
-        let bypass = false; //self.params.bypass.value.load(Ordering::Relaxed);
-                            //eprintln!("{:?}", self.params.mode.value());
-        let d = if mode == ModeParam::Run && !self.status.paused_on_error {
-            let mut events = vec![];
+        struct FrameStats {
+            d: Duration,
+            events_to_pyo3: usize,
+            events_from_pyo3: usize,
+        }
+        let ret = if mode == ModeParam::Run && !self.status.paused_on_error {
+            let mut frame_stats = FrameStats {
+                d: Duration::from_secs(0),
+                events_to_pyo3: 0,
+                events_from_pyo3: 0,
+            };
+            let mut events: Vec<PyO3NoteEvent> = vec![];
             while let Some(next_event) = context.next_event() {
-                events.push(note_event_to_pyo3_note_event(next_event));
+                frame_stats.events_to_pyo3 += 1;
+                events.push(next_event.into());
             }
-
             let elapsed = Instant::now();
             let result = self.run_python(buffer, events);
             let d = elapsed.elapsed();
@@ -320,9 +265,10 @@ impl Plugin for PyO3Plugin {
                     if !processed_events.is_empty() {
                         nih_warn!("python returned {} events", processed_events.len());
                     }
-                    processed_events
-                        .into_iter()
-                        .for_each(|e| context.send_event(pyo3_note_event_to_note_event(e)));
+                    processed_events.into_iter().for_each(|e| {
+                        frame_stats.events_from_pyo3 += 1;
+                        context.send_event(e.into())
+                    });
                 }
                 Err(e) => {
                     self.status.eval_status = (EvalStatus::Error(e));
@@ -330,7 +276,8 @@ impl Plugin for PyO3Plugin {
                     self.publish_status();
                 }
             };
-            Some(d)
+            frame_stats.d = d;
+            Some(frame_stats)
         } else if mode == ModeParam::Bypass {
             let mut next_event = context.next_event();
             for (sample_id, _channel_samples) in buffer.iter_samples().enumerate() {
@@ -351,14 +298,16 @@ impl Plugin for PyO3Plugin {
             None
         };
 
-        if let (Some(d), Some(rt)) = (d, self.status.runtime_stats.as_mut()) {
+        if let (Some(frame_stats), Some(rt)) = ((ret, self.status.runtime_stats.as_mut())) {
             rt.iterations += 1;
-            rt.total_duration += d;
-            rt.last_duration = d;
+            rt.total_duration += frame_stats.d;
+            rt.last_duration = frame_stats.d;
+            rt.events_to_pyo3 += frame_stats.events_to_pyo3;
+            rt.events_from_pyo3 += frame_stats.events_from_pyo3;
             // this gets up to 938 at 48.0kHz - must be more efficient way.
             // e.g. could sum to more coarse elements as only stats_update_every second's precision is needed
-            self.last_sec.push_back((self.now, d));
-            self.last_sec_sum += d;
+            self.last_sec.push_back((self.now, frame_stats.d));
+            self.last_sec_sum += frame_stats.d;
             while let Some((t, d)) = self.last_sec.front().clone() {
                 if self.now - t >= (10.0 * self.sample_rate) as usize {
                     self.last_sec_sum -= *d;
