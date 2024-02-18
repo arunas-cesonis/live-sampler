@@ -1,772 +1,734 @@
-// copy of https://github.com/robbert-vdh/nih-plug/blob/master/src/midi.rs#L55
-// for convertion
-
-use crate::PyO3Plugin;
 use nih_plug::midi::NoteEvent;
 use nih_plug::plugin::Plugin;
-use nih_plug::prelude::PluginNoteEvent;
-use pyo3::types::{IntoPyDict, PyFloat, PyInt};
-use pyo3::{FromPyObject, IntoPy, PyAny, PyObject, PyResult, Python, ToPyObject};
+use pyo3::types::IntoPyDict;
+use pyo3::{pyclass, FromPyObject, IntoPy, Py, PyObject, Python, ToPyObject};
 
-pub fn pyo3_note_event_to_note_event(note_event: PyO3NoteEvent) -> NoteEvent<()> {
-    match note_event {
-        PyO3NoteEvent::NoteOn {
-            timing,
-            voice_id,
-            channel,
-            note,
-            velocity,
-            ..
-        } => NoteEvent::NoteOn {
-            timing,
-            voice_id,
-            channel,
-            note,
-            velocity,
-        },
-        PyO3NoteEvent::NoteOff {
-            timing,
-            voice_id,
-            channel,
-            note,
-            velocity,
-            ..
-        } => NoteEvent::NoteOff {
-            timing,
-            voice_id,
-            channel,
-            note,
-            velocity,
-        },
-        PyO3NoteEvent::Choke {
-            timing,
-            voice_id,
-            channel,
-            note,
-        } => NoteEvent::Choke {
-            timing,
-            voice_id,
-            channel,
-            note,
-        },
-        PyO3NoteEvent::VoiceTerminated {
-            timing,
-            voice_id,
-            channel,
-            note,
-        } => NoteEvent::VoiceTerminated {
-            timing,
-            voice_id,
-            channel,
-            note,
-        },
-        PyO3NoteEvent::PolyModulation {
-            timing,
-            voice_id,
-            poly_modulation_id,
-            normalized_offset,
-        } => NoteEvent::PolyModulation {
-            timing,
-            voice_id,
-            poly_modulation_id,
-            normalized_offset,
-        },
-        PyO3NoteEvent::MonoAutomation {
-            timing,
-            poly_modulation_id,
-            normalized_value,
-        } => NoteEvent::MonoAutomation {
-            timing,
-            poly_modulation_id,
-            normalized_value,
-        },
-        PyO3NoteEvent::PolyPressure {
-            timing,
-            voice_id,
-            channel,
-            note,
-            pressure,
-        } => NoteEvent::PolyPressure {
-            timing,
-            voice_id,
-            channel,
-            note,
-            pressure,
-        },
-        PyO3NoteEvent::PolyVolume {
-            timing,
-            voice_id,
-            channel,
-            note,
-            gain,
-        } => NoteEvent::PolyVolume {
-            timing,
-            voice_id,
-            channel,
-            note,
-            gain,
-        },
-        PyO3NoteEvent::PolyPan {
-            timing,
-            voice_id,
-            channel,
-            note,
-            pan,
-        } => NoteEvent::PolyPan {
-            timing,
-            voice_id,
-            channel,
-            note,
-            pan,
-        },
-        PyO3NoteEvent::PolyTuning {
-            timing,
-            voice_id,
-            channel,
-            note,
-            tuning,
-        } => NoteEvent::PolyTuning {
-            timing,
-            voice_id,
-            channel,
-            note,
-            tuning,
-        },
-
-        PyO3NoteEvent::PolyVibrato {
-            timing,
-            voice_id,
-            channel,
-            note,
-            vibrato,
-        } => NoteEvent::PolyVibrato {
-            timing,
-            voice_id,
-            channel,
-            note,
-            vibrato,
-        },
-        PyO3NoteEvent::PolyExpression {
-            timing,
-            voice_id,
-            channel,
-            note,
-            expression,
-        } => NoteEvent::PolyExpression {
-            timing,
-            voice_id,
-            channel,
-            note,
-            expression,
-        },
-        PyO3NoteEvent::PolyBrightness {
-            timing,
-            voice_id,
-            channel,
-            note,
-            brightness,
-        } => NoteEvent::PolyBrightness {
-            timing,
-            voice_id,
-            channel,
-            note,
-            brightness,
-        },
-        PyO3NoteEvent::MidiChannelPressure {
-            timing,
-            channel,
-            pressure,
-        } => NoteEvent::MidiChannelPressure {
-            timing,
-            channel,
-            pressure,
-        },
-        PyO3NoteEvent::MidiPitchBend {
-            timing,
-            channel,
-            value,
-        } => NoteEvent::MidiPitchBend {
-            timing,
-            channel,
-            value,
-        },
-        PyO3NoteEvent::MidiCC {
-            timing,
-            channel,
-            cc,
-            value,
-        } => NoteEvent::MidiCC {
-            timing,
-            channel,
-            cc,
-            value,
-        },
-        PyO3NoteEvent::MidiProgramChange {
-            timing,
-            channel,
-            program,
-        } => NoteEvent::MidiProgramChange {
-            timing,
-            channel,
-            program,
-        },
-        PyO3NoteEvent::MidiSysEx { timing } => NoteEvent::MidiSysEx {
-            timing,
-            message: (),
-        },
-    }
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct NoteOn {
+    timing: u32,
+    voice_id: Option<i32>,
+    channel: u8,
+    note: u8,
+    velocity: f32,
 }
 
-pub fn note_event_to_pyo3_note_event(note_event: NoteEvent<()>) -> PyO3NoteEvent {
-    match note_event {
-        NoteEvent::NoteOn {
-            timing,
-            voice_id,
-            channel,
-            note,
-            velocity,
-        } => PyO3NoteEvent::NoteOn {
-            pyo3_tag: true,
-            timing,
-            voice_id,
-            channel,
-            note,
-            velocity,
-        },
-        NoteEvent::NoteOff {
-            timing,
-            voice_id,
-            channel,
-            note,
-            velocity,
-        } => PyO3NoteEvent::NoteOff {
-            pyo3_tag: true,
-            timing,
-            voice_id,
-            channel,
-            note,
-            velocity,
-        },
-        NoteEvent::Choke {
-            timing,
-            voice_id,
-            channel,
-            note,
-        } => PyO3NoteEvent::Choke {
-            timing,
-            voice_id,
-            channel,
-            note,
-        },
-        NoteEvent::VoiceTerminated {
-            timing,
-            voice_id,
-            channel,
-            note,
-        } => PyO3NoteEvent::VoiceTerminated {
-            timing,
-            voice_id,
-            channel,
-            note,
-        },
-        NoteEvent::PolyModulation {
-            timing,
-            voice_id,
-            poly_modulation_id,
-            normalized_offset,
-        } => PyO3NoteEvent::PolyModulation {
-            timing,
-            voice_id,
-            poly_modulation_id,
-            normalized_offset,
-        },
-        NoteEvent::MonoAutomation {
-            timing,
-            poly_modulation_id,
-            normalized_value,
-        } => PyO3NoteEvent::MonoAutomation {
-            timing,
-            poly_modulation_id,
-            normalized_value,
-        },
-        NoteEvent::PolyPressure {
-            timing,
-            voice_id,
-            channel,
-            note,
-            pressure,
-        } => PyO3NoteEvent::PolyPressure {
-            timing,
-            voice_id,
-            channel,
-            note,
-            pressure,
-        },
-        NoteEvent::PolyVolume {
-            timing,
-            voice_id,
-            channel,
-            note,
-            gain,
-        } => PyO3NoteEvent::PolyVolume {
-            timing,
-            voice_id,
-            channel,
-            note,
-            gain,
-        },
-        NoteEvent::PolyPan {
-            timing,
-            voice_id,
-            channel,
-            note,
-            pan,
-        } => PyO3NoteEvent::PolyPan {
-            timing,
-            voice_id,
-            channel,
-            note,
-            pan,
-        },
-        NoteEvent::PolyTuning {
-            timing,
-            voice_id,
-            channel,
-            note,
-            tuning,
-        } => PyO3NoteEvent::PolyTuning {
-            timing,
-            voice_id,
-            channel,
-            note,
-            tuning,
-        },
-        NoteEvent::PolyVibrato {
-            timing,
-            voice_id,
-            channel,
-            note,
-            vibrato,
-        } => PyO3NoteEvent::PolyVibrato {
-            timing,
-            voice_id,
-            channel,
-            note,
-            vibrato,
-        },
-        NoteEvent::PolyExpression {
-            timing,
-            voice_id,
-            channel,
-            note,
-            expression,
-        } => PyO3NoteEvent::PolyExpression {
-            timing,
-            voice_id,
-            channel,
-            note,
-            expression,
-        },
-        NoteEvent::PolyBrightness {
-            timing,
-            voice_id,
-            channel,
-            note,
-            brightness,
-        } => PyO3NoteEvent::PolyBrightness {
-            timing,
-            voice_id,
-            channel,
-            note,
-            brightness,
-        },
-        NoteEvent::MidiChannelPressure {
-            timing,
-            channel,
-            pressure,
-        } => PyO3NoteEvent::MidiChannelPressure {
-            timing,
-            channel,
-            pressure,
-        },
-        NoteEvent::MidiPitchBend {
-            timing,
-            channel,
-            value,
-        } => PyO3NoteEvent::MidiPitchBend {
-            timing,
-            channel,
-            value,
-        },
-        NoteEvent::MidiCC {
-            timing,
-            channel,
-            cc,
-            value,
-        } => PyO3NoteEvent::MidiCC {
-            timing,
-            channel,
-            cc,
-            value,
-        },
-        NoteEvent::MidiProgramChange {
-            timing,
-            channel,
-            program,
-        } => PyO3NoteEvent::MidiProgramChange {
-            timing,
-            channel,
-            program,
-        },
-        NoteEvent::MidiSysEx { timing, .. } => PyO3NoteEvent::MidiSysEx { timing },
-        _ => panic!("Unsupported note event"),
-    }
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct NoteOff {
+    timing: u32,
+    voice_id: Option<i32>,
+    channel: u8,
+    note: u8,
+    velocity: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct Choke {
+    timing: u32,
+    voice_id: Option<i32>,
+    channel: u8,
+    note: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct VoiceTerminated {
+    timing: u32,
+    voice_id: Option<i32>,
+    channel: u8,
+    note: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct PolyModulation {
+    timing: u32,
+    voice_id: i32,
+    poly_modulation_id: u32,
+    normalized_offset: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct MonoAutomation {
+    timing: u32,
+    poly_modulation_id: u32,
+    normalized_value: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct PolyPressure {
+    timing: u32,
+    voice_id: Option<i32>,
+    channel: u8,
+    note: u8,
+    pressure: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct PolyVolume {
+    timing: u32,
+    voice_id: Option<i32>,
+    channel: u8,
+    note: u8,
+    gain: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct PolyPan {
+    timing: u32,
+    voice_id: Option<i32>,
+    channel: u8,
+    note: u8,
+    pan: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct PolyTuning {
+    timing: u32,
+    voice_id: Option<i32>,
+    channel: u8,
+    note: u8,
+    tuning: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct PolyVibrato {
+    timing: u32,
+    voice_id: Option<i32>,
+    channel: u8,
+    note: u8,
+    vibrato: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct PolyExpression {
+    timing: u32,
+    voice_id: Option<i32>,
+    channel: u8,
+    note: u8,
+    expression: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct PolyBrightness {
+    timing: u32,
+    voice_id: Option<i32>,
+    channel: u8,
+    note: u8,
+    brightness: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct MidiChannelPressure {
+    timing: u32,
+    channel: u8,
+    pressure: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct MidiPitchBend {
+    timing: u32,
+    channel: u8,
+    value: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct MidiCC {
+    timing: u32,
+    channel: u8,
+    cc: u8,
+    value: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct MidiProgramChange {
+    timing: u32,
+    channel: u8,
+    program: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[pyclass]
+pub struct MidiSysEx {
+    timing: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, FromPyObject)]
+pub enum PyO3NoteEvent {
+    NoteOn(NoteOn),
+    NoteOff(NoteOff),
+    Choke(Choke),
+    VoiceTerminated(VoiceTerminated),
+    PolyModulation(PolyModulation),
+    MonoAutomation(MonoAutomation),
+    PolyPressure(PolyPressure),
+    PolyVolume(PolyVolume),
+    PolyPan(PolyPan),
+    PolyTuning(PolyTuning),
+    PolyVibrato(PolyVibrato),
+    PolyExpression(PolyExpression),
+    PolyBrightness(PolyBrightness),
+    MidiChannelPressure(MidiChannelPressure),
+    MidiPitchBend(MidiPitchBend),
+    MidiCC(MidiCC),
+    MidiProgramChange(MidiProgramChange),
+    MidiSysEx(MidiSysEx),
 }
 
 impl ToPyObject for PyO3NoteEvent {
     fn to_object(&self, py: Python) -> PyObject {
         match self {
-            PyO3NoteEvent::NoteOn {
-                pyo3_tag,
-                timing,
-                voice_id,
-                channel,
-                note,
-                velocity,
-            } => {
-                let timing = timing.into_py(py);
-                let voice_id = voice_id.into_py(py);
-                let channel = channel.into_py(py);
-                let note = note.into_py(py);
-                let velocity = velocity.into_py(py);
-                let dict = [
-                    ("NoteOn", true.into_py(py)),
-                    ("timing", timing),
-                    ("voice_id", voice_id),
-                    ("channel", channel),
-                    ("note", note),
-                    ("velocity", velocity),
-                ]
-                .into_py_dict(py);
-                dict.into()
-            }
-            PyO3NoteEvent::NoteOff {
-                pyo3_tag,
-                timing,
-                voice_id,
-                channel,
-                note,
-                velocity,
-            } => {
-                let timing = timing.into_py(py);
-                let voice_id = voice_id.into_py(py);
-                let channel = channel.into_py(py);
-                let note = note.into_py(py);
-                let velocity = velocity.into_py(py);
-                let dict = [
-                    ("NoteOff", true.into_py(py)),
-                    ("timing", timing),
-                    ("voice_id", voice_id),
-                    ("channel", channel),
-                    ("note", note),
-                    ("velocity", velocity),
-                ]
-                .into_py_dict(py);
-                dict.into()
-            }
-            _ => todo!(),
+            PyO3NoteEvent::NoteOn(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::NoteOff(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::Choke(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::VoiceTerminated(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::PolyModulation(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::MonoAutomation(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::PolyPressure(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::PolyVolume(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::PolyPan(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::PolyTuning(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::PolyVibrato(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::PolyExpression(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::PolyBrightness(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::MidiChannelPressure(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::MidiPitchBend(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::MidiCC(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::MidiProgramChange(x) => Py::new(py, *x).unwrap().into_py(py),
+            PyO3NoteEvent::MidiSysEx(x) => Py::new(py, *x).unwrap().into_py(py),
         }
     }
 }
 
-impl IntoPy<PyObject> for PyO3NoteEvent {
-    fn into_py(self, py: Python) -> PyObject {
-        self.into_py(py)
+impl Into<NoteEvent<()>> for PyO3NoteEvent {
+    fn into(self) -> NoteEvent<()> {
+        match self {
+            PyO3NoteEvent::NoteOn(x) => NoteEvent::NoteOn {
+                timing: x.timing,
+                voice_id: x.voice_id,
+                channel: x.channel,
+                note: x.note,
+                velocity: x.velocity,
+            },
+            PyO3NoteEvent::NoteOff(x) => NoteEvent::NoteOff {
+                timing: x.timing,
+                voice_id: x.voice_id,
+                channel: x.channel,
+                note: x.note,
+                velocity: x.velocity,
+            },
+            PyO3NoteEvent::Choke(x) => NoteEvent::Choke {
+                timing: x.timing,
+                voice_id: x.voice_id,
+                channel: x.channel,
+                note: x.note,
+            },
+            PyO3NoteEvent::VoiceTerminated(x) => NoteEvent::VoiceTerminated {
+                timing: x.timing,
+                voice_id: x.voice_id,
+                channel: x.channel,
+                note: x.note,
+            },
+            PyO3NoteEvent::PolyModulation(x) => NoteEvent::PolyModulation {
+                timing: x.timing,
+                voice_id: x.voice_id,
+                poly_modulation_id: x.poly_modulation_id,
+                normalized_offset: x.normalized_offset,
+            },
+            PyO3NoteEvent::MonoAutomation(x) => NoteEvent::MonoAutomation {
+                timing: x.timing,
+                poly_modulation_id: x.poly_modulation_id,
+                normalized_value: x.normalized_value,
+            },
+            PyO3NoteEvent::PolyPressure(x) => NoteEvent::PolyPressure {
+                timing: x.timing,
+                voice_id: x.voice_id,
+                channel: x.channel,
+                note: x.note,
+                pressure: x.pressure,
+            },
+            PyO3NoteEvent::PolyVolume(x) => NoteEvent::PolyVolume {
+                timing: x.timing,
+                voice_id: x.voice_id,
+                channel: x.channel,
+                note: x.note,
+                gain: x.gain,
+            },
+            PyO3NoteEvent::PolyPan(x) => NoteEvent::PolyPan {
+                timing: x.timing,
+                voice_id: x.voice_id,
+                channel: x.channel,
+                note: x.note,
+                pan: x.pan,
+            },
+            PyO3NoteEvent::PolyTuning(x) => NoteEvent::PolyTuning {
+                timing: x.timing,
+                voice_id: x.voice_id,
+                channel: x.channel,
+                note: x.note,
+                tuning: x.tuning,
+            },
+            PyO3NoteEvent::PolyVibrato(x) => NoteEvent::PolyVibrato {
+                timing: x.timing,
+                voice_id: x.voice_id,
+                channel: x.channel,
+                note: x.note,
+                vibrato: x.vibrato,
+            },
+            PyO3NoteEvent::PolyExpression(x) => NoteEvent::PolyExpression {
+                timing: x.timing,
+                voice_id: x.voice_id,
+                channel: x.channel,
+                note: x.note,
+                expression: x.expression,
+            },
+            PyO3NoteEvent::PolyBrightness(x) => NoteEvent::PolyBrightness {
+                timing: x.timing,
+                voice_id: x.voice_id,
+                channel: x.channel,
+                note: x.note,
+                brightness: x.brightness,
+            },
+            PyO3NoteEvent::MidiChannelPressure(x) => NoteEvent::MidiChannelPressure {
+                timing: x.timing,
+                channel: x.channel,
+                pressure: x.pressure,
+            },
+            PyO3NoteEvent::MidiPitchBend(x) => NoteEvent::MidiPitchBend {
+                timing: x.timing,
+                channel: x.channel,
+                value: x.value,
+            },
+            PyO3NoteEvent::MidiCC(x) => NoteEvent::MidiCC {
+                timing: x.timing,
+                channel: x.channel,
+                cc: x.cc,
+                value: x.value,
+            },
+            PyO3NoteEvent::MidiProgramChange(x) => NoteEvent::MidiProgramChange {
+                timing: x.timing,
+                channel: x.channel,
+                program: x.program,
+            },
+            PyO3NoteEvent::MidiSysEx(x) => NoteEvent::MidiSysEx {
+                timing: x.timing,
+                message: (),
+            },
+        }
     }
 }
 
-//
-// copy of nih_plug::prelude::PluginNoteEvent
-//
-#[derive(Debug, Clone, Copy, PartialEq, FromPyObject)]
-#[non_exhaustive]
-pub enum PyO3NoteEvent {
-    /// A note on event, available on [`MidiConfig::Basic`] and up.
-    NoteOn {
-        #[pyo3(attribute("NoteOn"))]
-        pyo3_tag: bool,
+impl From<NoteEvent<()>> for PyO3NoteEvent {
+    fn from(value: NoteEvent<()>) -> Self {
+        match value {
+            NoteEvent::NoteOn {
+                timing,
+                voice_id,
+                channel,
+                note,
+                velocity,
+            } => PyO3NoteEvent::NoteOn(NoteOn {
+                timing,
+                voice_id,
+                channel,
+                note,
+                velocity,
+            }),
+            NoteEvent::NoteOff {
+                timing,
+                voice_id,
+                channel,
+                note,
+                velocity,
+            } => PyO3NoteEvent::NoteOff(NoteOff {
+                timing,
+                voice_id,
+                channel,
+                note,
+                velocity,
+            }),
+            NoteEvent::Choke {
+                timing,
+                voice_id,
+                channel,
+                note,
+            } => PyO3NoteEvent::Choke(Choke {
+                timing,
+                voice_id,
+                channel,
+                note,
+            }),
+            NoteEvent::VoiceTerminated {
+                timing,
+                voice_id,
+                channel,
+                note,
+            } => PyO3NoteEvent::VoiceTerminated(VoiceTerminated {
+                timing,
+                voice_id,
+                channel,
+                note,
+            }),
+            NoteEvent::PolyModulation {
+                timing,
+                voice_id,
+                poly_modulation_id,
+                normalized_offset,
+            } => PyO3NoteEvent::PolyModulation(PolyModulation {
+                timing,
+                voice_id,
+                poly_modulation_id,
+                normalized_offset,
+            }),
+            NoteEvent::MonoAutomation {
+                timing,
+                poly_modulation_id,
+                normalized_value,
+            } => PyO3NoteEvent::MonoAutomation(MonoAutomation {
+                timing,
+                poly_modulation_id,
+                normalized_value,
+            }),
+            NoteEvent::PolyPressure {
+                timing,
+                voice_id,
+                channel,
+                note,
+                pressure,
+            } => PyO3NoteEvent::PolyPressure(PolyPressure {
+                timing,
+                voice_id,
+                channel,
+                note,
+                pressure,
+            }),
+            NoteEvent::PolyVolume {
+                timing,
+                voice_id,
+                channel,
+                note,
+                gain,
+            } => PyO3NoteEvent::PolyVolume(PolyVolume {
+                timing,
+                voice_id,
+                channel,
+                note,
+                gain,
+            }),
+            NoteEvent::PolyPan {
+                timing,
+                voice_id,
+                channel,
+                note,
+                pan,
+            } => PyO3NoteEvent::PolyPan(PolyPan {
+                timing,
+                voice_id,
+                channel,
+                note,
+                pan,
+            }),
+            NoteEvent::PolyTuning {
+                timing,
+                voice_id,
+                channel,
+                note,
+                tuning,
+            } => PyO3NoteEvent::PolyTuning(PolyTuning {
+                timing,
+                voice_id,
+                channel,
+                note,
+                tuning,
+            }),
+            NoteEvent::PolyVibrato {
+                timing,
+                voice_id,
+                channel,
+                note,
+                vibrato,
+            } => PyO3NoteEvent::PolyVibrato(PolyVibrato {
+                timing,
+                voice_id,
+                channel,
+                note,
+                vibrato,
+            }),
+            NoteEvent::PolyExpression {
+                timing,
+                voice_id,
+                channel,
+                note,
+                expression,
+            } => PyO3NoteEvent::PolyExpression(PolyExpression {
+                timing,
+                voice_id,
+                channel,
+                note,
+                expression,
+            }),
+            NoteEvent::PolyBrightness {
+                timing,
+                voice_id,
+                channel,
+                note,
+                brightness,
+            } => PyO3NoteEvent::PolyBrightness(PolyBrightness {
+                timing,
+                voice_id,
+                channel,
+                note,
+                brightness,
+            }),
+            NoteEvent::MidiChannelPressure {
+                timing,
+                channel,
+                pressure,
+            } => PyO3NoteEvent::MidiChannelPressure(MidiChannelPressure {
+                timing,
+                channel,
+                pressure,
+            }),
+            NoteEvent::MidiPitchBend {
+                timing,
+                channel,
+                value,
+            } => PyO3NoteEvent::MidiPitchBend(MidiPitchBend {
+                timing,
+                channel,
+                value,
+            }),
+            NoteEvent::MidiCC {
+                timing,
+                channel,
+                cc,
+                value,
+            } => PyO3NoteEvent::MidiCC(MidiCC {
+                timing,
+                channel,
+                cc,
+                value,
+            }),
+            NoteEvent::MidiProgramChange {
+                timing,
+                channel,
+                program,
+            } => PyO3NoteEvent::MidiProgramChange(MidiProgramChange {
+                timing,
+                channel,
+                program,
+            }),
+            NoteEvent::MidiSysEx { timing, .. } => PyO3NoteEvent::MidiSysEx(MidiSysEx { timing }),
+            _ => panic!("Unsupported note event"),
+        }
+    }
+}
 
-        timing: u32,
-        /// A unique identifier for this note, if available. Using this to refer to a note is
-        /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
-        /// The note's velocity, in `[0, 1]`. Some plugin APIs may allow higher precision than the
-        /// 128 levels available in MIDI.
-        velocity: f32,
-    },
-    /// A note off event, available on [`MidiConfig::Basic`] and up. Bitwig Studio does not provide
-    /// a voice ID for this event.
-    NoteOff {
-        #[pyo3(attribute("NoteOff"))]
-        pyo3_tag: bool,
+#[cfg(test)]
+mod test {
+    use pyo3::{FromPyObject, Python, ToPyObject};
 
-        timing: u32,
-        /// A unique identifier for this note, if available. Using this to refer to a note is
-        /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
-        /// The note's velocity, in `[0, 1]`. Some plugin APIs may allow higher precision than the
-        /// 128 levels available in MIDI.
-        velocity: f32,
-    },
-    /// A note choke event, available on [`MidiConfig::Basic`] and up. When the host sends this to
-    /// the plugin, it indicates that a voice or all sound associated with a note should immediately
-    /// stop playing.
-    Choke {
-        timing: u32,
-        /// A unique identifier for this note, if available. Using this to refer to a note is
-        /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
-    },
+    use super::*;
 
-    /// Sent by the plugin to the host to indicate that a voice has ended. This **needs** to be sent
-    /// when a voice terminates when using polyphonic modulation. Otherwise you can ignore this
-    /// event.
-    VoiceTerminated {
-        timing: u32,
-        /// The voice's unique identifier. Setting this allows a single voice to be terminated if
-        /// the plugin allows multiple overlapping voices for a single key.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
-    },
-    /// A polyphonic modulation event, available on [`MidiConfig::Basic`] and up. This will only be
-    /// sent for parameters that were decorated with the `.with_poly_modulation_id()` modifier, and
-    /// only by supported hosts. This event contains a _normalized offset value_ for the parameter's
-    /// current, **unmodulated** value. That is, an offset for the current value before monophonic
-    /// modulation is applied, as polyphonic modulation overrides monophonic modulation. There are
-    /// multiple ways to incorporate this polyphonic modulation into a synthesizer, but a simple way
-    /// to incorporate this would work as follows:
-    ///
-    /// - By default, a voice uses the parameter's global value, which may or may not include
-    ///   monophonic modulation. This is `parameter.value` for unsmoothed parameters, and smoothed
-    ///   parameters should use block smoothing so the smoothed values can be reused by multiple
-    ///   voices.
-    /// - If a `PolyModulation` event is emitted for the voice, that voice should use the the
-    ///   _normalized offset_ contained within the event to compute the voice's modulated value and
-    ///   use that in place of the global value.
-    ///   - This value can be obtained by calling `param.preview_plain(param.normalized_value() +
-    ///     event.normalized_offset)`. These functions automatically clamp the values as necessary.
-    ///   - If the parameter uses smoothing, then the parameter's smoother can be copied to the
-    ///     voice. [`Smoother::set_target()`][crate::prelude::Smoother::set_target()] can then be
-    ///     used to have the smoother use the modulated value.
-    ///   - One caveat with smoothing is that copying the smoother like this only works correctly if it last
-    ///     produced a value during the sample before the `PolyModulation` event. Otherwise there
-    ///     may still be an audible jump in parameter values. A solution for this would be to first
-    ///     call the [`Smoother::reset()`][crate::prelude::Smoother::reset()] with the current
-    ///     sample's global value before calling `set_target()`.
-    ///   - Finally, if the polyphonic modulation happens on the same sample as the `NoteOn` event,
-    ///     then the smoothing should not start at the current global value. In this case, `reset()`
-    ///     should be called with the voice's modulated value.
-    /// - If a `MonoAutomation` event is emitted for a parameter, then the values or target values
-    ///   (if the parameter uses smoothing) for all voices must be updated. The normalized value
-    ///   from the `MonoAutomation` and the voice's normalized modulation offset must be added and
-    ///   converted back to a plain value. This value can be used directly for unsmoothed
-    ///   parameters, or passed to `set_target()` for smoothed parameters. The global value will
-    ///   have already been updated, so this event only serves as a notification to update
-    ///   polyphonic modulation.
-    /// - When a voice ends, either because the amplitude envelope has hit zero or because the voice
-    ///   was stolen, the plugin must send a `VoiceTerminated` to the host to let it know that it
-    ///   can reuse the resources it used to modulate the value.
-    PolyModulation {
-        timing: u32,
-        /// The identifier of the voice this polyphonic modulation event should affect. This voice
-        /// should use the values from this and subsequent polyphonic modulation events instead of
-        /// the global value.
-        voice_id: i32,
-        /// The ID that was set for the modulated parameter using the `.with_poly_modulation_id()`
-        /// method.
-        poly_modulation_id: u32,
-        /// The normalized offset value. See the event's docstring for more information.
-        normalized_offset: f32,
-    },
-    /// A notification to inform the plugin that a polyphonically modulated parameter has received a
-    /// new automation value. This is used in conjunction with the `PolyModulation` event. See that
-    /// event's documentation for more details. The parameter's global value has already been
-    /// updated when this event is emitted.
-    MonoAutomation {
-        timing: u32,
-        /// The ID that was set for the modulated parameter using the `.with_poly_modulation_id()`
-        /// method.
-        poly_modulation_id: u32,
-        /// The parameter's new normalized value. This needs to be added to a voice's normalized
-        /// offset to get that voice's modulated normalized value. See the `PolyModulation` event's
-        /// docstring for more information.
-        normalized_value: f32,
-    },
+    pub fn test_event_tag_serde(py: Python, e: PyO3NoteEvent) {
+        let o = e.to_object(py);
+        let g: PyO3NoteEvent = o.extract(py).unwrap();
+        assert_eq!(e, g);
+    }
 
-    /// A polyphonic note pressure/aftertouch event, available on [`MidiConfig::Basic`] and up. Not
-    /// all hosts may support polyphonic aftertouch.
-    ///
-    /// # Note
-    ///
-    /// When implementing MPE support you should use MIDI channel pressure instead as polyphonic key
-    /// pressure + MPE is undefined as per the MPE specification. Or as a more generic catch all,
-    /// you may manually combine the polyphonic key pressure and MPE channel pressure.
-    PolyPressure {
-        timing: u32,
-        /// A unique identifier for this note, if available. Using this to refer to a note is
-        /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
-        /// The note's pressure, in `[0, 1]`.
-        pressure: f32,
-    },
-    /// A volume expression event, available on [`MidiConfig::Basic`] and up. Not all hosts may
-    /// support these expressions.
-    PolyVolume {
-        timing: u32,
-        /// A unique identifier for this note, if available. Using this to refer to a note is
-        /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
-        /// The note's voltage gain ratio, where 1.0 is unity gain.
-        gain: f32,
-    },
-    /// A panning expression event, available on [`MidiConfig::Basic`] and up. Not all hosts may
-    /// support these expressions.
-    PolyPan {
-        timing: u32,
-        /// A unique identifier for this note, if available. Using this to refer to a note is
-        /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
-        /// The note's panning from, in `[-1, 1]`, with -1 being panned hard left, and 1
-        /// being panned hard right.
-        pan: f32,
-    },
-    /// A tuning expression event, available on [`MidiConfig::Basic`] and up. Not all hosts may support
-    /// these expressions.
-    PolyTuning {
-        timing: u32,
-        /// A unique identifier for this note, if available. Using this to refer to a note is
-        /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
-        /// The note's tuning in semitones, in `[-128, 128]`.
-        tuning: f32,
-    },
-    /// A vibrato expression event, available on [`MidiConfig::Basic`] and up. Not all hosts may support
-    /// these expressions.
-    PolyVibrato {
-        timing: u32,
-        /// A unique identifier for this note, if available. Using this to refer to a note is
-        /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
-        /// The note's vibrato amount, in `[0, 1]`.
-        vibrato: f32,
-    },
-    /// A expression expression (yes, expression expression) event, available on
-    /// [`MidiConfig::Basic`] and up. Not all hosts may support these expressions.
-    PolyExpression {
-        timing: u32,
-        /// A unique identifier for this note, if available. Using this to refer to a note is
-        /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
-        /// The note's expression amount, in `[0, 1]`.
-        expression: f32,
-    },
-    /// A brightness expression event, available on [`MidiConfig::Basic`] and up. Not all hosts may support
-    /// these expressions.
-    PolyBrightness {
-        timing: u32,
-        /// A unique identifier for this note, if available. Using this to refer to a note is
-        /// required when allowing overlapping voices for CLAP plugins.
-        voice_id: Option<i32>,
-        /// The note's channel, in `0..16`.
-        channel: u8,
-        /// The note's MIDI key number, in `0..128`.
-        note: u8,
-        /// The note's brightness amount, in `[0, 1]`.
-        brightness: f32,
-    },
-    /// A MIDI channel pressure event, available on [`MidiConfig::MidiCCs`] and up.
-    MidiChannelPressure {
-        timing: u32,
-        /// The affected channel, in `0..16`.
-        channel: u8,
-        /// The pressure, normalized to `[0, 1]` to match the poly pressure event.
-        pressure: f32,
-    },
-    /// A MIDI pitch bend, available on [`MidiConfig::MidiCCs`] and up.
-    MidiPitchBend {
-        timing: u32,
-        /// The affected channel, in `0..16`.
-        channel: u8,
-        /// The pressure, normalized to `[0, 1]`. `0.5` means no pitch bend.
-        value: f32,
-    },
-    /// A MIDI control change event, available on [`MidiConfig::MidiCCs`] and up.
-    ///
-    /// # Note
-    ///
-    /// The wrapper does not perform any special handling for two message 14-bit CCs (where the CC
-    /// number is in `0..32`, and the next CC is that number plus 32) or for four message RPN
-    /// messages. For now you will need to handle these CCs yourself.
-    MidiCC {
-        timing: u32,
-        /// The affected channel, in `0..16`.
-        channel: u8,
-        /// The control change number. See [`control_change`] for a list of CC numbers.
-        cc: u8,
-        /// The CC's value, normalized to `[0, 1]`. Multiply by 127 to get the original raw value.
-        value: f32,
-    },
-    /// A MIDI program change event, available on [`MidiConfig::MidiCCs`] and up. VST3 plugins
-    /// cannot receive these events.
-    MidiProgramChange {
-        timing: u32,
-        /// The affected channel, in `0..16`.
-        channel: u8,
-        /// The program number, in `0..128`.
-        program: u8,
-    },
-    /// A MIDI SysEx message supported by the plugin's `SysExMessage` type, available on
-    /// [`MidiConfig::Basic`] and up. If the conversion from the raw byte array fails (e.g. the
-    /// plugin doesn't support this kind of message), then this will be logged during debug builds
-    /// of the plugin, and no event is emitted.
-    MidiSysEx { timing: u32 },
+    #[test]
+    pub fn test_event_tags_serde() {
+        Python::with_gil(|py| {
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::NoteOn(NoteOn {
+                    timing: 0,
+                    voice_id: Some(0),
+                    channel: 0,
+                    note: 0,
+                    velocity: 0.0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::NoteOff(NoteOff {
+                    timing: 0,
+                    voice_id: Some(0),
+                    channel: 0,
+                    note: 0,
+                    velocity: 0.0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::Choke(Choke {
+                    timing: 0,
+                    voice_id: Some(0),
+                    channel: 0,
+                    note: 0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::VoiceTerminated(VoiceTerminated {
+                    timing: 0,
+                    voice_id: Some(0),
+                    channel: 0,
+                    note: 0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::PolyModulation(PolyModulation {
+                    timing: 0,
+                    voice_id: 0,
+                    poly_modulation_id: 0,
+                    normalized_offset: 0.0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::MonoAutomation(MonoAutomation {
+                    timing: 0,
+                    poly_modulation_id: 0,
+                    normalized_value: 0.0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::PolyPressure(PolyPressure {
+                    timing: 0,
+                    voice_id: Some(0),
+                    channel: 0,
+                    note: 0,
+                    pressure: 0.0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::PolyVolume(PolyVolume {
+                    timing: 0,
+                    voice_id: Some(0),
+                    channel: 0,
+                    note: 0,
+                    gain: 0.0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::PolyPan(PolyPan {
+                    timing: 0,
+                    voice_id: Some(0),
+                    channel: 0,
+                    note: 0,
+                    pan: 0.0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::PolyTuning(PolyTuning {
+                    timing: 0,
+                    voice_id: Some(0),
+                    channel: 0,
+                    note: 0,
+                    tuning: 0.0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::PolyVibrato(PolyVibrato {
+                    timing: 0,
+                    voice_id: Some(0),
+                    channel: 0,
+                    note: 0,
+                    vibrato: 0.0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::PolyExpression(PolyExpression {
+                    timing: 0,
+                    voice_id: Some(0),
+                    channel: 0,
+                    note: 0,
+                    expression: 0.0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::PolyBrightness(PolyBrightness {
+                    timing: 0,
+                    voice_id: Some(0),
+                    channel: 0,
+                    note: 0,
+                    brightness: 0.0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::MidiChannelPressure(MidiChannelPressure {
+                    timing: 0,
+                    channel: 0,
+                    pressure: 0.0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::MidiPitchBend(MidiPitchBend {
+                    timing: 0,
+                    channel: 0,
+                    value: 0.0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::MidiCC(MidiCC {
+                    timing: 0,
+                    channel: 0,
+                    cc: 0,
+                    value: 0.0,
+                }),
+            );
+
+            test_event_tag_serde(
+                py,
+                PyO3NoteEvent::MidiProgramChange(MidiProgramChange {
+                    timing: 0,
+                    channel: 0,
+                    program: 0,
+                }),
+            );
+
+            test_event_tag_serde(py, PyO3NoteEvent::MidiSysEx(MidiSysEx { timing: 0 }));
+        });
+    }
 }

@@ -1,7 +1,6 @@
 use nih_plug::params::persist::PersistentField;
 use std::sync::Arc;
 
-// #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone)]
 pub struct SourcePath(pub Arc<parking_lot::Mutex<String>>);
 impl Default for SourcePath {

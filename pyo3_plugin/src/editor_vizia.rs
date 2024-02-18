@@ -1,18 +1,12 @@
-use nih_plug::editor::Editor;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use nih_plug::nih_warn;
+use nih_plug::editor::Editor;
 use nih_plug::params::Param;
 use nih_plug::prelude::Enum;
 use nih_plug_vizia::assets::register_noto_sans_bold;
-use nih_plug_vizia::vizia::prelude::Role::ToggleButton;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::vizia::vg;
-use nih_plug_vizia::vizia::vg::imgref::Img;
-use nih_plug_vizia::vizia::vg::rgb::RGBA8;
-use nih_plug_vizia::vizia::vg::{ImageFlags, ImageSource, Paint, Path, PixelFormat, RenderTarget};
 use nih_plug_vizia::widgets::param_base::ParamWidgetBase;
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::widgets::*;
@@ -20,15 +14,12 @@ use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
 use crate::common_types::Status;
 use crate::params::{ModeParam, PyO3PluginParams2};
-use crate::source_path::SourcePath;
-use crate::PyO3PluginParams;
 
 #[derive(Clone, Lens)]
 pub struct Data {
     pub(crate) version: Arc<AtomicUsize>,
     pub(crate) params: Arc<PyO3PluginParams2>,
     pub(crate) status: Status,
-    //pub(crate) source_path: SourcePath,
     pub(crate) status_out: Arc<parking_lot::Mutex<triple_buffer::Output<Status>>>,
 }
 
@@ -193,6 +184,8 @@ pub(crate) fn create2(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<d
                             format!("last: {:.3}ms", last * 1000.0),
                             format!("total: {:.3}ms", total * 1000.0),
                             format!("window_size: {}", stats.window_size),
+                            format!("events_to_pyo3: {}", stats.events_to_pyo3),
+                            format!("events_from_pyo3: {}", stats.events_from_pyo3),
                             format!("sample_rate: {}", stats.sample_rate),
                             format!("iter: {}", stats.iterations),
                         ];
