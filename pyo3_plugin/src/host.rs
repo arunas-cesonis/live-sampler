@@ -25,16 +25,16 @@ fn host_print(args: &PyTuple) {
     print!("\n");
 }
 
-pub struct FrameStats {
-    pub now: usize,
-    pub sample_rate: f32,
-    pub d: Duration,
-    pub events_to_pyo3: usize,
-    pub events_from_pyo3: usize,
+struct FrameStats {
+    now: usize,
+    sample_rate: f32,
+    d: Duration,
+    events_to_pyo3: usize,
+    events_from_pyo3: usize,
 }
 
 #[derive(Default)]
-pub struct Stats {
+struct Stats {
     rt: RuntimeStats,
     last_sec: VecDeque<(usize, Duration)>,
     last_sec_sum: Duration,
@@ -50,7 +50,6 @@ impl Stats {
         self.rt.last_duration = frame_stats.d;
         self.rt.events_to_pyo3 += frame_stats.events_to_pyo3;
         self.rt.events_from_pyo3 += frame_stats.events_from_pyo3;
-        self.rt.iterations += 1;
         self.last_sec.push_back((frame_stats.now, frame_stats.d));
         self.last_sec_sum += frame_stats.d;
         while let Some((t, d)) = self.last_sec.front().clone() {

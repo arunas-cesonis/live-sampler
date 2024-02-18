@@ -19,7 +19,7 @@ use pyo3::{PyErr, Python};
 
 use crate::common_types::{EvalError, EvalStatus, FileStatus, RuntimeStats, Status};
 use crate::event::{NoteOn, PyO3NoteEvent};
-use crate::host::{Host, Stats};
+use crate::host::Host;
 use crate::params::{ModeParam, PyO3PluginParams2};
 use crate::source_path::SourcePath;
 
@@ -50,7 +50,6 @@ pub struct PyO3Plugin {
     stats_update_every: Duration,
     paused_on_error: bool,
     host: Host,
-    stats: Stats,
 }
 
 // unsafe impl Send for PyO3Plugin {}
@@ -77,7 +76,6 @@ impl Default for PyO3Plugin {
             stats_update_every: Duration::from_secs(1),
             paused_on_error: false,
             host: Host::default(),
-            stats: Stats::default(),
         }
     }
 }
