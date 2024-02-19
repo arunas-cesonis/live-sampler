@@ -9,9 +9,9 @@ use pyo3::{
     pyfunction, wrap_pyfunction, FromPyObject, IntoPy, Py, PyAny, PyErr, Python, ToPyObject,
 };
 
-use crate::common_types::{EvalError, RuntimeStats, Status};
+use crate::common_types::{EvalError, RuntimeStats};
 use crate::event::{add_pyo3_note_events, PyO3NoteEvent};
-use crate::host;
+
 use crate::source_state::Source;
 
 // FIXME: host.print() has to be called single tuple, e.g. host.print((1, 2, 3)); it should work with multiple args

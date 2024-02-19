@@ -1,11 +1,9 @@
-use crate::common_types::{EvalError, FileStatus};
-use crate::host::Host;
+use crate::common_types::FileStatus;
+
 use notify::event::{CreateKind, ModifyKind};
 use notify::{RecommendedWatcher, Watcher};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-
-pub struct FileError(pub(crate) std::io::Error);
 
 pub struct Source {
     pub(crate) text: String,
@@ -76,7 +74,7 @@ impl SourceState {
             }
         } else {
             match self {
-                SourceState::Loaded((p, w, _)) | SourceState::Error((p, w, _)) if w.is_some() => {
+                SourceState::Loaded((_p, w, _)) | SourceState::Error((_p, w, _)) if w.is_some() => {
                     *w = None;
                 }
                 SourceState::Loaded(_) | SourceState::Error(_) | SourceState::Empty => {}
@@ -99,14 +97,6 @@ impl SourceState {
         }
     }
 
-    fn get_path(&self) -> Option<&PathBuf> {
-        match self {
-            SourceState::Loaded((path, _, _)) => Some(path),
-            SourceState::Empty => None,
-            SourceState::Error(p) => Some(&p.0),
-        }
-    }
-
     pub fn get_source(&self) -> Option<&Source> {
         match self {
             SourceState::Loaded((_, _, s)) => Some(s),
@@ -117,7 +107,7 @@ impl SourceState {
 
 pub struct PathWatcher {
     pub(crate) rx: crossbeam_channel::Receiver<Result<notify::Event, notify::Error>>,
-    pub(crate) watcher: RecommendedWatcher,
+    pub(crate) _watcher: RecommendedWatcher,
 }
 
 impl PathWatcher {
@@ -126,7 +116,10 @@ impl PathWatcher {
         let (tx, rx) = crossbeam_channel::unbounded();
         let mut watcher = RecommendedWatcher::new(tx, notify::Config::default())?;
         watcher.watch(&path, notify::RecursiveMode::NonRecursive)?;
-        Ok(Self { rx, watcher })
+        Ok(Self {
+            rx,
+            _watcher: watcher,
+        })
     }
     pub fn was_modified(&self) -> bool {
         match self.rx.try_recv() {

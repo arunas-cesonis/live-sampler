@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use nih_plug::params::{BoolParam, EnumParam, FloatParam, Params};
-use nih_plug::prelude::{Enum, FloatRange};
+use nih_plug::params::{BoolParam, EnumParam, Params};
+use nih_plug::prelude::{Enum};
 use nih_plug_vizia::ViziaState;
 
 use crate::editor_vizia;
