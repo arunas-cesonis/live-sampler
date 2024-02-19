@@ -1,10 +1,13 @@
 use nih_plug::midi::NoteEvent;
 use nih_plug::plugin::Plugin;
+use pyo3::prelude::PyModule;
 use pyo3::types::IntoPyDict;
-use pyo3::{pyclass, FromPyObject, IntoPy, Py, PyObject, Python, ToPyObject};
+use pyo3::{
+    pyclass, pymethods, pymodule, FromPyObject, IntoPy, Py, PyObject, PyResult, Python, ToPyObject,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct NoteOn {
     pub timing: u32,
     pub voice_id: Option<i32>,
@@ -13,8 +16,22 @@ pub struct NoteOn {
     pub velocity: f32,
 }
 
+#[pymethods]
+impl NoteOn {
+    #[new]
+    pub fn new(timing: u32, channel: u8, note: u8, velocity: f32, voice_id: Option<i32>) -> Self {
+        NoteOn {
+            timing,
+            channel,
+            note,
+            velocity,
+            voice_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct NoteOff {
     pub timing: u32,
     pub voice_id: Option<i32>,
@@ -23,8 +40,22 @@ pub struct NoteOff {
     pub velocity: f32,
 }
 
+#[pymethods]
+impl NoteOff {
+    #[new]
+    pub fn new(timing: u32, channel: u8, note: u8, velocity: f32, voice_id: Option<i32>) -> Self {
+        NoteOff {
+            timing,
+            channel,
+            note,
+            velocity,
+            voice_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct Choke {
     pub timing: u32,
     pub voice_id: Option<i32>,
@@ -32,8 +63,21 @@ pub struct Choke {
     pub note: u8,
 }
 
+#[pymethods]
+impl Choke {
+    #[new]
+    pub fn new(timing: u32, channel: u8, note: u8, voice_id: Option<i32>) -> Self {
+        Choke {
+            timing,
+            channel,
+            note,
+            voice_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct VoiceTerminated {
     pub timing: u32,
     pub voice_id: Option<i32>,
@@ -41,8 +85,21 @@ pub struct VoiceTerminated {
     pub note: u8,
 }
 
+#[pymethods]
+impl VoiceTerminated {
+    #[new]
+    pub fn new(timing: u32, channel: u8, note: u8, voice_id: Option<i32>) -> Self {
+        VoiceTerminated {
+            timing,
+            channel,
+            note,
+            voice_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct PolyModulation {
     pub timing: u32,
     pub voice_id: i32,
@@ -50,16 +107,46 @@ pub struct PolyModulation {
     pub normalized_offset: f32,
 }
 
+#[pymethods]
+impl PolyModulation {
+    #[new]
+    pub fn new(
+        timing: u32,
+        voice_id: i32,
+        poly_modulation_id: u32,
+        normalized_offset: f32,
+    ) -> Self {
+        PolyModulation {
+            timing,
+            voice_id,
+            poly_modulation_id,
+            normalized_offset,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct MonoAutomation {
     pub timing: u32,
     pub poly_modulation_id: u32,
     pub normalized_value: f32,
 }
 
+#[pymethods]
+impl MonoAutomation {
+    #[new]
+    pub fn new(timing: u32, poly_modulation_id: u32, normalized_value: f32) -> Self {
+        MonoAutomation {
+            timing,
+            poly_modulation_id,
+            normalized_value,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct PolyPressure {
     pub timing: u32,
     pub voice_id: Option<i32>,
@@ -68,8 +155,22 @@ pub struct PolyPressure {
     pub pressure: f32,
 }
 
+#[pymethods]
+impl PolyPressure {
+    #[new]
+    pub fn new(timing: u32, channel: u8, note: u8, pressure: f32, voice_id: Option<i32>) -> Self {
+        PolyPressure {
+            timing,
+            channel,
+            note,
+            pressure,
+            voice_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct PolyVolume {
     pub timing: u32,
     pub voice_id: Option<i32>,
@@ -78,8 +179,22 @@ pub struct PolyVolume {
     pub gain: f32,
 }
 
+#[pymethods]
+impl PolyVolume {
+    #[new]
+    pub fn new(timing: u32, channel: u8, note: u8, gain: f32, voice_id: Option<i32>) -> Self {
+        PolyVolume {
+            timing,
+            channel,
+            note,
+            gain,
+            voice_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct PolyPan {
     pub timing: u32,
     pub voice_id: Option<i32>,
@@ -88,8 +203,22 @@ pub struct PolyPan {
     pub pan: f32,
 }
 
+#[pymethods]
+impl PolyPan {
+    #[new]
+    pub fn new(timing: u32, channel: u8, note: u8, pan: f32, voice_id: Option<i32>) -> Self {
+        PolyPan {
+            timing,
+            channel,
+            note,
+            pan,
+            voice_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct PolyTuning {
     pub timing: u32,
     pub voice_id: Option<i32>,
@@ -98,8 +227,22 @@ pub struct PolyTuning {
     pub tuning: f32,
 }
 
+#[pymethods]
+impl PolyTuning {
+    #[new]
+    pub fn new(timing: u32, channel: u8, note: u8, tuning: f32, voice_id: Option<i32>) -> Self {
+        PolyTuning {
+            timing,
+            channel,
+            note,
+            tuning,
+            voice_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct PolyVibrato {
     pub timing: u32,
     pub voice_id: Option<i32>,
@@ -108,8 +251,22 @@ pub struct PolyVibrato {
     pub vibrato: f32,
 }
 
+#[pymethods]
+impl PolyVibrato {
+    #[new]
+    pub fn new(timing: u32, channel: u8, note: u8, vibrato: f32, voice_id: Option<i32>) -> Self {
+        PolyVibrato {
+            timing,
+            channel,
+            note,
+            vibrato,
+            voice_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct PolyExpression {
     pub timing: u32,
     pub voice_id: Option<i32>,
@@ -118,8 +275,22 @@ pub struct PolyExpression {
     pub expression: f32,
 }
 
+#[pymethods]
+impl PolyExpression {
+    #[new]
+    pub fn new(timing: u32, channel: u8, note: u8, expression: f32, voice_id: Option<i32>) -> Self {
+        PolyExpression {
+            timing,
+            channel,
+            note,
+            expression,
+            voice_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct PolyBrightness {
     pub timing: u32,
     pub voice_id: Option<i32>,
@@ -128,24 +299,62 @@ pub struct PolyBrightness {
     pub brightness: f32,
 }
 
+#[pymethods]
+impl PolyBrightness {
+    #[new]
+    pub fn new(timing: u32, channel: u8, note: u8, brightness: f32, voice_id: Option<i32>) -> Self {
+        PolyBrightness {
+            timing,
+            channel,
+            note,
+            brightness,
+            voice_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct MidiChannelPressure {
     pub timing: u32,
     pub channel: u8,
     pub pressure: f32,
 }
 
+#[pymethods]
+impl MidiChannelPressure {
+    #[new]
+    pub fn new(timing: u32, channel: u8, pressure: f32) -> Self {
+        MidiChannelPressure {
+            timing,
+            channel,
+            pressure,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct MidiPitchBend {
     pub timing: u32,
     pub channel: u8,
     pub value: f32,
 }
 
+#[pymethods]
+impl MidiPitchBend {
+    #[new]
+    pub fn new(timing: u32, channel: u8, value: f32) -> Self {
+        MidiPitchBend {
+            timing,
+            channel,
+            value,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct MidiCC {
     pub timing: u32,
     pub channel: u8,
@@ -153,18 +362,74 @@ pub struct MidiCC {
     pub value: f32,
 }
 
+#[pymethods]
+impl MidiCC {
+    #[new]
+    pub fn new(timing: u32, channel: u8, cc: u8, value: f32) -> Self {
+        MidiCC {
+            timing,
+            channel,
+            cc,
+            value,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct MidiProgramChange {
     pub timing: u32,
     pub channel: u8,
     pub program: u8,
 }
 
+#[pymethods]
+impl MidiProgramChange {
+    #[new]
+    pub fn new(timing: u32, channel: u8, program: u8) -> Self {
+        MidiProgramChange {
+            timing,
+            channel,
+            program,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[pyclass]
+#[pyclass(get_all, set_all)]
 pub struct MidiSysEx {
     pub timing: u32,
+}
+
+#[pymethods]
+impl MidiSysEx {
+    #[new]
+    pub fn new(timing: u32) -> Self {
+        MidiSysEx { timing }
+    }
+}
+
+#[pymodule]
+pub fn add_pyo3_note_events(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<NoteOn>()?;
+    m.add_class::<NoteOff>()?;
+    m.add_class::<Choke>()?;
+    m.add_class::<VoiceTerminated>()?;
+    m.add_class::<PolyModulation>()?;
+    m.add_class::<MonoAutomation>()?;
+    m.add_class::<PolyPressure>()?;
+    m.add_class::<PolyVolume>()?;
+    m.add_class::<PolyPan>()?;
+    m.add_class::<PolyTuning>()?;
+    m.add_class::<PolyVibrato>()?;
+    m.add_class::<PolyExpression>()?;
+    m.add_class::<PolyBrightness>()?;
+    m.add_class::<MidiChannelPressure>()?;
+    m.add_class::<MidiPitchBend>()?;
+    m.add_class::<MidiCC>()?;
+    m.add_class::<MidiProgramChange>()?;
+    m.add_class::<MidiSysEx>()?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, FromPyObject)]

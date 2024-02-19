@@ -1,9 +1,11 @@
 use crate::common_types::{EvalError, EvalStatus, FileStatus, RuntimeStats, Status};
-use crate::event::PyO3NoteEvent;
+use crate::event::{add_pyo3_note_events, PyO3NoteEvent};
 use crate::host;
+use crate::source_state::Source;
 use nih_plug::buffer::Buffer;
+use nih_plug::nih_log;
 use pyo3::prelude::PyModule;
-use pyo3::types::{IntoPyDict, PyList, PyTuple};
+use pyo3::types::{IntoPyDict, PyList, PyNone, PyTuple};
 use pyo3::{
     pyfunction, wrap_pyfunction, FromPyObject, IntoPy, Py, PyAny, PyErr, Python, ToPyObject,
 };
@@ -13,16 +15,14 @@ use std::time::Duration;
 
 // FIXME: host.print() has to be called single tuple, e.g. host.print((1, 2, 3)); it should work with multiple args
 #[pyfunction(name = "print")]
-#[pyo3(text_signature = "(*args)")]
+#[pyo3(signature = (*args))]
 fn host_print(args: &PyTuple) {
-    let mut iter = args.iter();
-    if let Some(a) = iter.next() {
-        print!("{}", a);
-        for a in iter {
-            print!(" {}", a);
-        }
-    }
-    print!("\n");
+    let s = args
+        .iter()
+        .map(|a| a.to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
+    nih_log!("python: {}", s);
 }
 
 struct FrameStats {
@@ -68,56 +68,18 @@ impl Stats {
 
 #[derive(Default)]
 pub struct Host {
-    python_source: Option<String>,
     python_state: Option<Py<PyAny>>,
-    status: Status,
     stats: Option<Stats>,
 }
 
 impl Host {
-    pub fn status(&self) -> &Status {
-        &self.status
-    }
-
     pub fn runtime_stats(&self) -> Option<&RuntimeStats> {
         self.stats.as_ref().map(|x| x.runtime_stats())
     }
 
-    pub fn unload_source(&mut self) {
-        self.python_source = None;
+    pub fn clear(&mut self) {
         self.python_state = None;
-        self.status.file_status = FileStatus::Unloaded;
-        self.status.eval_status = EvalStatus::NotExecuted;
-        self.status.paused_on_error = false;
         self.stats = None;
-    }
-
-    fn load_source_from_string(&mut self, source: String) {
-        self.unload_source();
-        self.python_source = Some(source);
-        self.python_state = None;
-        self.status.eval_status = EvalStatus::NotExecuted;
-        self.status.paused_on_error = false;
-        self.stats = Some(Stats::default());
-    }
-
-    pub fn load_source<A: AsRef<Path>>(&mut self, path: &A) -> bool {
-        self.unload_source();
-        let source = std::fs::read_to_string(&path);
-        match source {
-            Ok(source) => {
-                self.status.file_status = FileStatus::Loaded(
-                    path.as_ref().to_path_buf().display().to_string(),
-                    source.len(),
-                );
-                self.load_source_from_string(source);
-                true
-            }
-            Err(e) => {
-                self.status.file_status = FileStatus::Error(e.to_string());
-                false
-            }
-        }
     }
 
     pub fn run(
@@ -126,69 +88,66 @@ impl Host {
         sample_rate: f32,
         buffer: &mut Buffer,
         events: Vec<PyO3NoteEvent>,
+        source: &Source,
     ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
         assert!(sample_rate > 0.0);
         #[derive(FromPyObject)]
         struct PythonProcessResult(Py<PyAny>, Vec<Vec<f32>>, Vec<PyO3NoteEvent>);
 
-        if let Some(python_source) = &self.python_source {
-            let mut frame_stats = host::FrameStats {
-                now: now,
-                sample_rate: sample_rate,
-                d: Duration::from_secs(0),
-                events_to_pyo3: events.len(),
-                events_from_pyo3: 0,
-            };
+        let mut frame_stats = FrameStats {
+            now: now,
+            sample_rate: sample_rate,
+            d: Duration::from_secs(0),
+            events_to_pyo3: events.len(),
+            events_from_pyo3: 0,
+        };
 
-            let buf = buffer.as_slice();
-            let result = Python::with_gil(|py| -> Result<(PythonProcessResult, Duration), PyErr> {
-                let host_module = PyModule::new(py, "host")?;
-                host_module.add_function(wrap_pyfunction!(host_print, host_module)?)?;
-                let tmp = buf.iter().map(|x| x.to_vec()).collect::<Vec<_>>();
-                let pybuf: Py<PyAny> = PyList::new(py, tmp).into_py(py);
-                let events: Py<PyAny> = PyList::new(py, events).into_py(py);
-                let state = self
-                    .python_state
-                    .take()
-                    .unwrap_or(PyList::empty(py).to_object(py));
-                let globals = [("host", host_module)].into_py_dict(py);
-                let locals =
-                    [("state", state), ("buffer", pybuf), ("events", events)].into_py_dict(py);
+        let buf = buffer.as_slice();
+        let result = Python::with_gil(|py| -> Result<(PythonProcessResult, Duration), PyErr> {
+            let host_module = PyModule::new(py, "host")?;
+            host_module.add_function(wrap_pyfunction!(host_print, host_module)?)?;
+            add_pyo3_note_events(py, &host_module)?;
+            let tmp = buf.iter().map(|x| x.to_vec()).collect::<Vec<_>>();
+            let pybuf: Py<PyAny> = PyList::new(py, tmp).into_py(py);
+            let events: Py<PyAny> = PyList::new(py, events).into_py(py);
+            let state = self
+                .python_state
+                .take()
+                .unwrap_or(PyNone::get(py).to_object(py));
+            //let np = py.import("numpy")?;
+            //let globals = [("host", host_module), ("np", np)].into_py_dict(py);
+            let globals = [("host", host_module)].into_py_dict(py);
+            let locals = [("state", state), ("buffer", pybuf), ("events", events)].into_py_dict(py);
 
-                let time = std::time::Instant::now();
-                py.run(python_source.as_str(), Some(globals), Some(locals))?;
-                let result: &PyAny = py.eval(
-                    "process(state, buffer, events)",
-                    Some(globals),
-                    Some(locals),
-                )?;
-                let d = time.elapsed();
+            let time = std::time::Instant::now();
+            py.run(source.text.as_str(), Some(globals), Some(locals))?;
+            let result: &PyAny = py.eval(
+                "process(state, buffer, events)",
+                Some(globals),
+                Some(locals),
+            )?;
+            let d = time.elapsed();
 
-                let result: Result<PythonProcessResult, PyErr> = result.extract();
+            let result: Result<PythonProcessResult, PyErr> = result.extract();
 
-                Ok((result?, d))
-            });
-            match result {
-                Ok((PythonProcessResult(new_state, in_buffer, events), d)) => {
-                    frame_stats.d = d;
-                    frame_stats.events_from_pyo3 = events.len();
-                    let stats = self.stats.as_mut().unwrap();
-                    stats.record(frame_stats);
+            Ok((result?, d))
+        });
+        match result {
+            Ok((PythonProcessResult(new_state, in_buffer, events), d)) => {
+                frame_stats.d = d;
+                frame_stats.events_from_pyo3 = events.len();
 
-                    self.copyback_buffer(buffer, &in_buffer)?;
-                    self.python_state = Some(new_state);
-                    self.status.eval_status = EvalStatus::Ok;
-                    Ok(events)
+                if self.stats.is_none() {
+                    self.stats = Some(Stats::default());
                 }
-                Err(e) => {
-                    self.status.eval_status =
-                        EvalStatus::Error(EvalError::PythonError(e.to_string()));
-                    self.status.paused_on_error = true;
-                    Err(EvalError::PythonError(e.to_string()))
-                }
+                let stats = self.stats.as_mut().unwrap();
+                stats.record(frame_stats);
+
+                self.copyback_buffer(buffer, &in_buffer)?;
+                self.python_state = Some(new_state);
+                Ok(events)
             }
-        } else {
-            Err(EvalError::OtherError("no source loaded".to_string()))
+            Err(e) => Err(EvalError::PythonError(e.to_string())),
         }
     }
 

@@ -2,7 +2,6 @@ extern crate core;
 
 //mod event_sampler3;
 mod event_sampler6;
-mod params;
 mod utils;
 
 use std::sync::Arc;
@@ -94,7 +93,7 @@ impl Plugin for MIDISampler {
 
     fn initialize(
         &mut self,
-        _audio_io_layout: &AudioIOLayout,
+        _audioio_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {

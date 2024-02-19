@@ -18,6 +18,9 @@ features = ["standalone", "vst3"]
 [dependencies.atomic_float]
 version = "0.1"
 
+# [dependencies.numpy]
+# version = "0.20.0"
+
 [dependencies.notify]
 version = "6.1.1"
 
@@ -37,7 +40,7 @@ version = "0.12.1"
 version = "7.0.0"
 
 [dependencies.pyo3]
-version = "0.15.1"
+version = "0.20.2"
 features = ["auto-initialize", "macros"]
 
 [dependencies.serde]

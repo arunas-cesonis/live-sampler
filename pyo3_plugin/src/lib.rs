@@ -13,6 +13,7 @@ use std::thread::{JoinHandle, Thread, ThreadId};
 use std::time::{Duration, Instant};
 
 use nih_plug::prelude::*;
+use nih_plug::wrapper::state;
 use nih_plug_vizia::ViziaState;
 use notify::event::{CreateKind, ModifyKind};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
@@ -21,11 +22,12 @@ use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict, PyList, PyTuple};
 use pyo3::{PyErr, Python};
 
-use crate::common_types::{EvalError, EvalStatus, FileStatus, RuntimeStats, Status};
+use crate::common_types::{EvalError, EvalStatus, FileStatus, RuntimeStats, Status, UICommand};
 use crate::event::{NoteOn, PyO3NoteEvent};
 use crate::host::Host;
 use crate::params::{ModeParam, PyO3PluginParams2};
-use crate::source_path::SourcePath;
+use crate::source_path::PersistedSourcePath;
+use crate::source_state::SourceState;
 
 mod common_types;
 mod editor_vizia;
@@ -33,22 +35,24 @@ pub mod event;
 mod host;
 mod params;
 mod source_path;
+mod source_state;
 
 type SysEx = ();
 
 pub struct PyO3Plugin {
     params: Arc<PyO3PluginParams2>,
     sample_rate: f32,
-    data_version: Arc<AtomicUsize>,
+    commands: Option<crossbeam_channel::Receiver<UICommand>>,
+    pending: Vec<UICommand>,
     status_in: Arc<parking_lot::Mutex<triple_buffer::Input<Status>>>,
     status_out: Arc<parking_lot::Mutex<triple_buffer::Output<Status>>>,
     runtime_stats_in: Arc<parking_lot::Mutex<triple_buffer::Input<Option<RuntimeStats>>>>,
     runtime_stats_out: Arc<parking_lot::Mutex<triple_buffer::Output<Option<RuntimeStats>>>>,
-    seen_data_version: usize,
     now: usize,
     stats_updated: usize,
     stats_update_every: Duration,
-    paused_on_error: bool,
+    status: Status,
+    source_state: SourceState,
     host: Host,
     recommended_watcher: Option<(
         PathBuf,
@@ -66,16 +70,17 @@ impl Default for PyO3Plugin {
         Self {
             params: Arc::new(PyO3PluginParams2::default()),
             sample_rate: 0.0,
+            commands: None,
+            pending: vec![],
             status_in: Arc::new(parking_lot::Mutex::new(status_in)),
             status_out: Arc::new(parking_lot::Mutex::new(status_out)),
             runtime_stats_in: Arc::new(parking_lot::Mutex::new(runtime_stats_in)),
             runtime_stats_out: Arc::new(parking_lot::Mutex::new(runtime_stats_out)),
-            data_version: Arc::new(AtomicUsize::new(1)),
-            seen_data_version: 0,
             now: 0,
             stats_updated: 0,
             stats_update_every: Duration::from_secs(1),
-            paused_on_error: false,
+            source_state: SourceState::Empty,
+            status: Status::default(),
             host: Host::default(),
             recommended_watcher: None,
         }
@@ -101,52 +106,73 @@ fn check_watcher(
 
 impl PyO3Plugin {
     fn publish_status(&mut self) {
-        self.status_in.lock().write(self.host.status().clone());
+        self.status_in.lock().write(self.status.clone());
+    }
+    fn publish_stats(&mut self) {
+        self.runtime_stats_in
+            .lock()
+            .write(self.host.runtime_stats().cloned());
     }
 
-    fn ensure_watcher_created<A: AsRef<Path>>(&mut self, path: &A) {
-        let pb = path.as_ref().to_path_buf();
-        if let Some((current, _, _)) = &self.recommended_watcher {
-            if current == &pb {
-                return;
-            }
-        }
-        self.recommended_watcher = {
-            let (tx, rx) = crossbeam_channel::bounded(5);
-            let mut w = RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
-            let pb = path.as_ref().to_path_buf();
-            w.watch(&pb, RecursiveMode::NonRecursive).unwrap();
-            Some((pb, rx, w))
-        };
+    fn write_source_path(&self, path: String) {
+        *self.params.source_path.0.lock() = path;
     }
 
-    fn read_souce_path(&self) -> String {
+    fn read_source_path(&self) -> String {
         self.params.source_path.0.lock().clone()
     }
 
-    fn update_python_source(&mut self, watch_source_path: bool) {
-        let data_version = self.data_version.load(Ordering::Relaxed);
-        if data_version != self.seen_data_version {
-            self.seen_data_version = data_version;
-            let path = { self.params.source_path.0.lock().clone() };
-            if self.host.load_source(&path) && watch_source_path {
-                self.ensure_watcher_created(&path);
+    fn check_watcher(&mut self) {
+        if let Some(fst) = self
+            .source_state
+            .reload_watched(self.params.watch_source_path.value())
+        {
+            self.status.eval_status = EvalStatus::NotExecuted;
+            self.status.file_status = fst;
+            self.publish_stats();
+            self.publish_status();
+        }
+    }
+
+    fn load(&mut self) {
+        let fst = self.source_state.load_updated_path(
+            self.read_source_path(),
+            self.params.watch_source_path.value(),
+        );
+        if !fst.is_loaded() {
+            self.host.clear();
+        }
+        self.status.eval_status = EvalStatus::NotExecuted;
+        self.status.file_status = fst;
+        self.publish_stats();
+        self.publish_status();
+    }
+
+    fn do_ui_command(&mut self, cmd: UICommand) {
+        match cmd {
+            UICommand::Reload => {
+                self.load();
             }
-        } else {
-            if watch_source_path {
-                if let Some((pb, rx, w)) = &self.recommended_watcher {
-                    let path = pb.to_str().unwrap();
-                    assert_eq!(path, self.params.source_path.0.lock().as_str());
-                    if check_watcher(rx, w) {
-                        self.host.load_source(&path);
-                    }
-                } else {
-                    self.ensure_watcher_created(&self.read_souce_path());
-                }
+            UICommand::Reset => {
+                self.host.clear();
+                self.status.eval_status = EvalStatus::NotExecuted;
+                self.publish_status();
             }
         }
-        if !watch_source_path && self.recommended_watcher.is_some() {
-            self.recommended_watcher = None;
+    }
+
+    fn recv_and_do_ui_commands(&mut self) {
+        let cmds = if let Some(rx) = &self.commands {
+            let mut cmds = vec![];
+            while let Ok(cmd) = rx.try_recv() {
+                cmds.push(cmd);
+            }
+            cmds
+        } else {
+            vec![]
+        };
+        for cmd in cmds {
+            self.do_ui_command(cmd);
         }
     }
 }
@@ -184,9 +210,12 @@ impl Plugin for PyO3Plugin {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let tx = Arc::new(tx);
+        self.commands = Some(rx);
         let data = editor_vizia::Data {
-            version: self.data_version.clone(),
             //source_path: self.params.source_path.clone(),
+            commands: tx,
             params: self.params.clone(),
             status: self.status_out.lock().read().clone(),
             status_out: self.status_out.clone(),
@@ -203,10 +232,18 @@ impl Plugin for PyO3Plugin {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = buffer_config.sample_rate;
+        std::env::var("PYO3_PLUGIN_SOURCE_PATH")
+            .into_iter()
+            .for_each(|path| {
+                self.write_source_path(path);
+                self.load();
+            });
         true
     }
 
-    fn reset(&mut self) {}
+    fn reset(&mut self) {
+        self.host.clear();
+    }
 
     fn process(
         &mut self,
@@ -217,54 +254,59 @@ impl Plugin for PyO3Plugin {
         // FIXME: oops this is not per sample! make this per sample when introducing generic parameters
 
         let mode = self.params.mode.value();
-        let watch_source_path = self.params.watch_source_path.value();
-        self.update_python_source(watch_source_path);
+        self.recv_and_do_ui_commands();
+        self.check_watcher();
 
-        if mode == ModeParam::Run && !self.host.status().paused_on_error {
-            let mut events: Vec<PyO3NoteEvent> = vec![];
-            while let Some(next_event) = context.next_event() {
-                events.push(next_event.into());
-            }
-            let result = self.host.run(self.now, self.sample_rate, buffer, events);
-            match result {
-                Ok(processed_events) => {
-                    if !processed_events.is_empty() {
-                        nih_warn!("python returned {} events", processed_events.len());
+        if let Some(source) = self.source_state.get_source() {
+            if mode == ModeParam::Run && !self.status.eval_status.is_error() {
+                let mut events: Vec<PyO3NoteEvent> = vec![];
+                while let Some(next_event) = context.next_event() {
+                    events.push(next_event.into());
+                }
+                let result = self
+                    .host
+                    .run(self.now, self.sample_rate, buffer, events, source);
+                match result {
+                    Ok(processed_events) => {
+                        processed_events
+                            .into_iter()
+                            .for_each(|e| context.send_event(e.into()));
+                        if self.status.eval_status != EvalStatus::Ok {
+                            self.status.eval_status = EvalStatus::Ok;
+                            self.publish_status();
+                        }
                     }
-                    processed_events
-                        .into_iter()
-                        .for_each(|e| context.send_event(e.into()));
-                }
-                Err(e) => {
-                    self.publish_status();
-                }
-            };
-            if self.params.editor_state.is_open() {
-                if self.now - self.stats_updated
-                    >= (self.stats_update_every.as_secs_f64() * self.sample_rate as f64) as usize
-                {
-                    self.runtime_stats_in
-                        .lock()
-                        .write(self.host.runtime_stats().cloned());
-                    self.status_in.lock().write(self.host.status().clone());
-                    self.stats_updated = self.now;
-                }
-            }
-        } else if mode == ModeParam::Bypass {
-            let mut next_event = context.next_event();
-            for (sample_id, _channel_samples) in buffer.iter_samples().enumerate() {
-                let mut events = vec![];
-                while let Some(event) = next_event {
-                    if event.timing() != sample_id as u32 {
-                        break;
+                    Err(e) => {
+                        self.status.eval_status = EvalStatus::Error(e);
+                        self.publish_status();
                     }
-                    events.push(event);
-                    next_event = context.next_event();
+                };
+                if self.params.editor_state.is_open() {
+                    if self.now - self.stats_updated
+                        >= (self.stats_update_every.as_secs_f64() * self.sample_rate as f64)
+                            as usize
+                    {
+                        self.stats_updated = self.now;
+                        self.publish_stats();
+                        self.publish_status();
+                    }
                 }
-                for e in events {
-                    context.send_event(e);
+            } else if mode == ModeParam::Bypass {
+                let mut next_event = context.next_event();
+                for (sample_id, _channel_samples) in buffer.iter_samples().enumerate() {
+                    let mut events = vec![];
+                    while let Some(event) = next_event {
+                        if event.timing() != sample_id as u32 {
+                            break;
+                        }
+                        events.push(event);
+                        next_event = context.next_event();
+                    }
+                    for e in events {
+                        context.send_event(e);
+                    }
                 }
-            }
+            } // mode == ModeParam::Pause
         }
 
         self.now += buffer.samples();
