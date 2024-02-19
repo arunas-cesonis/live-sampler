@@ -2,31 +2,16 @@
 #![feature(associated_type_bounds)]
 extern crate core;
 
-use std::collections::VecDeque;
-use std::io::Write;
 use std::num::NonZeroU32;
-use std::path::{Path, PathBuf};
-use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::thread::{JoinHandle, Thread, ThreadId};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use nih_plug::prelude::*;
-use nih_plug::wrapper::state;
-use nih_plug_vizia::ViziaState;
-use notify::event::{CreateKind, ModifyKind};
-use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
-use pyo3::ffi::{PyObject_Repr, Py_None};
-use pyo3::prelude::*;
-use pyo3::types::{IntoPyDict, PyDict, PyList, PyTuple};
-use pyo3::{PyErr, Python};
 
-use crate::common_types::{EvalError, EvalStatus, FileStatus, RuntimeStats, Status, UICommand};
-use crate::event::{NoteOn, PyO3NoteEvent};
+use crate::common_types::{EvalStatus, RuntimeStats, Status, UICommand};
+use crate::event::PyO3NoteEvent;
 use crate::host::Host;
 use crate::params::{ModeParam, PyO3PluginParams2};
-use crate::source_path::PersistedSourcePath;
 use crate::source_state::SourceState;
 
 mod common_types;
@@ -40,8 +25,8 @@ mod source_state;
 type SysEx = ();
 
 pub struct PyO3Plugin {
+    sample_rate: Option<f32>,
     params: Arc<PyO3PluginParams2>,
-    sample_rate: f32,
     commands: Option<crossbeam_channel::Receiver<UICommand>>,
     status_in: Arc<parking_lot::Mutex<triple_buffer::Input<Status>>>,
     status_out: Arc<parking_lot::Mutex<triple_buffer::Output<Status>>>,
@@ -53,11 +38,6 @@ pub struct PyO3Plugin {
     status: Status,
     source_state: SourceState,
     host: Host,
-    recommended_watcher: Option<(
-        PathBuf,
-        crossbeam_channel::Receiver<Result<notify::Event, notify::Error>>,
-        RecommendedWatcher,
-    )>,
 }
 
 // unsafe impl Send for PyO3Plugin {}
@@ -67,8 +47,8 @@ impl Default for PyO3Plugin {
         let (status_in, status_out) = triple_buffer::triple_buffer(&Status::default());
         let (runtime_stats_in, runtime_stats_out) = triple_buffer::triple_buffer(&None);
         Self {
+            sample_rate: None,
             params: Arc::new(PyO3PluginParams2::default()),
-            sample_rate: 0.0,
             commands: None,
             status_in: Arc::new(parking_lot::Mutex::new(status_in)),
             status_out: Arc::new(parking_lot::Mutex::new(status_out)),
@@ -80,25 +60,7 @@ impl Default for PyO3Plugin {
             source_state: SourceState::Empty,
             status: Status::default(),
             host: Host::default(),
-            recommended_watcher: None,
         }
-    }
-}
-
-fn check_watcher(
-    rx: &crossbeam_channel::Receiver<Result<notify::Event, notify::Error>>,
-    w: &RecommendedWatcher,
-) -> bool {
-    match rx.try_recv() {
-        Ok(Ok(notify::Event {
-            kind: notify::EventKind::Create(CreateKind::File),
-            ..
-        })) => true,
-        Ok(Ok(notify::Event {
-            kind: notify::EventKind::Modify(ModifyKind::Data(_)),
-            ..
-        })) => true,
-        _ => false,
     }
 }
 
@@ -229,7 +191,7 @@ impl Plugin for PyO3Plugin {
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
-        self.sample_rate = buffer_config.sample_rate;
+        self.sample_rate = Some(buffer_config.sample_rate);
         std::env::var("PYO3_PLUGIN_SOURCE_PATH")
             .into_iter()
             .for_each(|path| {
@@ -256,14 +218,13 @@ impl Plugin for PyO3Plugin {
         self.check_watcher();
 
         if let Some(source) = self.source_state.get_source() {
+            let sample_rate = self.sample_rate.unwrap();
             if mode == ModeParam::Run && !self.status.eval_status.is_error() {
                 let mut events: Vec<PyO3NoteEvent> = vec![];
                 while let Some(next_event) = context.next_event() {
                     events.push(next_event.into());
                 }
-                let result = self
-                    .host
-                    .run(self.now, self.sample_rate, buffer, events, source);
+                let result = self.host.run(self.now, sample_rate, buffer, events, source);
                 match result {
                     Ok(processed_events) => {
                         processed_events
@@ -279,15 +240,13 @@ impl Plugin for PyO3Plugin {
                         self.publish_status();
                     }
                 };
-                if self.params.editor_state.is_open() {
-                    if self.now - self.stats_updated
-                        >= (self.stats_update_every.as_secs_f64() * self.sample_rate as f64)
-                            as usize
-                    {
-                        self.stats_updated = self.now;
-                        self.publish_stats();
-                        self.publish_status();
-                    }
+                if self.params.editor_state.is_open()
+                    && self.now - self.stats_updated
+                        >= (self.stats_update_every.as_secs_f64() * sample_rate as f64) as usize
+                {
+                    self.stats_updated = self.now;
+                    self.publish_stats();
+                    self.publish_status();
                 }
             } else if mode == ModeParam::Bypass {
                 let mut next_event = context.next_event();
