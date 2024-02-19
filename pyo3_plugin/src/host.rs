@@ -67,10 +67,20 @@ impl Stats {
     }
 }
 
+struct State {}
+
 #[derive(Default)]
 pub struct Host {
     python_state: Option<Py<PyAny>>,
+    host_module: Option<Py<PyAny>>,
     stats: Option<Stats>,
+}
+
+fn create_host_module(py: Python) -> Result<&PyModule, PyErr> {
+    let host_module = PyModule::new(py, "host")?;
+    host_module.add_function(wrap_pyfunction!(host_print, host_module)?)?;
+    add_pyo3_note_events(py, &host_module)?;
+    Ok(host_module)
 }
 
 impl Host {
@@ -79,6 +89,7 @@ impl Host {
     }
 
     pub fn clear(&mut self) {
+        self.host_module = None;
         self.python_state = None;
         self.stats = None;
     }
@@ -105,9 +116,6 @@ impl Host {
 
         let buf = buffer.as_slice();
         let result = Python::with_gil(|py| -> Result<(PythonProcessResult, Duration), PyErr> {
-            let host_module = PyModule::new(py, "host")?;
-            host_module.add_function(wrap_pyfunction!(host_print, host_module)?)?;
-            add_pyo3_note_events(py, &host_module)?;
             let tmp = buf.iter().map(|x| x.to_vec()).collect::<Vec<_>>();
             let pybuf: Py<PyAny> = PyList::new(py, tmp).into_py(py);
             let events: Py<PyAny> = PyList::new(py, events).into_py(py);
@@ -115,8 +123,11 @@ impl Host {
                 .python_state
                 .take()
                 .unwrap_or(PyNone::get(py).to_object(py));
-            //let np = py.import("numpy")?;
-            //let globals = [("host", host_module), ("np", np)].into_py_dict(py);
+            let hm = self
+                .host_module
+                .take()
+                .unwrap_or(create_host_module(py)?.to_object(py));
+            let host_module = hm.downcast::<PyModule>(py)?;
             let globals = [("host", host_module)].into_py_dict(py);
             let locals = [("state", state), ("buffer", pybuf), ("events", events)].into_py_dict(py);
 
@@ -128,6 +139,7 @@ impl Host {
                 Some(locals),
             )?;
             let d = time.elapsed();
+            self.host_module = Some(host_module.into());
 
             let result: Result<PythonProcessResult, PyErr> = result.extract();
 
