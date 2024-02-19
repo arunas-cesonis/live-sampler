@@ -11,5 +11,11 @@ def process(state, buf, events):
   if not isinstance(state, dict):
     state = {"counter": 0}
   state["counter"] += 5
-  host.print((state, 2))
+  x = []
+  for e in events:
+    e.note = 21
+    e.velocity= 0.66
+    x.append(host.NoteOn(e.note, e.channel, e.timing, e.velocity, e.voice_id))
+  if x:
+    host.print((x, state))
   return (state, buf, events)

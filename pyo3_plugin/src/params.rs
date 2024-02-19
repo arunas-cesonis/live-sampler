@@ -5,7 +5,7 @@ use nih_plug::prelude::{Enum, FloatRange};
 use nih_plug_vizia::ViziaState;
 
 use crate::editor_vizia;
-use crate::source_path::SourcePath;
+use crate::source_path::PersistedSourcePath;
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum ModeParam {
@@ -28,11 +28,11 @@ pub struct PyO3PluginParams2 {
     #[persist = "editor-state"]
     pub(crate) editor_state: Arc<ViziaState>,
     #[persist = "source-path"]
-    pub(crate) source_path: SourcePath,
+    pub(crate) source_path: PersistedSourcePath,
 }
 
 impl PyO3PluginParams2 {
-    pub fn source_path(&self) -> &SourcePath {
+    pub fn source_path(&self) -> &PersistedSourcePath {
         &self.source_path
     }
 }
@@ -43,7 +43,7 @@ impl Default for PyO3PluginParams2 {
             watch_source_path: BoolParam::new("Watch file", false),
             editor_state: editor_vizia::default_state(),
             mode: EnumParam::new("Mode", ModeParam::default()),
-            source_path: SourcePath::default(),
+            source_path: PersistedSourcePath::default(),
         }
     }
 }

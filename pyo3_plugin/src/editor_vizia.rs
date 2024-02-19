@@ -12,12 +12,12 @@ use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
-use crate::common_types::{RuntimeStats, Status};
+use crate::common_types::{RuntimeStats, Status, UICommand};
 use crate::params::{ModeParam, PyO3PluginParams2};
 
 #[derive(Clone, Lens)]
 pub struct Data {
-    pub(crate) version: Arc<AtomicUsize>,
+    pub(crate) commands: Arc<crossbeam_channel::Sender<UICommand>>,
     pub(crate) params: Arc<PyO3PluginParams2>,
     pub(crate) status: Status,
     pub(crate) status_out: Arc<parking_lot::Mutex<triple_buffer::Output<Status>>>,
@@ -29,11 +29,14 @@ impl Model for Data {
     fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
         event.map(|editor_event, _| match editor_event {
             EditorEvent::Reload => {
-                self.version.fetch_add(1, Ordering::Relaxed);
+                self.commands.send(UICommand::Reload).unwrap();
+            }
+            EditorEvent::Reset => {
+                self.commands.send(UICommand::Reset).unwrap();
             }
             EditorEvent::UpdatePath(s) => {
                 *self.params.source_path().0.lock() = s.to_string();
-                self.version.fetch_add(1, Ordering::Relaxed);
+                self.commands.send(UICommand::Reload).unwrap();
             }
         });
     }
@@ -48,6 +51,7 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
 pub enum EditorEvent {
     UpdatePath(String),
     Reload,
+    Reset,
 }
 
 pub struct StatusView {}
@@ -137,14 +141,22 @@ pub(crate) fn create2(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<d
                         .height(Pixels(30.0))
                         .width(Stretch(1.0))
                         .top(Pixels(10.0));
-                        Button::new(
-                            cx,
-                            |ctx| ctx.emit(EditorEvent::Reload),
-                            |cx| Label::new(cx, "Reload"),
-                        )
-                        .top(Pixels(10.0));
-                        ParamButton::new(cx, Data::params, |params| &params.watch_source_path)
+                        HStack::new(cx, |cx| {
+                            Button::new(
+                                cx,
+                                |ctx| ctx.emit(EditorEvent::Reload),
+                                |cx| Label::new(cx, "Reload"),
+                            )
                             .top(Pixels(10.0));
+                            Button::new(
+                                cx,
+                                |ctx| ctx.emit(EditorEvent::Reset),
+                                |cx| Label::new(cx, "Reset"),
+                            )
+                            .top(Pixels(10.0));
+                            ParamButton::new(cx, Data::params, |params| &params.watch_source_path)
+                                .top(Pixels(10.0));
+                        });
                     });
                 })
                 .top(Pixels(10.0));
@@ -207,16 +219,6 @@ pub(crate) fn create2(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<d
                     )
                     .top(Pixels(10.0));
                     //Label::new(cx, Data).top(Pixels(10.0));
-                    Label::new(
-                        cx,
-                        Data::status_out.map(|x| {
-                            if x.lock().read().paused_on_error {
-                                "Paused on error. Reload to  resume".to_string()
-                            } else {
-                                "".to_string()
-                            }
-                        }),
-                    );
                 });
             });
         })
