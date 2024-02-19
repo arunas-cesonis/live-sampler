@@ -1,15 +1,16 @@
+use crate::clip::Clip;
 use nih_plug::{nih_trace, nih_warn};
 use std::fmt::Debug;
 use std::ops::Add;
 
 pub use crate::common_types::LoopMode;
 use crate::common_types::{InitParams, Note, Params, RecordingMode};
-use crate::recorder;
 use crate::recorder::Recorder;
 use crate::time_value::{TimeOrRatio, TimeValue};
 use crate::utils::normalize_offset;
 use crate::voice::{Player, Voice};
 use crate::volume::Volume;
+use crate::{clip, recorder};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Channel {
@@ -100,17 +101,22 @@ impl Channel {
         }
 
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
-        let length: f32 = params.loop_length(self.data.len());
+        let clip = Clip::new(
+            self.now,
+            starting_offset(loop_start_percent, self.data.len()),
+            params.speed(),
+            params.loop_length(self.data.len()),
+            self.data.len() as f32,
+            match params.loop_mode {
+                LoopMode::Loop | LoopMode::PlayOnce => clip::Mode::Loop,
+                LoopMode::PingPong => clip::Mode::PingPong,
+            },
+        );
         let mut voice = Voice {
             note: note,
             loop_start_percent,
             played: 0.0,
-            player: Player {
-                mode: params.loop_mode,
-                offset: starting_offset(loop_start_percent, self.data.len()).floor() as usize,
-                length: length.floor() as usize,
-            },
-            player_updated: self.now,
+            clip,
             volume: Volume::new(0.0),
             finished: false,
             last_sample_index: 0,
@@ -191,28 +197,7 @@ impl Channel {
             //    offset: starting_offset(voice.loop_start_percent, self.data.len()),
             //    length: params.loop_length(self.data.len()),
             //};
-            let elapsed = self.now - voice.player_updated;
-            let offset = match voice.player.mode {
-                LoopMode::PlayOnce | LoopMode::Loop => {
-                    let offset = elapsed % voice.player.length;
-                    offset
-                }
-                LoopMode::PingPong => {
-                    let mut offset = elapsed % (2 * voice.player.length);
-                    if offset >= voice.player.length {
-                        offset = 2 * voice.player.length - offset - 1;
-                    }
-                    offset
-                }
-            };
-            assert!(
-                offset >= 0 && offset < voice.player.length,
-                "offset={} voice={:#?}",
-                offset,
-                voice
-            );
-            let offset = (voice.player.offset + offset) % self.data.len();
-            let index = offset as usize;
+            let index = voice.clip.offset(self.now).floor() as usize;
 
             //eprintln!("index={} loop_mode={:?}", index, params.loop_mode);
             let value = self.data[index] * voice.volume.value(self.now);
@@ -240,7 +225,7 @@ impl Channel {
 
             if !voice.finished
                 && params.loop_mode == LoopMode::PlayOnce
-                && elapsed >= params.loop_length(self.data.len()).floor() as usize
+                && voice.played >= params.loop_length(self.data.len()).floor()
             //&& voice.played.abs() >= params.loop_length(self.data.len()) as f32S
             {
                 finished.push(i);
