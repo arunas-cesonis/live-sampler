@@ -7,8 +7,9 @@ pub struct VoiceId(pub usize);
 
 #[derive(Clone, Copy, Debug)]
 pub struct Player {
-    pub offset: f32,
-    pub length: f32,
+    pub mode: LoopMode,
+    pub offset: usize,
+    pub length: usize,
 }
 
 #[derive(Clone, Debug)]
