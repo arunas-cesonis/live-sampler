@@ -3,7 +3,6 @@ mod test {
     use std::f32::consts::PI;
 
     use crate::common_types::{InitParams, Note, Params, RecordingMode, Transport};
-    use crate::player::Mode::Loop;
     use crate::sampler::{LoopMode, Sampler};
     use crate::time_value::{TimeOrRatio, TimeValue};
 
