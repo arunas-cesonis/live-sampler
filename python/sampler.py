@@ -19,5 +19,4 @@ def process(state, buf, events):
         else:
             state["data"][w] = buf
         state["write"] = (w + 1) % 100
-
     return (state, buf, events)
