@@ -8,7 +8,7 @@ use crate::recorder;
 use crate::recorder::Recorder;
 use crate::time_value::{TimeOrRatio, TimeValue};
 use crate::utils::normalize_offset;
-use crate::voice::Voice;
+use crate::voice::{Player, Voice};
 use crate::volume::Volume;
 
 #[derive(Clone, Debug)]
@@ -100,12 +100,16 @@ impl Channel {
         }
 
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
-        let offset = loop_start_percent * self.data.len() as f32;
         let length: f32 = params.loop_length(self.data.len());
         let mut voice = Voice {
             note: note,
             loop_start_percent,
-            played: loop_start_percent * self.data.len() as f32,
+            played: 0.0,
+            player: Player {
+                offset: starting_offset(loop_start_percent, self.data.len()),
+                length,
+            },
+            player_updated: self.now,
             volume: Volume::new(0.0),
             finished: false,
             last_sample_index: 0,
@@ -181,7 +185,16 @@ impl Channel {
 
             let speed = params.speed();
 
-            let index = normalize_offset(voice.played, self.data.len() as f32) as usize;
+            //let player = Player {
+            //    mode: params.loop_mode,
+            //    offset: starting_offset(voice.loop_start_percent, self.data.len()),
+            //    length: params.loop_length(self.data.len()),
+            //};
+            let elapsed = self.now - voice.player_updated;
+            let offset = normalize_offset(elapsed as f32, voice.player.length);
+            let offset = normalize_offset(voice.player.offset + offset, self.data.len() as f32);
+            let index = offset as usize;
+
             //eprintln!("index={} loop_mode={:?}", index, params.loop_mode);
             let value = self.data[index] * voice.volume.value(self.now);
             // eprintln!(
