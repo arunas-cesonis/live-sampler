@@ -221,6 +221,19 @@ impl Channel {
             //     self.now, value, voice
             // );
 
+            // What works
+            // 1. 1.0 speed
+            // 2. All modes modes
+            // 3. Loop params not changeable
+
+            // Need
+            // 1. -1.0 speed
+            // 2. Fractional speeds
+            // 3. Loop length changeable
+            // 4. Speed changeable
+            // 5. Mode changeable
+            // 6. Start changeable
+
             output += value;
             voice.played += 1.0;
             voice.last_sample_index = index;
