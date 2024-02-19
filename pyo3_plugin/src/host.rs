@@ -14,7 +14,6 @@ use crate::event::{add_pyo3_note_events, PyO3NoteEvent};
 
 use crate::source_state::Source;
 
-// FIXME: host.print() has to be called single tuple, e.g. host.print((1, 2, 3)); it should work with multiple args
 #[pyfunction(name = "print")]
 #[pyo3(signature = (*args))]
 fn host_print(args: &PyTuple) {
