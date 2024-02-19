@@ -1,7 +1,7 @@
 use nih_plug::midi::NoteEvent;
-use nih_plug::plugin::Plugin;
+
 use pyo3::prelude::PyModule;
-use pyo3::types::IntoPyDict;
+
 use pyo3::{
     pyclass, pymethods, pymodule, FromPyObject, IntoPy, Py, PyObject, PyResult, Python, ToPyObject,
 };
@@ -479,9 +479,9 @@ impl ToPyObject for PyO3NoteEvent {
     }
 }
 
-impl Into<NoteEvent<()>> for PyO3NoteEvent {
-    fn into(self) -> NoteEvent<()> {
-        match self {
+impl From<PyO3NoteEvent> for NoteEvent<()> {
+    fn from(value: PyO3NoteEvent) -> Self {
+        match value {
             PyO3NoteEvent::NoteOn(x) => NoteEvent::NoteOn {
                 timing: x.timing,
                 voice_id: x.voice_id,
@@ -805,7 +805,7 @@ impl From<NoteEvent<()>> for PyO3NoteEvent {
 
 #[cfg(test)]
 mod test {
-    use pyo3::{FromPyObject, Python, ToPyObject};
+    use pyo3::{Python, ToPyObject};
 
     use super::*;
 

@@ -1,7 +1,6 @@
-use crate::common_types::{EvalError, EvalStatus, FileStatus, RuntimeStats, Status};
-use crate::event::{add_pyo3_note_events, PyO3NoteEvent};
-use crate::host;
-use crate::source_state::Source;
+use std::collections::VecDeque;
+use std::time::Duration;
+
 use nih_plug::buffer::Buffer;
 use nih_plug::nih_log;
 use pyo3::prelude::PyModule;
@@ -9,9 +8,11 @@ use pyo3::types::{IntoPyDict, PyList, PyNone, PyTuple};
 use pyo3::{
     pyfunction, wrap_pyfunction, FromPyObject, IntoPy, Py, PyAny, PyErr, Python, ToPyObject,
 };
-use std::collections::VecDeque;
-use std::path::Path;
-use std::time::Duration;
+
+use crate::common_types::{EvalError, RuntimeStats, Status};
+use crate::event::{add_pyo3_note_events, PyO3NoteEvent};
+use crate::host;
+use crate::source_state::Source;
 
 // FIXME: host.print() has to be called single tuple, e.g. host.print((1, 2, 3)); it should work with multiple args
 #[pyfunction(name = "print")]

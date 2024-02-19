@@ -1,14 +1,10 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use nih_plug::editor::Editor;
 use nih_plug::params::Param;
-use nih_plug::prelude::Enum;
 use nih_plug_vizia::assets::register_noto_sans_bold;
 use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::widgets::param_base::ParamWidgetBase;
-use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
@@ -52,20 +48,6 @@ pub enum EditorEvent {
     UpdatePath(String),
     Reload,
     Reset,
-}
-
-pub struct StatusView {}
-
-impl StatusView {
-    pub fn new(cx: &mut Context) -> Handle<Self> {
-        Self {}.build(cx, |_| {})
-    }
-}
-
-impl View for StatusView {
-    fn element(&self) -> Option<&'static str> {
-        Some("status_view")
-    }
 }
 
 fn select_mode(ctx: &mut EventContext, w: &ParamWidgetBase, mode: ModeParam) {
@@ -200,10 +182,10 @@ pub(crate) fn create2(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<d
                             let total = stats.total_duration.as_secs_f64();
                             let last = stats.last_duration.as_secs_f64();
                             let last_sec = stats.last_rolling_avg.as_secs_f64();
-                            //let loaded = stats.source_loaded.elapsed().as_secs_f64();
+                            // let loaded = stats.source_loaded.elapsed().as_secs_f64();
                             let avg = stats.total_duration.as_secs_f64() / stats.iterations as f64;
                             let out = vec![
-                                ///format!("loaded: {:.1}s ago", loaded),
+                                // format!("loaded: {:.1}s ago", loaded),
                                 format!("avg_last_10sec {:.3}ms", last_sec * 1000.0),
                                 format!("avg: {:.3}ms", avg * 1000.0),
                                 format!("last: {:.3}ms", last * 1000.0),
