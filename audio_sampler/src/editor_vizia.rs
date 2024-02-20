@@ -220,9 +220,6 @@ fn rectangle_path(x: f32, y: f32, w: f32, h: f32) -> Path {
     path.close();
     path
 }
-// disabling various position drawings because they are a bit buggy at the moment
-// and do not look very good
-const DISABLE_DRAWING_INDICES: bool = false;
 
 impl<X> View for WaveformView<X>
 where
@@ -278,9 +275,6 @@ where
         }
 
         //if let Some(x) = info.last_recorded_index {
-        if DISABLE_DRAWING_INDICES {
-            return;
-        }
 
         for x in &info.last_recorded_indices {
             let width = 5.0;
