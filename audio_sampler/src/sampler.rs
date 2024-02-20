@@ -197,6 +197,9 @@ impl Channel {
             //    offset: starting_offset(voice.loop_start_percent, self.data.len()),
             //    length: params.loop_length(self.data.len()),
             //};
+            voice
+                .clip
+                .update_length(self.now, params.loop_length(self.data.len()));
             let index = voice.clip.offset(self.now).floor() as usize;
 
             //eprintln!("index={} loop_mode={:?}", index, params.loop_mode);
@@ -220,12 +223,12 @@ impl Channel {
             // 6. Start changeable
 
             output += value;
-            voice.played += 1.0;
+            voice.played += params.speed();
             voice.last_sample_index = index;
 
             if !voice.finished
                 && params.loop_mode == LoopMode::PlayOnce
-                && voice.played >= params.loop_length(self.data.len()).floor()
+                && voice.played.abs() >= params.loop_length(self.data.len()).floor()
             //&& voice.played.abs() >= params.loop_length(self.data.len()) as f32S
             {
                 finished.push(i);

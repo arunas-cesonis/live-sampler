@@ -60,6 +60,23 @@ impl Clip {
         }
     }
 
+    pub fn update_length(&mut self, now: usize, length: f32) {
+        if length == self.length {
+            return;
+        }
+        let offset = self.offset(now);
+        if offset < length {
+            eprintln!("A");
+            self.shift = offset - self.start;
+            self.length = length;
+            self.since = now;
+        } else {
+            eprintln!("B");
+            self.length = length;
+            self.since = now;
+        }
+    }
+
     pub fn shift(&self, now: usize) -> Self {
         let mut tmp = self.clone();
         tmp.shift = tmp.offset(now);
@@ -105,5 +122,35 @@ impl Clip {
         );
         let x = (self.start + x) % self.data_length;
         x
+    }
+}
+#[cfg(test)]
+mod test {
+
+    #[test]
+    fn test_update() {
+        let mut clip = crate::clip::Clip {
+            since: 0,
+            start: 5.0,
+            speed: -2.0,
+            length: 10.0,
+            data_length: 100.0,
+            mode: crate::clip::Mode::PingPong,
+            shift: 0.0,
+        };
+        let k = 100;
+        for i in 0..(k - 1) {
+            match i {
+                _ => (),
+            };
+            let x = clip.offset(i);
+            eprintln!(
+                "{:<4} {:<4} dt={:<4} sh={:<4}",
+                i,
+                x,
+                clip.elapsed(i),
+                clip.shift
+            );
+        }
     }
 }
