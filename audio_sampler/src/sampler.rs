@@ -15,13 +15,13 @@ use crate::{clip, recorder};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Channel {
+    pub(crate) index: usize,
     pub(crate) data: Vec<f32>,
     pub(crate) voices: Vec<Voice>,
     pub(crate) now: usize,
     pub(crate) passthru_on: bool,
     pub(crate) passthru_volume: Volume,
     pub(crate) recorder: Recorder,
-    pub(crate) index: usize,
     pub(crate) next_voice_id: usize,
 }
 
@@ -62,13 +62,13 @@ impl Channel {
     }
     fn new(params: &InitParams, index: usize) -> Self {
         Channel {
+            index,
             data: vec![],
             voices: vec![],
             now: 0,
             passthru_on: false,
             passthru_volume: Volume::new(if params.auto_passthru { 1.0 } else { 0.0 }),
             recorder: Recorder::new(),
-            index,
             next_voice_id: 0,
         }
     }
@@ -196,10 +196,11 @@ impl Channel {
             // Changing length at sample rate seems to work ok for both modes
             //
             // Next
-            // 0. Improve loop length UX slighly
-            // 1. Changing speed
-            // 2. Changing mode
-            // 3. Changing loop start
+            // [x] Improve loop length UX slighly
+            // [ ] Check if code main branch is better at responding to loop length automation
+            // [ ] Changing speed
+            // [ ] Changing mode
+            // [ ] Changing loop start
 
             voice
                 .clip
