@@ -1,0 +1,47 @@
+[package]
+name = "pyo3_plugin"
+edition = "2021"
+
+[lib]
+name = "pyo3_plugin"
+crate-type = ["cdylib", "lib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "pyo3_plugin"
+path = "src/main.rs"
+
+[dependencies.nih_plug]
+git = "https://github.com/robbert-vdh/nih-plug"
+features = ["standalone", "vst3"]
+
+[dependencies.atomic_float]
+version = "0.1"
+
+# [dependencies.numpy]
+# version = "0.20.0"
+
+[dependencies.notify]
+version = "6.1.1"
+
+[dependencies.crossbeam-channel]
+version = "0.5.0"
+
+[dependencies.nih_plug_vizia]
+git = "https://github.com/robbert-vdh/nih-plug"
+
+[dependencies.intmap]
+version = "2.0.0"
+
+[dependencies.parking_lot]
+version = "0.12.1"
+
+[dependencies.triple_buffer]
+version = "7.0.0"
+
+[dependencies.pyo3]
+version = "0.20.2"
+features = ["auto-initialize", "macros"]
+
+[dependencies.serde]
+version = "1.0.196"
