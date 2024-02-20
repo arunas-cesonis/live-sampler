@@ -274,6 +274,7 @@ pub struct AudioSamplerParams {
 
 const ATTACK_DECAY_SKEW_FACTOR: f32 = 0.25;
 const LOOP_LENGTH_SKEW_FACTOR: f32 = 0.5;
+const LOOP_LENGTH_SKEW_SYNC: f32 = 0.25;
 
 impl Default for AudioSamplerParams {
     fn default() -> Self {
@@ -337,8 +338,8 @@ impl Default for AudioSamplerParams {
                 4.0,
                 FloatRange::Skewed {
                     min: 0.125,
-                    max: 64.0,
-                    factor: LOOP_LENGTH_SKEW_FACTOR,
+                    max: 16.0,
+                    factor: LOOP_LENGTH_SKEW_SYNC,
                 },
             )
             .with_unit(" 1/16 notes"),
