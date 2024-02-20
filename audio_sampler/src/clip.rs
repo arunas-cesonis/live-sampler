@@ -4,7 +4,7 @@ pub enum Mode {
     PingPong,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Copy, Debug, Clone)]
 pub struct Clip {
     pub since: usize,
     pub start: f32,
@@ -60,21 +60,33 @@ impl Clip {
         }
     }
 
+    fn is_pingpong_reversing(&self, now: usize) -> bool {
+        let l = self.length;
+        let s = self.speed;
+        let r = if s < 0.0 { 1.0 } else { 0.0 };
+        let dt = self.elapsed(now) as f32;
+        let x = self.shift + (dt + r) * s;
+        let x = x.abs() % (2.0 * l);
+        x >= l
+    }
+
     pub fn update_length(&mut self, now: usize, length: f32) {
         if length == self.length {
             return;
         }
+        // many duplicated calculations here!
         let offset = self.offset(now);
-        if offset < length {
-            eprintln!("A");
-            self.shift = offset - self.start;
-            self.length = length;
-            self.since = now;
+        self.length = length;
+        if let Some(shift) = self.data_to_clip(offset) {
+            if self.is_pingpong_reversing(now) {
+                self.shift = 2.0 * self.length - shift - 1.0;
+            } else {
+                self.shift = shift;
+            }
         } else {
-            eprintln!("B");
-            self.length = length;
-            self.since = now;
+            self.shift = 0.0;
         }
+        self.since = now;
     }
 
     pub fn shift(&self, now: usize) -> Self {
@@ -131,26 +143,26 @@ mod test {
     fn test_update() {
         let mut clip = crate::clip::Clip {
             since: 0,
-            start: 5.0,
-            speed: -2.0,
-            length: 10.0,
-            data_length: 100.0,
+            start: 400.0,
+            speed: 0.5,
+            length: 100.0,
+            data_length: 1000.0,
             mode: crate::clip::Mode::PingPong,
             shift: 0.0,
         };
         let k = 100;
-        for i in 0..(k - 1) {
-            match i {
-                _ => (),
-            };
+        let mut prev = 0.0;
+        for i in 0..4410 {
+            if i > 1000 && i % 25 == 0 {
+                clip.update_length(i, clip.length + 1.0);
+            }
             let x = clip.offset(i);
+            let dx = x - prev;
             eprintln!(
-                "{:<4} {:<4} dt={:<4} sh={:<4}",
-                i,
-                x,
-                clip.elapsed(i),
-                clip.shift
+                "i={:<5} x={:<5} dx={:<5} length={:<5} shift={:<5}",
+                i, x, dx, clip.length, clip.shift
             );
+            prev = x;
         }
     }
 }
