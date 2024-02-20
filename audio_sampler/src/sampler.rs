@@ -1,6 +1,7 @@
 use crate::clip::Clip;
 use nih_plug::{nih_trace, nih_warn};
 use std::fmt::Debug;
+use std::io::{BufWriter, Write};
 use std::ops::Add;
 
 pub use crate::common_types::LoopMode;
@@ -189,38 +190,22 @@ impl Channel {
             if Self::should_remove_voice(voice, params) {
                 continue;
             }
-
             let speed = params.speed();
 
-            //let player = Player {
-            //    mode: params.loop_mode,
-            //    offset: starting_offset(voice.loop_start_percent, self.data.len()),
-            //    length: params.loop_length(self.data.len()),
-            //};
+            // README
+            // Changing length at sample rate seems to work ok for both modes
+            //
+            // Next
+            // 0. Improve loop length UX slighly
+            // 1. Changing speed
+            // 2. Changing mode
+            // 3. Changing loop start
+
             voice
                 .clip
                 .update_length(self.now, params.loop_length(self.data.len()));
             let index = voice.clip.offset(self.now).floor() as usize;
-
-            //eprintln!("index={} loop_mode={:?}", index, params.loop_mode);
             let value = self.data[index] * voice.volume.value(self.now);
-            // eprintln!(
-            //     "self.now={} play value={} voice={:?}",
-            //     self.now, value, voice
-            // );
-
-            // What works
-            // 1. 1.0 speed
-            // 2. All modes modes
-            // 3. Loop params not changeable
-
-            // Need
-            // 1. -1.0 speed
-            // 2. Fractional speeds
-            // 3. Loop length changeable
-            // 4. Speed changeable
-            // 5. Mode changeable
-            // 6. Start changeable
 
             output += value;
             voice.played += params.speed();
@@ -229,7 +214,6 @@ impl Channel {
             if !voice.finished
                 && params.loop_mode == LoopMode::PlayOnce
                 && voice.played.abs() >= params.loop_length(self.data.len()).floor()
-            //&& voice.played.abs() >= params.loop_length(self.data.len()) as f32S
             {
                 finished.push(i);
             }

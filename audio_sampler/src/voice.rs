@@ -1,11 +1,6 @@
 use crate::clip::Clip;
 use crate::common_types::{LoopMode, Note};
 use crate::volume::Volume;
-
-#[repr(transparent)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct VoiceId(pub usize);
-
 #[derive(Clone, Copy, Debug)]
 pub struct Player {
     pub mode: LoopMode,
