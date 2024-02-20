@@ -5,7 +5,8 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use nih_plug::nih_warn;
-use nih_plug::prelude::Editor;
+use nih_plug::params::Param;
+use nih_plug::prelude::{Editor, Enum};
 use nih_plug_vizia::assets::register_noto_sans_bold;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
@@ -17,6 +18,7 @@ use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
 use crate::common_types::Info;
+use crate::time_value::TimeOrRatioUnit;
 use crate::{utils, AudioSamplerParams};
 
 #[derive(Debug, Clone, Default)]
@@ -317,6 +319,51 @@ pub enum EditorEvent {
     Choice(usize),
 }
 
+fn loop_length_slider<P, FMap>(cx: &mut Context, unit: TimeOrRatioUnit, lens: FMap)
+where
+    P: Param + 'static,
+    FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
+{
+    let title = <TimeOrRatioUnit as Enum>::variants()[unit.to_index()];
+    VStack::new(cx, |cx| {
+        Label::new(cx, title).top(Pixels(10.0));
+        ParamSlider::new(cx, Data::params, lens)
+            .width(Stretch(0.75))
+            .right(Pixels(10.0));
+    })
+    .width(Stretch(1.0))
+    .right(Pixels(10.0))
+    .height(Auto)
+    .display(Data::params.map(move |params| params.loop_length_unit.value() == unit));
+}
+
+fn param_slider<P, FMap>(cx: &mut Context, title: &str, lens: FMap)
+where
+    P: Param + 'static,
+    FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
+{
+    VStack::new(cx, |cx| {
+        Label::new(cx, title).top(Pixels(10.0));
+        ParamSlider::new(cx, Data::params, lens)
+            .width(Stretch(0.75))
+            .right(Pixels(10.0));
+    })
+    .width(Stretch(1.0))
+    .right(Pixels(10.0))
+    .height(Auto);
+}
+
+fn param_slider1<P, FMap>(cx: &mut Context, title: &str, lens: FMap)
+where
+    P: Param + 'static,
+    FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
+{
+    Label::new(cx, title).top(Pixels(10.0));
+    ParamSlider::new(cx, Data::params, lens)
+        .width(Stretch(1.0))
+        .right(Pixels(10.0));
+}
+
 pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         register_noto_sans_bold(cx);
@@ -346,92 +393,38 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
             .height(Pixels(42.0));
             HStack::new(cx, |cx| {
                 VStack::new(cx, |cx| {
-                    Label::new(cx, "Volume").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.volume)
-                        .width(Stretch(1.0))
-                        .right(Pixels(10.0));
-                    Label::new(cx, "Attack").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.attack)
-                        .width(Stretch(1.0))
-                        .right(Pixels(10.0));
-                    Label::new(cx, "Decay").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.decay)
-                        .width(Stretch(1.0))
-                        .right(Pixels(10.0));
-                    Label::new(cx, "Passthru").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.auto_passthru)
-                        .width(Stretch(1.0))
-                        .right(Pixels(10.0));
+                    param_slider1(cx, "Volume", |params| &params.volume);
+                    param_slider1(cx, "Attack", |params| &params.attack);
+                    param_slider1(cx, "Decay", |params| &params.decay);
+                    param_slider1(cx, "Passthru", |params| &params.auto_passthru);
                 })
                 .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
-                    Label::new(cx, "Speed").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.speed)
-                        .width(Stretch(1.0))
-                        .right(Pixels(10.0));
-                    Label::new(cx, "Start offset").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.start_offset)
-                        .width(Stretch(1.0))
-                        .right(Pixels(10.0));
-                    Label::new(cx, "Loop length").top(Pixels(10.0));
-                    HStack::new(cx, |cx| {
-                        ParamSlider::new(cx, Data::params, |params| &params.loop_length)
-                            .width(Stretch(0.5))
-                            .right(Pixels(10.0));
-                        ParamSlider::new(cx, Data::params, |params| &params.loop_length_unit)
-                            .width(Stretch(0.5));
-                        //.right(Pixels(10.0));
-                        //   .width(Percentage(20.0))
-                    })
-                    .width(Stretch(1.0))
-                    .right(Pixels(10.0))
-                    .height(Auto);
-                    Label::new(cx, "Loop mode").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.loop_mode)
-                        .width(Stretch(1.0))
-                        .right(Pixels(10.0));
+                    param_slider1(cx, "Speed", |params| &params.speed);
+                    param_slider1(cx, "Start offset", |params| &params.start_offset);
+                    param_slider1(cx, "Loop mode", |params| &params.loop_mode);
+                    param_slider1(cx, "Decay", |params| &params.decay);
                 })
                 .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
-                    Label::new(cx, "Will record").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.recording_mode)
-                        .width(Stretch(1.0))
-                        .right(Pixels(10.0));
-                    Label::new(cx, "MIDI channel").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.midi_channel)
-                        .width(Stretch(1.0))
-                        .right(Pixels(10.0));
-                    Label::new(cx, "Show debug data").top(Pixels(10.0));
-                    ParamSlider::new(cx, Data::params, |params| &params.show_debug_data)
-                        .width(Stretch(1.0))
-                        .right(Pixels(10.0));
+                    param_slider1(cx, "Will record", |params| &params.recording_mode);
+                    param_slider1(cx, "MIDI channel", |params| &params.midi_channel);
+                    param_slider1(cx, "Loop mode", |params| &params.loop_mode);
                 })
                 .width(Percentage(25.0));
-                Label::new(
-                    cx,
-                    Data::debug_data_out
-                        .map(|d| d.lock().read().message.clone().unwrap_or("".to_string())),
-                )
-                .top(Pixels(10.0));
-                //VStack::new(cx, |cx| {
-                //    Label::new(cx, "Dropdown").top(Pixels(10.0));
-                //    Dropdown::new(
-                //        cx,
-                //        |cx| Label::new(cx, "Go"),
-                //        |cx| {
-                //            for i in 0..5 {
-                //                Label::new(cx, i)
-                //                    .on_press(move |cx| {
-                //                        cx.emit(EditorEvent::Choice(i));
-                //                        cx.emit(PopupEvent::Close); // close the popup
-                //                    })
-                //                    .width(Stretch(1.0));
-                //            }
-                //        },
-                //    )
-                //    .width(Pixels(100.0));
-                //})
-                //.width(Percentage(25.0));
+
+                VStack::new(cx, |cx| {
+                    loop_length_slider(cx, TimeOrRatioUnit::Ratio, |params| {
+                        &params.loop_length_percent
+                    });
+                    loop_length_slider(cx, TimeOrRatioUnit::Seconds, |params| {
+                        &params.loop_length_time
+                    });
+                    loop_length_slider(cx, TimeOrRatioUnit::SixteenthNotes, |params| {
+                        &params.loop_length_sync
+                    });
+                    param_slider(cx, "Loop length unit", |params| &params.loop_length_unit);
+                });
             });
             //HStack::new(cx, |cx| {
             //});
