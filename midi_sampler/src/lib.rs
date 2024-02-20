@@ -93,7 +93,7 @@ impl Plugin for MIDISampler {
 
     fn initialize(
         &mut self,
-        _audio_io_layout: &AudioIOLayout,
+        _audioio_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
