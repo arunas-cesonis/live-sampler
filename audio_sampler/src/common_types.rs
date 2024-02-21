@@ -165,8 +165,8 @@ impl Params {
                 len_f32 * ratio
             }
         };
-        debug_assert!(length > 0.0, "loop_length={} self={:?}", length, self);
-        length
+        debug_assert!(length > 0.0 || data_len == 0, "length={} self={:?}", length, self);
+        length.max(1.0)
     }
 }
 
