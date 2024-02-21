@@ -136,9 +136,6 @@ impl Plugin for AudioSampler {
                 }
                 #[cfg(debug_assertions)]
                 nih_warn!("event: {:?}", event);
-                //self.debug_println(format_args!("{:?}", event));
-                //nih_warn!("event {:?}", event);
-                // assert!(event.voice_id().is_none());
                 match event {
                     NoteEvent::NoteOn {
                         velocity,
