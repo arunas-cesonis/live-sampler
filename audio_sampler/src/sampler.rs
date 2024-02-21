@@ -1,4 +1,4 @@
-use crate::clip::Clip;
+use crate::clip2::Clip2;
 use nih_plug::{nih_trace, nih_warn};
 use std::fmt::Debug;
 use std::io::{BufWriter, Write};
@@ -11,7 +11,7 @@ use crate::time_value::{TimeOrRatio, TimeValue};
 use crate::utils::normalize_offset;
 use crate::voice::{Player, Voice};
 use crate::volume::Volume;
-use crate::{clip, recorder};
+use crate::{clip2, recorder};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Channel {
@@ -102,15 +102,15 @@ impl Channel {
         }
 
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
-        let clip = Clip::new(
+        let clip = Clip2::new(
             self.now,
             starting_offset(loop_start_percent, self.data.len()),
             params.speed(),
             params.loop_length(self.data.len()),
             self.data.len() as f32,
             match params.loop_mode {
-                LoopMode::Loop | LoopMode::PlayOnce => clip::Mode::Loop,
-                LoopMode::PingPong => clip::Mode::PingPong,
+                LoopMode::Loop | LoopMode::PlayOnce => clip2::Mode::Loop,
+                LoopMode::PingPong => clip2::Mode::PingPong,
             },
         );
         let mut voice = Voice {

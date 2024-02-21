@@ -7,7 +7,7 @@ pub enum Mode {
 }
 
 #[derive(Copy, Debug, Clone)]
-pub struct Clip {
+pub struct Clip2 {
     pub since: usize,
     pub start: f32,
     pub speed: f32,
@@ -17,7 +17,7 @@ pub struct Clip {
     pub shift: f32,
 }
 
-impl Clip {
+impl Clip2 {
     pub fn new(
         since: usize,
         start: f32,
@@ -179,13 +179,13 @@ mod test {
     #[test]
     fn test_basic() {
         let mut rng = SmallRng::from_seed([0; 32]);
-        let mut clip = crate::clip::Clip {
+        let mut clip = crate::clip2::Clip2 {
             since: 0,
             start: 40.0,
             speed: 0.5,
             length: 100.0,
             data_length: 1000.0,
-            mode: crate::clip::Mode::PingPong,
+            mode: crate::clip2::Mode::PingPong,
             shift: 0.0,
         };
         let mut prev = clip.start;
@@ -237,13 +237,13 @@ mod test {
 
     #[test]
     fn test_update() {
-        let mut clip = crate::clip::Clip {
+        let mut clip = crate::clip2::Clip2 {
             since: 0,
             start: 40.0,
             speed: 0.5,
             length: 100.0,
             data_length: 1000.0,
-            mode: crate::clip::Mode::PingPong,
+            mode: crate::clip2::Mode::PingPong,
             shift: 0.0,
         };
         let mut prev = 0.0;

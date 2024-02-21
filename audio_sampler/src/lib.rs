@@ -19,7 +19,7 @@ use crate::time_value::{calc_samples_per_bar, TimeOrRatio, TimeOrRatioUnit, Time
 use crate::utils::normalize_offset;
 
 // mod editor;
-mod clip;
+mod clip2;
 mod common_types;
 mod editor_vizia;
 mod recorder;
