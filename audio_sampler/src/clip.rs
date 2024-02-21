@@ -3,15 +3,15 @@ use crate::utils::normalize_offset;
 #[derive(Debug, Clone)]
 pub struct Clip {
     // base index of where clip plays from
-    offset: usize,
+    pub offset: usize,
     // length of the slice played
-    length: usize,
+    pub length: usize,
     // accumulated offset adjustment
-    local_adjustment: usize,
+    pub local_adjustment: usize,
     // sample number of when the clip was last updated
-    updated_at: usize,
+    pub updated_at: usize,
     // speed of the clip
-    speed: f32,
+    pub speed: f32,
     //
     // given the above and current time 'now' sample index played is calculated as
     //

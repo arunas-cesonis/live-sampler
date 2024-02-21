@@ -18,6 +18,12 @@ pub enum ClipVersion {
     V2,
 }
 
+impl Default for ClipVersion {
+    fn default() -> Self {
+        ClipVersion::V2
+    }
+}
+
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum MIDIChannelParam {
     #[name = "All"]
@@ -202,7 +208,7 @@ impl Default for Params {
             fixed_size_samples: 0,
             sample_id: 0,
             transport: Transport::default(),
-            clip_version: ClipVersion::V1,
+            clip_version: ClipVersion::default(),
         }
     }
 }

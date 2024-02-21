@@ -110,7 +110,7 @@ impl Channel {
             offset,
             params.speed(),
             length,
-            self.data.len() as f32,
+            self.data.len() as clip2::T,
             match params.loop_mode {
                 LoopMode::Loop | LoopMode::PlayOnce => clip2::Mode::Loop,
                 LoopMode::PingPong => clip2::Mode::PingPong,
@@ -216,9 +216,12 @@ impl Channel {
             let index1 = voice.clip.sample_index(self.now, self.data.len());
             voice
                 .clip2
-                .update_length(self.now, params.loop_length(self.data.len()));
+                .update_length(self.now, params.loop_length(self.data.len()) as clip2::T);
             voice.clip2.update_speed(self.now, speed);
             let index2 = voice.clip2.offset(self.now).floor() as usize;
+            if self.index == 0 {
+                nih_warn!("index1={} index2={} d={} voice={:?}", index1, index2, index1 == index2, voice);
+            }
 
             let index = match params.clip_version {
                 crate::common_types::ClipVersion::V1 => index1,
