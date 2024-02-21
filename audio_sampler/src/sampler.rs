@@ -199,6 +199,7 @@ impl Channel {
             // [x] Changing speed
             // [ ] Changing mode
             // [ ] Changing loop start
+            // [ ] Improve tests to be able to work on it later
 
             voice
                 .clip
