@@ -13,6 +13,12 @@ pub enum LoopMode {
 }
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
+pub enum ClipVersion {
+    V1,
+    V2,
+}
+
+#[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum MIDIChannelParam {
     #[name = "All"]
     All,
@@ -123,6 +129,7 @@ pub struct Params {
     pub sample_id: usize,
     pub transport: Transport,
     pub reverse_speed: f32,
+    pub clip_version: ClipVersion,
 }
 
 impl Params {
@@ -132,7 +139,7 @@ impl Params {
 
     pub fn loop_length(&self, data_len: usize) -> f32 {
         let t = &self.transport;
-        match self.loop_length {
+        let length = match self.loop_length {
             TimeOrRatio::Time(time) => match time {
                 TimeValue::Samples(samples) => samples as f32,
                 TimeValue::Seconds(seconds) => seconds as f32 * t.sample_rate as f32,
@@ -151,7 +158,9 @@ impl Params {
                 let len_f32 = data_len as f32;
                 len_f32 * ratio
             }
-        }
+        };
+        debug_assert!(length > 0.0, "loop_length={} self={:?}", length, self);
+        length
     }
 }
 
@@ -193,6 +202,7 @@ impl Default for Params {
             fixed_size_samples: 0,
             sample_id: 0,
             transport: Transport::default(),
+            clip_version: ClipVersion::V1,
         }
     }
 }

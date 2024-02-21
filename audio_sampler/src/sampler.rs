@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use std::io::{BufWriter, Write};
 use std::ops::Add;
 
+use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
 use crate::common_types::{InitParams, Note, Params, RecordingMode};
 use crate::recorder::Recorder;
@@ -102,11 +103,13 @@ impl Channel {
         }
 
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
-        let clip = Clip2::new(
+        let offset = starting_offset(loop_start_percent, self.data.len());
+        let length = params.loop_length(self.data.len());
+        let clip2 = Clip2::new(
             self.now,
-            starting_offset(loop_start_percent, self.data.len()),
+            offset,
             params.speed(),
-            params.loop_length(self.data.len()),
+            length,
             self.data.len() as f32,
             match params.loop_mode {
                 LoopMode::Loop | LoopMode::PlayOnce => clip2::Mode::Loop,
@@ -117,7 +120,8 @@ impl Channel {
             note: note,
             loop_start_percent,
             played: 0.0,
-            clip,
+            clip2,
+            clip: Clip::new(self.now, offset as usize, length as usize, 0, params.speed),
             volume: Volume::new(0.0),
             finished: false,
             last_sample_index: 0,
@@ -201,11 +205,26 @@ impl Channel {
             // [ ] Changing loop start
             // [ ] Improve tests to be able to work on it later
 
+            voice.clip.update_speed(self.now, speed);
             voice
                 .clip
+                .update_length(self.now, (params.loop_length(self.data.len()) as usize).max(1));
+            let offset = ((params.start_offset_percent + voice.loop_start_percent)
+                * self.data.len() as f32)
+                .floor() as usize;
+            voice.clip.update_offset(offset);
+            let index1 = voice.clip.sample_index(self.now, self.data.len());
+            voice
+                .clip2
                 .update_length(self.now, params.loop_length(self.data.len()));
-            voice.clip.update_speed(self.now, speed);
-            let index = voice.clip.offset(self.now).floor() as usize;
+            voice.clip2.update_speed(self.now, speed);
+            let index2 = voice.clip2.offset(self.now).floor() as usize;
+
+            let index = match params.clip_version {
+                crate::common_types::ClipVersion::V1 => index1,
+                crate::common_types::ClipVersion::V2 => index2,
+            };
+
             let value = self.data[index] * voice.volume.value(self.now);
 
             output += value;
@@ -303,7 +322,7 @@ impl Sampler {
     pub fn print_error_info(&self) -> String {
         self.channels[0].recorder().print_error_info()
     }
-    pub fn iter_active_notes(&self) -> impl Iterator<Item = Note> + '_ {
+    pub fn iter_active_notes(&self) -> impl Iterator<Item=Note> + '_ {
         self.channels[0]
             .voices
             .iter()
@@ -337,8 +356,8 @@ impl Sampler {
         }
     }
     fn each<F>(&mut self, f: F)
-    where
-        F: FnMut(&mut Channel),
+        where
+            F: FnMut(&mut Channel),
     {
         self.channels.iter_mut().for_each(f)
     }
@@ -361,7 +380,7 @@ impl Sampler {
 
     pub fn process_sample<'a>(
         &mut self,
-        iter: impl IntoIterator<Item = &'a mut f32>,
+        iter: impl IntoIterator<Item=&'a mut f32>,
         params: &Params,
     ) {
         for (i, sample) in iter.into_iter().enumerate() {
