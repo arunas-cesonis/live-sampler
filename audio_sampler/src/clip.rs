@@ -77,7 +77,6 @@ impl Clip {
             return;
         }
         // many duplicated calculations here!
-        nih_warn!("now={:<8} SPEED: {:<4} -> {:<4}", now, self.speed, speed);
         let offset = self.offset(now);
         self.speed = speed;
         // FIXME: avoid local -> global -> local conversion
