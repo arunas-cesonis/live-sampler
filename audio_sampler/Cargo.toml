@@ -11,6 +11,9 @@ path = "src/lib.rs"
 name = "audio-sampler"
 path = "src/main.rs"
 
+[features]
+clip-version = []
+
 
 [dependencies.nih_plug]
 git = "https://github.com/robbert-vdh/nih-plug"
@@ -21,6 +24,11 @@ git = "https://github.com/robbert-vdh/nih-plug"
 
 #[dependencies.nih_plug_iced]
 #git = "https://github.com/robbert-vdh/nih-plug"
+
+[dev-dependencies.rand]
+version = "0.8.5"
+features = ["small_rng"]
+
 
 [dependencies]
 log = "0.4.20"

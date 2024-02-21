@@ -9,12 +9,15 @@ mod test {
     pub fn one_to_ten() -> Vec<f32> {
         (1..=10).map(|x| x as f32).collect()
     }
+
     pub fn one_to_five() -> Vec<f32> {
         (1..=5).map(|x| x as f32).collect()
     }
+
     pub fn ten_tens() -> Vec<f32> {
         vec![100.0; 10]
     }
+
     pub fn five_tens() -> Vec<f32> {
         vec![100.0; 5]
     }
@@ -48,6 +51,7 @@ mod test {
         now: usize,
         cmds: Vec<(usize, Cmd)>,
     }
+
     impl Host {
         fn new(params: Params) -> Self {
             Host {
@@ -67,8 +71,8 @@ mod test {
         }
 
         fn run_input<I>(&mut self, input: I) -> Vec<f32>
-        where
-            I: IntoIterator<Item = f32>,
+            where
+                I: IntoIterator<Item=f32>,
         {
             input
                 .into_iter()
@@ -152,9 +156,9 @@ mod test {
             output,
             vec![
                 one_to_ten(),
-                vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 100.0, 100.0, 100.0]
+                vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 100.0, 100.0, 100.0],
             ]
-            .concat()
+                .concat()
         );
 
         // record first 10 samples, then wait for 2 samples and PlayOnce with loop length 100%
@@ -172,9 +176,9 @@ mod test {
             vec![
                 one_to_ten(),
                 vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-                vec![9.0, 10.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+                vec![9.0, 10.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
-            .concat()
+                .concat()
         );
 
         // same as above, but backwards
@@ -186,9 +190,9 @@ mod test {
             vec![
                 one_to_ten(),
                 vec![100.0, 100.0, 10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0],
-                vec![1.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+                vec![1.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
-            .concat()
+                .concat()
         );
     }
 
@@ -223,9 +227,9 @@ mod test {
             vec![
                 one_to_ten.clone(),
                 vec![5.0, 4.0, 3.0, 2.0, 1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
-                vec![100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+                vec![100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
-            .concat()
+                .concat()
         );
     }
 
@@ -294,7 +298,7 @@ mod test {
                 vec![100.0, 100.0],
                 vec![3.0, 4.0, 5.0, 6.0, 7.0, 3.0, 4.0, 5.0],
             ]
-            .concat()
+                .concat()
         );
 
         // record first 10 samples, then play loop length 50% from 80%
@@ -319,7 +323,7 @@ mod test {
                 vec![9.0, 10.0, 1.0, 2.0, 3.0],
                 vec![9.0, 10.0, 1.0, 2.0, 3.0],
             ]
-            .concat()
+                .concat()
         );
     }
 
@@ -357,7 +361,7 @@ mod test {
                 vec![1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
                 vec![1.0, 10.0, 9.0, 8.0],
             ]
-            .concat()
+                .concat()
         );
     }
 
@@ -398,7 +402,7 @@ mod test {
                 vec![1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
                 vec![1.0, 10.0, 9.0, 8.0],
             ]
-            .concat()
+                .concat()
         );
     }
 
@@ -442,6 +446,7 @@ mod test {
             .concat(),
         );
     }
+
     #[test]
     fn test_looping_rev3() {
         let params = Params {
@@ -470,7 +475,7 @@ mod test {
             one_to_five().into_iter().rev().collect(),
             ten_tens(),
         ]
-        .concat();
+            .concat();
         for i in 0..output.len() {
             eprintln!(
                 "i: {} input: {} output: {} expected: {} ",
@@ -478,107 +483,6 @@ mod test {
             );
         }
         assert_eq!(output, expected);
-    }
-
-    #[test]
-    fn test_ping_pong() {
-        let params = Params {
-            loop_mode: LoopMode::PingPong,
-            attack_samples: 0,
-            decay_samples: 0,
-            loop_length: TimeOrRatio::Ratio(1.0),
-            ..base_params()
-        };
-        let mut host = Host::new(params);
-        host.schedule(0, Cmd::StartRecording);
-        host.schedule(10, Cmd::StopRecording);
-        host.schedule(10, Cmd::StartPlaying { start_percent: 0.5 });
-        host.schedule(50, Cmd::StopPlaying);
-        host.schedule(70, Cmd::StartPlaying { start_percent: 0.0 });
-        host.schedule(80, Cmd::StopPlaying);
-        let input = (0..10).map(|x| x as f32).collect::<Vec<_>>();
-        let input = vec![input, vec![0.0; 100]].concat();
-        let output = host.run_input(input);
-
-        let mut i = 0;
-        while i < output.len() {
-            let a = i.min(output.len());
-            let b = (i + 10).min(output.len());
-            let tmp = &output[a..b];
-            eprintln!("{:>4} .. {:>4}: [{:?}]", a, b, tmp);
-            i += 10;
-        }
-    }
-
-    // #[test]
-    fn test_ping_pong_rev() {
-        let params = Params {
-            loop_mode: LoopMode::PingPong,
-            attack_samples: 0,
-            decay_samples: 0,
-            loop_length: TimeOrRatio::Ratio(1.0),
-            ..base_params()
-        };
-        let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
-        let _one_to_five: Vec<_> = (0..5).map(|x| x as f32).collect();
-        let ten_tens = vec![777.0; 10];
-        let input = vec![one_to_ten.clone(), ten_tens.clone(), ten_tens.clone()].concat();
-
-        // record first 10 samples, then PingPong 50%
-        let mut host = Host::new(Params {
-            loop_length: TimeOrRatio::Ratio(1.0),
-            ..params.clone()
-        });
-        host.schedule(0, Cmd::StartRecording);
-        host.schedule(10, Cmd::StopRecording);
-        //
-        let _tmp = host.clone();
-        host.params.speed = -1.0;
-        host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
-        let output = host.run_input(input.clone());
-        assert_eq!(
-            output,
-            vec![
-                one_to_ten.clone(),
-                one_to_ten.clone().into_iter().rev().collect(),
-                one_to_ten.clone(),
-            ]
-            .concat(),
-        );
-    }
-
-    fn test_ping_pong_wrapping_rev() {
-        let params = Params {
-            loop_mode: LoopMode::PingPong,
-            attack_samples: 0,
-            decay_samples: 0,
-            loop_length: TimeOrRatio::Ratio(1.0),
-            ..base_params()
-        };
-        let one_to_ten: Vec<_> = (0..10).map(|x| x as f32).collect();
-        let one_to_five: Vec<_> = (0..5).map(|x| x as f32).collect();
-        let ten_tens = vec![777.0; 10];
-        let input = vec![one_to_ten.clone(), ten_tens.clone(), ten_tens.clone()].concat();
-
-        let mut host = Host::new(Params {
-            loop_length: TimeOrRatio::Ratio(0.5),
-            ..params.clone()
-        });
-        host.schedule(0, Cmd::StartRecording);
-        host.schedule(10, Cmd::StopRecording);
-        host.params.speed = -1.0;
-        host.schedule(10, Cmd::StartPlaying { start_percent: 0.8 });
-        let output = host.run_input(input.clone());
-        assert_eq!(
-            output,
-            vec![
-                one_to_ten.clone(),
-                vec![2.0, 1.0, 0.0, 9.0, 8.0],
-                vec![8.0, 9.0, 0.0, 1.0, 2.0],
-                vec![8.0, 9.0, 0.0, 1.0, 2.0]
-            ]
-            .concat(),
-        );
     }
 
     #[test]
@@ -602,31 +506,6 @@ mod test {
         host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(input.clone());
         assert_eq!(input, output);
-    }
-
-    // not yet implemented
-    #[test]
-    fn test_ping_pong_2() {
-        let params = Params {
-            loop_mode: LoopMode::PingPong,
-            attack_samples: 0,
-            decay_samples: 0,
-            loop_length: TimeOrRatio::Ratio(1.0),
-            ..base_params()
-        };
-        let ten_tens = vec![777.0; 100];
-        let input = vec![one_to_ten().clone(), ten_tens.clone(), ten_tens.clone()].concat();
-
-        let mut host = Host::new(Params {
-            loop_length: TimeOrRatio::Ratio(1.0),
-            ..params.clone()
-        });
-        host.schedule(0, Cmd::StartRecording);
-        host.schedule(10, Cmd::StopRecording);
-        let tmp = host.clone();
-        host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
-        let output = host.run_input(input.clone());
-        eprintln!("{:?}", output);
     }
 
     #[test]
@@ -662,37 +541,117 @@ mod test {
         }
     }
 
+    #[derive(Clone, Debug)]
+    struct EasyHost {
+        pub sampler: Sampler,
+        pub params: Params,
+        pub output: Vec<f32>,
+    }
+
+    impl Default for EasyHost {
+        fn default() -> Self {
+            Self {
+                sampler: Sampler::new(1, &InitParams::default()),
+                params: Params {
+                    loop_mode: LoopMode::Loop,
+                    attack_samples: 0,
+                    decay_samples: 0,
+                    loop_length: TimeOrRatio::Ratio(1.0),
+                    recording_mode: RecordingMode::NoteTriggered,
+                    ..Params::default()
+                },
+                output: vec![],
+            }
+        }
+    }
+
+    impl EasyHost {
+        pub fn run(&mut self, n: usize) -> Vec<f32> {
+            self.run_input(std::iter::repeat(0.0).take(n))
+        }
+        pub fn record<I>(&mut self, input: I) -> Vec<f32>
+            where
+                I: IntoIterator<Item=f32>,
+        {
+            self.start_recording();
+            let out = self.run_input(input);
+            self.stop_recording();
+            out
+        }
+        pub fn play(&mut self, n: usize) -> Vec<f32> {
+            self.start_playing(0.0);
+            let out = self.run(n);
+            self.stop_playing();
+            out
+        }
+        pub fn run_input<I>(&mut self, input: I) -> Vec<f32>
+            where
+                I: IntoIterator<Item=f32>,
+        {
+            let mut output = vec![];
+            for mut x in input {
+                let mut frame = vec![&mut x];
+                self.sampler.process_frame(&mut frame, &self.params);
+                let y = *frame[0];
+                self.output.push(y);
+                output.push(y);
+            }
+            output
+        }
+        pub fn start_playing(&mut self, start_position: f32) {
+            self.sampler
+                .start_playing(start_position, Note::new(0, 0), 1.0, &self.params);
+        }
+        pub fn stop_playing(&mut self) {
+            self.sampler.stop_playing(Note::new(0, 0), &self.params);
+        }
+        pub fn start_recording(&mut self) {
+            self.sampler.start_recording(&self.params);
+        }
+        pub fn stop_recording(&mut self) {
+            self.sampler.stop_recording(&self.params);
+        }
+    }
+
     #[test]
-    fn test_loop_length() {
-        let params = Params {
-            loop_length: TimeOrRatio::Time(TimeValue::QuarterNotes(1.0)),
-            loop_mode: LoopMode::Loop,
-            transport: Transport {
-                tempo: 15.0,
-                sample_rate: 1.0,
-                pos_samples: 0.0,
-                ..Transport::default()
-            },
-            ..base_params()
-        };
-        let mut host = Host::new(params);
-        host.schedule(0, Cmd::StartRecording);
-        let mut input = one_to_ten();
-        host.schedule(0, Cmd::StartRecording);
-        host.schedule(input.len(), Cmd::StopRecording);
-        host.schedule(input.len(), Cmd::StartPlaying { start_percent: 0.0 });
-        input.resize(input.len() + 10, 0.0);
-        let output = host.run_input(input.clone());
+    fn test_ping_pong() {
+        let mut h = EasyHost::default();
+        h.record(one_to_ten());
+        h.params.loop_mode = LoopMode::PingPong;
+        h.start_playing(0.0);
+        eprintln!("{:?}", h.run(30));
+    }
+
+    #[test]
+    fn test_updating_params() {
+        let mut h = EasyHost::default();
+        h.record(one_to_ten());
+        h.start_playing(0.0);
+
+        assert_eq!(h.run(3), vec![1.0, 2.0, 3.0]);
+        assert_eq!(h.run(7), vec![4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
+
+        assert_eq!(h.run(3), vec![1.0, 2.0, 3.0]);
+        h.params.loop_length = TimeOrRatio::Ratio(0.5);
+        assert_eq!(h.run(7), vec![4.0, 5.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
+
+        assert_eq!(h.run(3), vec![1.0, 2.0, 3.0]);
+        h.params.loop_length = TimeOrRatio::Ratio(0.3);
+        assert_eq!(h.run(7), vec![1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0]);
+
+        assert_eq!(h.run(3), vec![2.0, 3.0, 1.0]);
+        h.params.reverse_speed = -1.0;
+        assert_eq!(h.run(7), vec![1.0, 3.0, 2.0, 1.0, 3.0, 2.0, 1.0]);
+
+        h.params.loop_length = TimeOrRatio::Ratio(1.0);
+        eprintln!("{:?}", h);
+        assert_eq!(h.run(7), vec![2.0, 1.0, 10.0, 9.0, 8.0, 7.0, 6.0]);
+
+        h.params.loop_mode = LoopMode::PingPong;
 
         assert_eq!(
-            output,
-            vec![
-                one_to_ten(),
-                input[0..4].to_vec(),
-                input[0..4].to_vec(),
-                input[0..2].to_vec()
-            ]
-            .concat()
+            h.run(10),
+            vec![5.0, 4.0, 3.0, 2.0, 1.0, 10.0, 9.0, 8.0, 7.0, 6.0]
         );
     }
 }

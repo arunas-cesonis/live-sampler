@@ -1,23 +1,30 @@
+use crate::clip2::Clip2;
+use nih_plug::{nih_trace, nih_warn};
 use std::fmt::Debug;
+use std::io::{BufWriter, Write};
+use std::ops::Add;
 
 use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
+
 use crate::common_types::{InitParams, Note, Params, RecordingMode};
-use crate::recorder;
 use crate::recorder::Recorder;
 use crate::time_value::{TimeOrRatio, TimeValue};
 use crate::utils::normalize_offset;
-use crate::voice::Voice;
+use crate::voice::{Player, Voice};
 use crate::volume::Volume;
+use crate::{clip2, recorder};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Channel {
+    pub(crate) index: usize,
     pub(crate) data: Vec<f32>,
     pub(crate) voices: Vec<Voice>,
     pub(crate) now: usize,
     pub(crate) passthru_on: bool,
     pub(crate) passthru_volume: Volume,
     pub(crate) recorder: Recorder,
+    pub(crate) next_voice_id: usize,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -55,14 +62,16 @@ impl Channel {
         self.passthru_volume = Volume::new(0.0);
         self.recorder = Recorder::new();
     }
-    fn new(params: &InitParams) -> Self {
+    fn new(params: &InitParams, index: usize) -> Self {
         Channel {
+            index,
             data: vec![],
             voices: vec![],
             now: 0,
             passthru_on: false,
             passthru_volume: Volume::new(if params.auto_passthru { 1.0 } else { 0.0 }),
             recorder: Recorder::new(),
+            next_voice_id: 0,
         }
     }
 
@@ -95,19 +104,29 @@ impl Channel {
         }
 
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
-        let offset = loop_start_percent * self.data.len() as f32;
-        let length: f32 = params.loop_length(self.data.len());
+        let offset = starting_offset(loop_start_percent, self.data.len());
+        let length = params.loop_length(self.data.len());
+        let clip2 = Clip2::new(
+            self.now,
+            offset,
+            params.speed(),
+            length,
+            self.data.len() as clip2::T,
+            match params.loop_mode {
+                LoopMode::Loop | LoopMode::PlayOnce => clip2::Mode::Loop,
+                LoopMode::PingPong => clip2::Mode::PingPong,
+            },
+        );
         let mut voice = Voice {
-            note,
+            note: note,
             loop_start_percent,
             played: 0.0,
-            clip: Clip::new(self.now, offset as usize, length as usize, 0, params.speed),
-            ping_pong_speed: 1.0,
+            clip2,
             volume: Volume::new(0.0),
             finished: false,
             last_sample_index: 0,
         };
-        eprintln!("now={} start playing voice={:?}", self.now, voice);
+        self.next_voice_id += 1;
         voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
         self.handle_passthru(params);
@@ -121,6 +140,9 @@ impl Channel {
             .iter()
             .position(|v| v.note == note && !v.finished)
         {
+            {
+                let voice = &self.voices[i];
+            }
             self.finish_voice(self.now, i, params);
             self.handle_passthru(params);
         }
@@ -170,32 +192,34 @@ impl Channel {
             if Self::should_remove_voice(voice, params) {
                 continue;
             }
-
             let speed = params.speed();
 
-            let len_f32 = self.data.len() as f32;
+            // README
+            // Changing length at sample rate seems to work ok for both modes
+            //
+            // Next
+            // [x] Improve loop length UX slighly
+            // [x] Check if code main branch is better at responding to loop length automation
+            // [x] Changing speed
+            // [ ] Changing mode
+            // [ ] Changing loop start
+            // [ ] Improve tests to be able to work on it later
 
-            voice.clip.update_speed(self.now, speed);
             voice
-                .clip
-                .update_length(self.now, params.loop_length(self.data.len()) as usize);
-            let offset = ((params.start_offset_percent + voice.loop_start_percent) * len_f32)
-                .floor() as usize;
-            voice.clip.update_offset(offset);
-            let index = voice.clip.sample_index(self.now, self.data.len());
+                .clip2
+                .update_length(self.now, params.loop_length(self.data.len()) as clip2::T);
+            voice.clip2.update_speed(self.now, speed);
+            let index = voice.clip2.offset(self.now).floor() as usize;
+
             let value = self.data[index] * voice.volume.value(self.now);
-            // eprintln!(
-            //     "self.now={} play value={} voice={:?}",
-            //     self.now, value, voice
-            // );
 
             output += value;
-            voice.played += speed;
+            voice.played += params.speed();
             voice.last_sample_index = index;
 
             if !voice.finished
                 && params.loop_mode == LoopMode::PlayOnce
-                && voice.played.abs() >= voice.clip.length() as f32
+                && voice.played.abs() >= params.loop_length(self.data.len()).floor()
             {
                 finished.push(i);
             }
@@ -203,6 +227,9 @@ impl Channel {
 
         // remove voices that are finished and mute
         while let Some(j) = finished.pop() {
+            {
+                let voice = &self.voices[j];
+            }
             self.finish_voice(self.now, j, params);
         }
 
@@ -217,6 +244,9 @@ impl Channel {
 
         // remove voices that are finished and mute
         while let Some(j) = removed.pop() {
+            {
+                let voice = &self.voices[j];
+            }
             self.voices.remove(j);
         }
         output
@@ -278,7 +308,7 @@ impl Sampler {
     pub fn print_error_info(&self) -> String {
         self.channels[0].recorder().print_error_info()
     }
-    pub fn iter_active_notes(&self) -> impl Iterator<Item = Note> + '_ {
+    pub fn iter_active_notes(&self) -> impl Iterator<Item=Note> + '_ {
         self.channels[0]
             .voices
             .iter()
@@ -306,12 +336,14 @@ impl Sampler {
 
     pub fn new(channel_count: usize, params: &InitParams) -> Self {
         Self {
-            channels: vec![Channel::new(&params); channel_count],
+            channels: (0..channel_count)
+                .map(|i| Channel::new(params, i))
+                .collect(),
         }
     }
     fn each<F>(&mut self, f: F)
-    where
-        F: FnMut(&mut Channel),
+        where
+            F: FnMut(&mut Channel),
     {
         self.channels.iter_mut().for_each(f)
     }
@@ -334,7 +366,7 @@ impl Sampler {
 
     pub fn process_sample<'a>(
         &mut self,
-        iter: impl IntoIterator<Item = &'a mut f32>,
+        iter: impl IntoIterator<Item=&'a mut f32>,
         params: &Params,
     ) {
         for (i, sample) in iter.into_iter().enumerate() {

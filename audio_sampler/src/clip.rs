@@ -3,15 +3,15 @@ use crate::utils::normalize_offset;
 #[derive(Debug, Clone)]
 pub struct Clip {
     // base index of where clip plays from
-    offset: usize,
+    pub offset: usize,
     // length of the slice played
-    length: usize,
+    pub length: usize,
     // accumulated offset adjustment
-    local_adjustment: usize,
+    pub local_adjustment: usize,
     // sample number of when the clip was last updated
-    updated_at: usize,
+    pub updated_at: usize,
     // speed of the clip
-    speed: f32,
+    pub speed: f32,
     //
     // given the above and current time 'now' sample index played is calculated as
     //
@@ -32,7 +32,7 @@ impl Clip {
         Self {
             updated_at: now,
             offset,
-            length,
+            length: length.max(1),
             local_adjustment: offset_adjustment,
             speed,
         }
@@ -54,7 +54,13 @@ impl Clip {
         ///
         // (local_offset, _) = ping_pong3(local_offset, self.length as f32, self.speed);
         let local_offset = normalize_offset(local_offset, self.length as f32);
-        debug_assert!(local_offset >= 0.0, "local_offset={}", local_offset);
+        debug_assert!(
+            local_offset >= 0.0,
+            "local_offset={} now={} self={:?}",
+            local_offset,
+            now,
+            self
+        );
         local_offset.abs().floor() as usize
     }
 
@@ -76,6 +82,7 @@ impl Clip {
     }
 
     pub fn update_length(&mut self, now: usize, new_length: usize) {
+        debug_assert!(new_length > 0, "new_length={} now={} self={:?}", new_length, now, self);
         if self.length == new_length {
             return;
         }
@@ -101,8 +108,8 @@ mod test {
     use super::*;
 
     fn print_lines<A>(v: Vec<A>, per_line: usize) -> String
-    where
-        A: std::fmt::Debug,
+        where
+            A: std::fmt::Debug,
     {
         let mut i = 0;
         let mut out = String::new();
