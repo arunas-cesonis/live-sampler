@@ -123,7 +123,6 @@ impl Channel {
             last_sample_index: 0,
         };
         self.next_voice_id += 1;
-        nih_warn!("now={} adding voice={:?}", self.now, voice);
         voice.volume.to(self.now, params.attack_samples, velocity);
         self.voices.push(voice);
         self.handle_passthru(params);
@@ -139,7 +138,6 @@ impl Channel {
         {
             {
                 let voice = &self.voices[i];
-                nih_warn!("now={} finished note-off voice={:?}", self.now, voice);
             }
             self.finish_voice(self.now, i, params);
             self.handle_passthru(params);
@@ -197,14 +195,15 @@ impl Channel {
             //
             // Next
             // [x] Improve loop length UX slighly
-            // [ ] Check if code main branch is better at responding to loop length automation
-            // [ ] Changing speed
+            // [x] Check if code main branch is better at responding to loop length automation
+            // [x] Changing speed
             // [ ] Changing mode
             // [ ] Changing loop start
 
             voice
                 .clip
                 .update_length(self.now, params.loop_length(self.data.len()));
+            voice.clip.update_speed(self.now, speed);
             let index = voice.clip.offset(self.now).floor() as usize;
             let value = self.data[index] * voice.volume.value(self.now);
 
@@ -224,7 +223,6 @@ impl Channel {
         while let Some(j) = finished.pop() {
             {
                 let voice = &self.voices[j];
-                nih_warn!("now={} finished play once voice={:?}", self.now, voice);
             }
             self.finish_voice(self.now, j, params);
         }
@@ -242,7 +240,6 @@ impl Channel {
         while let Some(j) = removed.pop() {
             {
                 let voice = &self.voices[j];
-                nih_warn!("now={} removing voice={:?}", self.now, voice);
             }
             self.voices.remove(j);
         }
