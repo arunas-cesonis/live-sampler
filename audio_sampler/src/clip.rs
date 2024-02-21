@@ -162,6 +162,79 @@ impl Clip {
 
 #[cfg(test)]
 mod test {
+    use rand::prelude::SmallRng;
+    use rand::{RngCore, SeedableRng};
+
+    fn rand_f32(rng: &mut SmallRng) -> f32 {
+        let x = rng.next_u32() as f32 / u32::MAX as f32;
+        x
+    }
+
+    const DEFAULT_PRECISION: f32 = 0.0001;
+
+    fn same(x: f32, y: f32) -> bool {
+        (x - y).abs() < DEFAULT_PRECISION
+    }
+
+    #[test]
+    fn test_basic() {
+        let mut rng = SmallRng::from_seed([0; 32]);
+        let mut clip = crate::clip::Clip {
+            since: 0,
+            start: 40.0,
+            speed: 0.5,
+            length: 100.0,
+            data_length: 1000.0,
+            mode: crate::clip::Mode::PingPong,
+            shift: 0.0,
+        };
+        let mut prev = clip.start;
+        #[derive(Default, Debug)]
+        struct Count {
+            max_more: f32,
+            max_less: f32,
+            more: usize,
+            less: usize,
+            same: usize,
+            changes: usize,
+        }
+        let mut count = Count::default();
+        for i in 0..4410 {
+            if rng.next_u32() % 25 == 0 {
+                let speed = rand_f32(&mut rng) * 2.0 - 1.0;
+                let speed = speed * 2.0;
+                count.changes += 1;
+                clip.update_speed(if i > 0 { i - 1 } else { i }, speed);
+            }
+            let x = clip.offset(i);
+            let clip_x = clip.clip_offset(i);
+            let dx = x - prev;
+            prev = x;
+
+            let ok = if same(dx.abs(), clip.speed.abs()) {
+                count.same += 1;
+                "[  ]"
+            } else {
+                let d = dx.abs() - clip.speed.abs();
+                if d > 0.0 {
+                    count.more += 1;
+                    count.max_more = count.max_more.max(d);
+                    "[XX]"
+                } else {
+                    count.less += 1;
+                    count.max_less = count.max_less.min(d);
+                    "[--]"
+                }
+            };
+
+            eprintln!(
+                "{} i={:<5} x={:<8.3} clip_x={:<8.3} dx={:<8.3} length={:<8.3} speed={:<8.3} shift={:<8.3}",
+                ok, i, x, clip_x, dx, clip.length, clip.speed, clip.shift
+            );
+        }
+        eprintln!("count={:?}", count);
+    }
+
     #[test]
     fn test_update() {
         let mut clip = crate::clip::Clip {
