@@ -1,4 +1,5 @@
 #![allow(unused)]
+#![feature(extend_one)]
 
 use std::sync::Arc;
 
@@ -7,11 +8,7 @@ use nih_plug_vizia::vizia::entity;
 use nih_plug_vizia::vizia::prelude::Role::Time;
 use nih_plug_vizia::ViziaState;
 use num_traits::ToPrimitive;
-
-use crate::common_types::{
-    Info, InitParams, LoopModeParam, MIDIChannelParam, Note, Params as SamplerParams,
-    RecordingMode, VersionedWaveformSummary,
-};
+use crate::common_types::{Info, InitParams, LoopModeParam, MIDIChannelParam, Note, Params as SamplerParams, RecordingMode, VersionedWaveformSummary};
 use crate::editor_vizia::DebugData;
 use crate::sampler::{LoopMode, Sampler};
 use crate::time_value::{calc_samples_per_bar, TimeOrRatio, TimeOrRatioUnit, TimeUnit, TimeValue};
@@ -19,6 +16,7 @@ use crate::utils::normalize_offset;
 
 // mod editor;
 mod clip;
+mod clip2;
 mod common_types;
 mod editor_vizia;
 mod recorder;
@@ -93,14 +91,12 @@ impl Plugin for AudioSampler {
         let data = editor_vizia::Data {
             params: self.params.clone(),
             debug_data_out: self.debug_data_out.clone(),
-            xy: (0.0, 0.0),
-            y: 0.0,
-            x: 0.0,
             peak_meter: self.peak_meter.clone(),
         };
 
         editor_vizia::create(self.params.editor_state.clone(), data)
     }
+
 
     fn initialize(
         &mut self,
@@ -135,9 +131,6 @@ impl Plugin for AudioSampler {
                 }
                 #[cfg(debug_assertions)]
                 nih_warn!("event: {:?}", event);
-                //self.debug_println(format_args!("{:?}", event));
-                //nih_warn!("event {:?}", event);
-                // assert!(event.voice_id().is_none());
                 match event {
                     NoteEvent::NoteOn {
                         velocity,
@@ -210,12 +203,6 @@ impl Plugin for AudioSampler {
                     self.update_waveform();
                     self.last_waveform_updated = self.last_frame_recorded;
                 }
-                let debug_message = if self.params.show_debug_data.value() {
-                    let message = mk_message(&self.sampler, params);
-                    message
-                } else {
-                    None
-                };
                 let voice_info = self.sampler.get_voice_info(params);
                 let info = Info {
                     voices: voice_info,
@@ -223,10 +210,7 @@ impl Plugin for AudioSampler {
                     data_len: self.sampler.get_data_len(),
                     waveform_summary: self.waveform_summary.clone(),
                 };
-                self.debug_data_in.lock().write(DebugData {
-                    info,
-                    message: debug_message,
-                });
+                self.debug_data_in.lock().write(DebugData { info });
 
                 let amplitude = (frame.iter().fold(0.0, |z, x| z + **x) / frame.len() as f32).abs();
 
@@ -251,8 +235,6 @@ impl Plugin for AudioSampler {
 pub struct AudioSamplerParams {
     #[id = "auto_passthru"]
     pub auto_passthru: BoolParam,
-    #[id = "show_debug_data"]
-    pub show_debug_data: BoolParam,
     #[id = "speed"]
     pub speed: FloatParam,
     #[id = "attack"]
@@ -261,8 +243,12 @@ pub struct AudioSamplerParams {
     pub decay: FloatParam,
     #[id = "loop_mode"]
     pub loop_mode: EnumParam<LoopModeParam>,
-    #[id = "loop_length"]
-    pub loop_length: FloatParam,
+    #[id = "loop_length_percent"]
+    pub loop_length_percent: FloatParam,
+    #[id = "loop_length_time"]
+    pub loop_length_time: FloatParam,
+    #[id = "loop_length_sync"]
+    pub loop_length_sync: FloatParam,
     #[id = "start_offset"]
     pub loop_length_unit: EnumParam<TimeOrRatioUnit>,
     #[id = "loop_length_unit"]
@@ -280,14 +266,14 @@ pub struct AudioSamplerParams {
 }
 
 const ATTACK_DECAY_SKEW_FACTOR: f32 = 0.25;
-const LOOP_LENGTH_SKEW_FACTOR: f32 = 1.0;
+const LOOP_LENGTH_SKEW_FACTOR: f32 = 0.5;
+const LOOP_LENGTH_SKEW_SYNC: f32 = 0.25;
 
 impl Default for AudioSamplerParams {
     fn default() -> Self {
         Self {
             editor_state: editor_vizia::default_state(),
             auto_passthru: BoolParam::new("Pass through", true),
-            show_debug_data: BoolParam::new("Show debug data", false),
             speed: FloatParam::new(
                 "Speed",
                 1.0,
@@ -305,7 +291,7 @@ impl Default for AudioSamplerParams {
                     factor: ATTACK_DECAY_SKEW_FACTOR,
                 },
             )
-            .with_unit(" ms"),
+                .with_unit(" ms"),
             decay: FloatParam::new(
                 "Decay",
                 0.1,
@@ -315,25 +301,47 @@ impl Default for AudioSamplerParams {
                     factor: ATTACK_DECAY_SKEW_FACTOR,
                 },
             )
-            .with_unit(" ms"),
+                .with_unit(" ms"),
             midi_channel: EnumParam::new("MIDI channel", MIDIChannelParam::All),
             loop_mode: EnumParam::new("Loop mode", LoopModeParam::Loop),
             loop_length_unit: EnumParam::new("Loop length unit", TimeOrRatioUnit::Ratio),
             recording_mode: EnumParam::new("Recording mode", RecordingMode::default()),
-            loop_length: FloatParam::new(
-                "Loop length",
-                1.0,
-                FloatRange::Linear {
-                    min: 0.125,
+            loop_length_percent: FloatParam::new(
+                "Loop length (%)",
+                100.0,
+                FloatRange::Skewed {
+                    min: 0.001,
                     max: 100.0,
+                    factor: LOOP_LENGTH_SKEW_FACTOR,
                 },
-            ),
+            )
+                .with_unit("%"),
+            loop_length_time: FloatParam::new(
+                "Loop length (seconds)",
+                1.0,
+                FloatRange::Skewed {
+                    min: 0.001,
+                    max: 100.0,
+                    factor: LOOP_LENGTH_SKEW_FACTOR,
+                },
+            )
+                .with_unit("s"),
+            loop_length_sync: FloatParam::new(
+                "Loop length (16th notes)",
+                4.0,
+                FloatRange::Skewed {
+                    min: 0.125,
+                    max: 16.0,
+                    factor: LOOP_LENGTH_SKEW_SYNC,
+                },
+            )
+                .with_unit(" 1/16 notes"),
             start_offset: FloatParam::new(
                 "Start offset",
                 0.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
-            .with_unit(" %"),
+                .with_unit(" %"),
             volume: FloatParam::new("Gain", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
         }
     }
@@ -432,9 +440,18 @@ impl AudioSampler {
     }
 
     fn loop_length(&self) -> TimeOrRatio {
-        let value = self.params.loop_length.smoothed.next();
         let unit = self.params.loop_length_unit.value();
-        TimeOrRatio::from_unit_value(unit, value)
+        match unit {
+            TimeOrRatioUnit::Ratio => {
+                TimeOrRatio::Ratio(self.params.loop_length_percent.value() / 100.0)
+            }
+            TimeOrRatioUnit::Seconds => {
+                TimeOrRatio::Time(TimeValue::Seconds(self.params.loop_length_time.value()))
+            }
+            TimeOrRatioUnit::SixteenthNotes => TimeOrRatio::Time(TimeValue::QuarterNotes(
+                self.params.loop_length_sync.value() / 4.0,
+            )),
+        }
     }
 
     fn sampler_params(&self, sample_id: usize, transport: &Transport) -> SamplerParams {
@@ -492,60 +509,6 @@ impl AudioSampler {
             waveform_summary: self.sampler.get_waveform_summary(940),
         });
     }
-}
-
-fn mk_message(sampler: &Sampler, params: &SamplerParams) -> Option<String> {
-    let pos_samples = params.transport.pos_samples;
-    let samples_per_bar = TimeValue::bars(1.0).as_samples(&params.transport);
-    let current_bar = (pos_samples / samples_per_bar).floor();
-    let mut tmp = vec![];
-    tmp.push((
-        "transport_pos_samples",
-        format!("{:.3}", params.transport.pos_samples),
-    ));
-    tmp.push((
-        "sample_rate",
-        format!("{:.3}", params.transport.sample_rate),
-    ));
-    tmp.push(("tempo", format!("{:.3}", params.transport.tempo)));
-    tmp.push((
-        "time_sig_numerator",
-        format!("{:.3}", params.transport.time_sig_numerator),
-    ));
-    tmp.push((
-        "time_sig_denominator",
-        format!("{:.3}", params.transport.time_sig_denominator),
-    ));
-    tmp.push((
-        "fixed_size_samples",
-        format!("{:.3}", params.fixed_size_samples),
-    ));
-    tmp.push((
-        "sampler.channels[0].data.len()",
-        format!("{:.3}", sampler.channels[0].data.len()),
-    ));
-    tmp.push(("samples_per_bar", format!("{:.3}", samples_per_bar)));
-    tmp.push(("current_bar", format!("{:.3}", current_bar)));
-    tmp.push(("is_recording", format!("{:?}", sampler.is_recording())));
-    tmp.push(("errors", format!("{}", sampler.print_error_info())));
-    tmp.push((
-        "recorder state",
-        format!("{:?}", sampler.channels[0].recorder.state),
-    ));
-    tmp.push((
-        "voices",
-        format!("{}", sampler.get_voice_info(params).len()),
-    ));
-    tmp.push((
-        "bar_offset",
-        format!("{:.3}", normalize_offset(pos_samples, samples_per_bar)),
-    ));
-    let mut res = String::new();
-    for (k, v) in tmp {
-        res.push_str(&format!("{}={}\n", k, v));
-    }
-
-    Some(res)
 }
 
 impl ClapPlugin for AudioSampler {

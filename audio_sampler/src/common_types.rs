@@ -95,15 +95,15 @@ pub enum LoopModeParam {
     PlayOnce,
     #[name = "Loop"]
     Loop,
-    // #[name = "Ping pong"]
-    // PingPong,
+    #[name = "Ping pong"]
+    PingPong,
 }
 
 impl LoopMode {
     pub fn from_param(param: LoopModeParam) -> Self {
         match param {
             LoopModeParam::PlayOnce => LoopMode::PlayOnce,
-            //            LoopModeParam::PingPong => LoopMode::PingPong,
+            LoopModeParam::PingPong => LoopMode::PingPong,
             LoopModeParam::Loop => LoopMode::Loop,
         }
     }
@@ -129,9 +129,10 @@ impl Params {
     pub fn speed(&self) -> f32 {
         self.speed * self.reverse_speed
     }
+
     pub fn loop_length(&self, data_len: usize) -> f32 {
         let t = &self.transport;
-        match self.loop_length {
+        let length = match self.loop_length {
             TimeOrRatio::Time(time) => match time {
                 TimeValue::Samples(samples) => samples as f32,
                 TimeValue::Seconds(seconds) => seconds as f32 * t.sample_rate as f32,
@@ -150,7 +151,9 @@ impl Params {
                 let len_f32 = data_len as f32;
                 len_f32 * ratio
             }
-        }
+        };
+        debug_assert!(length > 0.0 || data_len == 0, "length={} self={:?}", length, self);
+        length.max(1.0)
     }
 }
 
