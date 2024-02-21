@@ -6,6 +6,7 @@ use std::ops::Add;
 
 use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
+
 use crate::common_types::{InitParams, Note, Params, RecordingMode};
 use crate::recorder::Recorder;
 use crate::time_value::{TimeOrRatio, TimeValue};
@@ -121,7 +122,6 @@ impl Channel {
             loop_start_percent,
             played: 0.0,
             clip2,
-            clip: Clip::new(self.now, offset as usize, length as usize, 0, params.speed),
             volume: Volume::new(0.0),
             finished: false,
             last_sample_index: 0,
@@ -205,28 +205,11 @@ impl Channel {
             // [ ] Changing loop start
             // [ ] Improve tests to be able to work on it later
 
-            voice.clip.update_speed(self.now, speed);
-            voice
-                .clip
-                .update_length(self.now, (params.loop_length(self.data.len()) as usize).max(1));
-            let offset = ((params.start_offset_percent + voice.loop_start_percent)
-                * self.data.len() as f32)
-                .floor() as usize;
-            voice.clip.update_offset(offset);
-            let index1 = voice.clip.sample_index(self.now, self.data.len());
             voice
                 .clip2
                 .update_length(self.now, params.loop_length(self.data.len()) as clip2::T);
             voice.clip2.update_speed(self.now, speed);
-            let index2 = voice.clip2.offset(self.now).floor() as usize;
-            if self.index == 0 {
-                nih_warn!("index1={} index2={} d={} voice={:?}", index1, index2, index1 == index2, voice);
-            }
-
-            let index = match params.clip_version {
-                crate::common_types::ClipVersion::V1 => index1,
-                crate::common_types::ClipVersion::V2 => index2,
-            };
+            let index = voice.clip2.offset(self.now).floor() as usize;
 
             let value = self.data[index] * voice.volume.value(self.now);
 
