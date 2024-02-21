@@ -10,7 +10,7 @@ use nih_plug_vizia::ViziaState;
 use num_traits::ToPrimitive;
 
 use crate::common_types::{
-    Info, InitParams, LoopModeParam, MIDIChannelParam, Note, Params as SamplerParams,
+    ClipVersion, Info, InitParams, LoopModeParam, MIDIChannelParam, Note, Params as SamplerParams,
     RecordingMode, VersionedWaveformSummary,
 };
 use crate::editor_vizia::DebugData;
@@ -19,6 +19,7 @@ use crate::time_value::{calc_samples_per_bar, TimeOrRatio, TimeOrRatioUnit, Time
 use crate::utils::normalize_offset;
 
 // mod editor;
+mod clip;
 mod clip2;
 mod common_types;
 mod editor_vizia;
@@ -215,6 +216,7 @@ impl Plugin for AudioSampler {
                     data_len: self.sampler.get_data_len(),
                     waveform_summary: self.waveform_summary.clone(),
                 };
+                self.debug_data_in.lock().write(DebugData { info });
 
                 let amplitude = (frame.iter().fold(0.0, |z, x| z + **x) / frame.len() as f32).abs();
 
@@ -241,6 +243,8 @@ pub struct AudioSamplerParams {
     pub auto_passthru: BoolParam,
     #[id = "speed"]
     pub speed: FloatParam,
+    #[id = "clip_version"]
+    pub clip_version: EnumParam<ClipVersion>,
     #[id = "attack"]
     pub attack: FloatParam,
     #[id = "decay"]
@@ -347,6 +351,7 @@ impl Default for AudioSamplerParams {
             )
             .with_unit(" %"),
             volume: FloatParam::new("Gain", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            clip_version: EnumParam::new("Clip version", ClipVersion::V1),
         }
     }
 }
@@ -447,13 +452,13 @@ impl AudioSampler {
         let unit = self.params.loop_length_unit.value();
         match unit {
             TimeOrRatioUnit::Ratio => {
-                TimeOrRatio::Ratio(self.params.loop_length_percent.smoothed.next() / 100.0)
+                TimeOrRatio::Ratio(self.params.loop_length_percent.value() / 100.0)
             }
-            TimeOrRatioUnit::Seconds => TimeOrRatio::Time(TimeValue::Seconds(
-                self.params.loop_length_time.smoothed.next(),
-            )),
+            TimeOrRatioUnit::Seconds => {
+                TimeOrRatio::Time(TimeValue::Seconds(self.params.loop_length_time.value()))
+            }
             TimeOrRatioUnit::SixteenthNotes => TimeOrRatio::Time(TimeValue::QuarterNotes(
-                self.params.loop_length_sync.smoothed.next() / 4.0,
+                self.params.loop_length_sync.value() / 4.0,
             )),
         }
     }
@@ -489,6 +494,7 @@ impl AudioSampler {
             transport,
             sample_id,
             reverse_speed: if self.reversing { -1.0 } else { 1.0 },
+            clip_version: self.params.clip_version.value(),
         };
         params
     }

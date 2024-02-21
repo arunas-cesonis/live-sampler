@@ -24,7 +24,6 @@ use crate::{utils, AudioSamplerParams};
 #[derive(Debug, Clone, Default)]
 pub struct DebugData {
     pub(crate) info: Info,
-    pub(crate) message: Option<String>,
 }
 
 #[derive(Clone, Lens)]
@@ -404,6 +403,7 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                 VStack::new(cx, |cx| {
                     param_slider1(cx, "Will record", |params| &params.recording_mode);
                     param_slider1(cx, "MIDI channel", |params| &params.midi_channel);
+                    param_slider1(cx, "Clip version", |params| &params.clip_version);
                 })
                 .width(Percentage(25.0));
 
