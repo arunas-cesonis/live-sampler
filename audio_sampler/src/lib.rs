@@ -8,11 +8,7 @@ use nih_plug_vizia::vizia::entity;
 use nih_plug_vizia::vizia::prelude::Role::Time;
 use nih_plug_vizia::ViziaState;
 use num_traits::ToPrimitive;
-
-use crate::common_types::{
-    ClipVersion, Info, InitParams, LoopModeParam, MIDIChannelParam, Note, Params as SamplerParams,
-    RecordingMode, VersionedWaveformSummary,
-};
+use crate::common_types::{Info, InitParams, LoopModeParam, MIDIChannelParam, Note, Params as SamplerParams, RecordingMode, VersionedWaveformSummary};
 use crate::editor_vizia::DebugData;
 use crate::sampler::{LoopMode, Sampler};
 use crate::time_value::{calc_samples_per_bar, TimeOrRatio, TimeOrRatioUnit, TimeUnit, TimeValue};
@@ -95,14 +91,12 @@ impl Plugin for AudioSampler {
         let data = editor_vizia::Data {
             params: self.params.clone(),
             debug_data_out: self.debug_data_out.clone(),
-            xy: (0.0, 0.0),
-            y: 0.0,
-            x: 0.0,
             peak_meter: self.peak_meter.clone(),
         };
 
         editor_vizia::create(self.params.editor_state.clone(), data)
     }
+
 
     fn initialize(
         &mut self,
@@ -243,8 +237,6 @@ pub struct AudioSamplerParams {
     pub auto_passthru: BoolParam,
     #[id = "speed"]
     pub speed: FloatParam,
-    #[id = "clip_version"]
-    pub clip_version: EnumParam<ClipVersion>,
     #[id = "attack"]
     pub attack: FloatParam,
     #[id = "decay"]
@@ -299,7 +291,7 @@ impl Default for AudioSamplerParams {
                     factor: ATTACK_DECAY_SKEW_FACTOR,
                 },
             )
-            .with_unit(" ms"),
+                .with_unit(" ms"),
             decay: FloatParam::new(
                 "Decay",
                 0.1,
@@ -309,7 +301,7 @@ impl Default for AudioSamplerParams {
                     factor: ATTACK_DECAY_SKEW_FACTOR,
                 },
             )
-            .with_unit(" ms"),
+                .with_unit(" ms"),
             midi_channel: EnumParam::new("MIDI channel", MIDIChannelParam::All),
             loop_mode: EnumParam::new("Loop mode", LoopModeParam::Loop),
             loop_length_unit: EnumParam::new("Loop length unit", TimeOrRatioUnit::Ratio),
@@ -323,7 +315,7 @@ impl Default for AudioSamplerParams {
                     factor: LOOP_LENGTH_SKEW_FACTOR,
                 },
             )
-            .with_unit("%"),
+                .with_unit("%"),
             loop_length_time: FloatParam::new(
                 "Loop length (seconds)",
                 1.0,
@@ -333,7 +325,7 @@ impl Default for AudioSamplerParams {
                     factor: LOOP_LENGTH_SKEW_FACTOR,
                 },
             )
-            .with_unit("s"),
+                .with_unit("s"),
             loop_length_sync: FloatParam::new(
                 "Loop length (16th notes)",
                 4.0,
@@ -343,15 +335,14 @@ impl Default for AudioSamplerParams {
                     factor: LOOP_LENGTH_SKEW_SYNC,
                 },
             )
-            .with_unit(" 1/16 notes"),
+                .with_unit(" 1/16 notes"),
             start_offset: FloatParam::new(
                 "Start offset",
                 0.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
-            .with_unit(" %"),
+                .with_unit(" %"),
             volume: FloatParam::new("Gain", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
-            clip_version: EnumParam::new("Clip version", ClipVersion::V1),
         }
     }
 }
@@ -494,7 +485,6 @@ impl AudioSampler {
             transport,
             sample_id,
             reverse_speed: if self.reversing { -1.0 } else { 1.0 },
-            clip_version: self.params.clip_version.value(),
         };
         params
     }

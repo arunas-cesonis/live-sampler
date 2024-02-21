@@ -13,18 +13,6 @@ pub enum LoopMode {
 }
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
-pub enum ClipVersion {
-    V1,
-    V2,
-}
-
-impl Default for ClipVersion {
-    fn default() -> Self {
-        ClipVersion::V2
-    }
-}
-
-#[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum MIDIChannelParam {
     #[name = "All"]
     All,
@@ -135,7 +123,6 @@ pub struct Params {
     pub sample_id: usize,
     pub transport: Transport,
     pub reverse_speed: f32,
-    pub clip_version: ClipVersion,
 }
 
 impl Params {
@@ -208,7 +195,6 @@ impl Default for Params {
             fixed_size_samples: 0,
             sample_id: 0,
             transport: Transport::default(),
-            clip_version: ClipVersion::default(),
         }
     }
 }

@@ -11,6 +11,9 @@ path = "src/lib.rs"
 name = "audio-sampler"
 path = "src/main.rs"
 
+[features]
+clip-version = []
+
 
 [dependencies.nih_plug]
 git = "https://github.com/robbert-vdh/nih-plug"

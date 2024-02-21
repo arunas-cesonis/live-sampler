@@ -30,29 +30,14 @@ pub struct DebugData {
 pub struct Data {
     pub(crate) params: Arc<AudioSamplerParams>,
     pub(crate) debug_data_out: Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>,
-    pub(crate) xy: (f32, f32),
-    pub(crate) x: f32,
-    pub(crate) y: f32,
     pub(crate) peak_meter: Arc<AtomicF32>,
 }
 
 impl Model for Data {
-    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
-        event.map(|editor_event, _| match editor_event {
-            EditorEvent::Choice(i) => {
-                eprintln!("Choice: {}", i);
-                //self.debug_data_out.lock().write().message = format!("Choice: {}", i);
-            }
-            EditorEvent::UpdateX(x) => {
-                self.xy = (*x, self.xy.1);
-                self.x = *x;
-            }
-            EditorEvent::UpdateY(y) => {
-                self.xy = (self.xy.0, *y);
-                self.y = *y;
-            }
-        });
-    }
+//     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+//         event.map(|editor_event, _| match editor_event {
+//         });
+//     }
 }
 
 #[cfg(debug_assertions)]
@@ -68,9 +53,8 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
     ViziaState::new(|| WINDOW_SIZE)
 }
 
-struct WaveformView<X> {
+struct WaveformView {
     debug_data: Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>,
-    x_lens: X,
     image: Cell<Option<(usize, ImageId)>>,
 }
 
@@ -90,29 +74,26 @@ fn display_notes(cx: &mut Context) {
                 .width(Percentage(100.0 / 16.0));
         }
     })
-    .child_left(Stretch(1.0))
-    .child_right(Stretch(1.0))
-    .child_top(Pixels(-20.0))
-    .width(Percentage(100.0))
-    .height(Percentage(100.0));
+        .child_left(Stretch(1.0))
+        .child_right(Stretch(1.0))
+        .child_top(Pixels(-20.0))
+        .width(Percentage(100.0))
+        .height(Percentage(100.0));
 }
 
-impl<X> WaveformView<X>
-where
-    X: Lens<Target = (f32, f32)>,
+impl WaveformView
 {
-    pub fn new<LDebugData>(cx: &mut Context, debug_data_lens: LDebugData, x: X) -> Handle<Self>
-    where
-        LDebugData: Lens<Target = Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>>,
+    pub fn new<LDebugData>(cx: &mut Context, debug_data_lens: LDebugData) -> Handle<Self>
+        where
+            LDebugData: Lens<Target=Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>>,
     {
         Self {
             debug_data: debug_data_lens.get(cx),
-            x_lens: x,
             image: Cell::new(None),
         }
-        .build(cx, |cx| {
-            display_notes(cx);
-        })
+            .build(cx, |cx| {
+                display_notes(cx);
+            })
     }
 
     fn get_image(&self, canvas: &mut Canvas, info: &Info) -> ImageId {
@@ -221,9 +202,7 @@ fn rectangle_path(x: f32, y: f32, w: f32, h: f32) -> Path {
     path
 }
 
-impl<X> View for WaveformView<X>
-where
-    X: 'static + Lens<Target = (f32, f32)>,
+impl View for WaveformView
 {
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
         //self.draw_image(cx, canvas);
@@ -314,9 +293,9 @@ pub enum EditorEvent {
 }
 
 fn loop_length_slider<P, FMap>(cx: &mut Context, unit: TimeOrRatioUnit, lens: FMap)
-where
-    P: Param + 'static,
-    FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
+    where
+        P: Param + 'static,
+        FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
 {
     let title = <TimeOrRatioUnit as Enum>::variants()[unit.to_index()];
     VStack::new(cx, |cx| {
@@ -325,16 +304,16 @@ where
             .width(Stretch(0.75))
             .right(Pixels(10.0));
     })
-    .width(Stretch(1.0))
-    .right(Pixels(10.0))
-    .height(Auto)
-    .display(Data::params.map(move |params| params.loop_length_unit.value() == unit));
+        .width(Stretch(1.0))
+        .right(Pixels(10.0))
+        .height(Auto)
+        .display(Data::params.map(move |params| params.loop_length_unit.value() == unit));
 }
 
 fn param_slider<P, FMap>(cx: &mut Context, title: &str, lens: FMap)
-where
-    P: Param + 'static,
-    FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
+    where
+        P: Param + 'static,
+        FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
 {
     VStack::new(cx, |cx| {
         Label::new(cx, title).top(Pixels(10.0));
@@ -342,15 +321,15 @@ where
             .width(Stretch(0.75))
             .right(Pixels(10.0));
     })
-    .width(Stretch(1.0))
-    .right(Pixels(10.0))
-    .height(Auto);
+        .width(Stretch(1.0))
+        .right(Pixels(10.0))
+        .height(Auto);
 }
 
 fn param_slider1<P, FMap>(cx: &mut Context, title: &str, lens: FMap)
-where
-    P: Param + 'static,
-    FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
+    where
+        P: Param + 'static,
+        FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
 {
     Label::new(cx, title).top(Pixels(10.0));
     ParamSlider::new(cx, Data::params, lens)
@@ -380,11 +359,11 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                         .map(|peak_meter| utils::gain_to_db(peak_meter.load(Ordering::Relaxed))),
                     Some(Duration::from_millis(600)),
                 )
-                .width(Stretch(0.25))
-                .left(Pixels(20.0))
-                .top(Pixels(19.0));
+                    .width(Stretch(0.25))
+                    .left(Pixels(20.0))
+                    .top(Pixels(19.0));
             })
-            .height(Pixels(42.0));
+                .height(Pixels(42.0));
             HStack::new(cx, |cx| {
                 VStack::new(cx, |cx| {
                     param_slider1(cx, "Volume", |params| &params.volume);
@@ -392,20 +371,18 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     param_slider1(cx, "Decay", |params| &params.decay);
                     param_slider1(cx, "Passthru", |params| &params.auto_passthru);
                 })
-                .width(Percentage(25.0));
+                    .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
                     param_slider1(cx, "Speed", |params| &params.speed);
                     param_slider1(cx, "Start offset", |params| &params.start_offset);
                     param_slider1(cx, "Loop mode", |params| &params.loop_mode);
-                    param_slider1(cx, "Decay", |params| &params.decay);
                 })
-                .width(Percentage(25.0));
+                    .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
                     param_slider1(cx, "Will record", |params| &params.recording_mode);
                     param_slider1(cx, "MIDI channel", |params| &params.midi_channel);
-                    param_slider1(cx, "Clip version", |params| &params.clip_version);
                 })
-                .width(Percentage(25.0));
+                    .width(Percentage(25.0));
 
                 VStack::new(cx, |cx| {
                     loop_length_slider(cx, TimeOrRatioUnit::Ratio, |params| {
@@ -422,9 +399,9 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
             });
             //HStack::new(cx, |cx| {
             //});
-            WaveformView::new(cx, Data::debug_data_out, Data::xy).height(Pixels(50.0));
+            WaveformView::new(cx, Data::debug_data_out).height(Pixels(50.0));
         })
-        .border_width(Pixels(10.0));
+            .border_width(Pixels(10.0));
 
         ResizeHandle::new(cx);
     })
