@@ -9,12 +9,15 @@ mod test {
     pub fn one_to_ten() -> Vec<f32> {
         (1..=10).map(|x| x as f32).collect()
     }
+
     pub fn one_to_five() -> Vec<f32> {
         (1..=5).map(|x| x as f32).collect()
     }
+
     pub fn ten_tens() -> Vec<f32> {
         vec![100.0; 10]
     }
+
     pub fn five_tens() -> Vec<f32> {
         vec![100.0; 5]
     }
@@ -48,6 +51,7 @@ mod test {
         now: usize,
         cmds: Vec<(usize, Cmd)>,
     }
+
     impl Host {
         fn new(params: Params) -> Self {
             Host {
@@ -152,7 +156,7 @@ mod test {
             output,
             vec![
                 one_to_ten(),
-                vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 100.0, 100.0, 100.0]
+                vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 100.0, 100.0, 100.0],
             ]
             .concat()
         );
@@ -172,7 +176,7 @@ mod test {
             vec![
                 one_to_ten(),
                 vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-                vec![9.0, 10.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+                vec![9.0, 10.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
             .concat()
         );
@@ -186,7 +190,7 @@ mod test {
             vec![
                 one_to_ten(),
                 vec![100.0, 100.0, 10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0],
-                vec![1.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+                vec![1.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
             .concat()
         );
@@ -223,7 +227,7 @@ mod test {
             vec![
                 one_to_ten.clone(),
                 vec![5.0, 4.0, 3.0, 2.0, 1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
-                vec![100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+                vec![100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
             .concat()
         );
@@ -442,6 +446,7 @@ mod test {
             .concat(),
         );
     }
+
     #[test]
     fn test_looping_rev3() {
         let params = Params {
@@ -639,14 +644,13 @@ mod test {
         assert_eq!(h.run(7), vec![1.0, 3.0, 2.0, 1.0, 3.0, 2.0, 1.0]);
 
         h.params.loop_length = TimeOrRatio::Ratio(1.0);
-        assert_eq!(h.run(7), vec![10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0]);
+        assert_eq!(h.run(7), vec![2.0, 1.0, 10.0, 9.0, 8.0, 7.0, 6.0]);
 
         h.params.loop_mode = LoopMode::PingPong;
 
-        ////// FIXME: the vector below should start with 3.0, not 4.0
         assert_eq!(
             h.run(10),
-            vec![4.0, 3.0, 2.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+            vec![5.0, 4.0, 3.0, 2.0, 1.0, 10.0, 9.0, 8.0, 7.0, 6.0]
         );
     }
 }
