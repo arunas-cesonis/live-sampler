@@ -209,6 +209,11 @@ impl Channel {
                 .clip2
                 .update_length(self.now, params.loop_length(self.data.len()) as clip2::T);
             voice.clip2.update_speed(self.now, speed);
+            voice.clip2.update_data_length(self.now, self.data.len() as clip2::T);
+            voice.clip2.update_mode(self.now, match params.loop_mode {
+                LoopMode::Loop | LoopMode::PlayOnce => clip2::Mode::Loop,
+                LoopMode::PingPong => clip2::Mode::PingPong,
+            });
             let index = voice.clip2.offset(self.now).floor() as usize;
 
             let value = self.data[index] * voice.volume.value(self.now);
