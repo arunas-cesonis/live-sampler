@@ -614,15 +614,6 @@ mod test {
     }
 
     #[test]
-    fn test_ping_pong() {
-        let mut h = EasyHost::default();
-        h.record(one_to_ten());
-        h.params.loop_mode = LoopMode::PingPong;
-        h.start_playing(0.0);
-        eprintln!("{:?}", h.run(30));
-    }
-
-    #[test]
     fn test_updating_params() {
         let mut h = EasyHost::default();
         h.record(one_to_ten());
@@ -644,14 +635,30 @@ mod test {
         assert_eq!(h.run(7), vec![1.0, 3.0, 2.0, 1.0, 3.0, 2.0, 1.0]);
 
         h.params.loop_length = TimeOrRatio::Ratio(1.0);
-        eprintln!("{:?}", h);
         assert_eq!(h.run(7), vec![2.0, 1.0, 10.0, 9.0, 8.0, 7.0, 6.0]);
 
         h.params.loop_mode = LoopMode::PingPong;
 
         assert_eq!(
             h.run(10),
-            vec![5.0, 4.0, 3.0, 2.0, 1.0, 10.0, 9.0, 8.0, 7.0, 6.0]
+            vec![4.0, 3.0, 2.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
         );
+    }
+
+    #[test]
+    fn test_updating_data_length() {
+        let mut h = EasyHost::default();
+        h.record(one_to_ten());
+        h.start_playing(0.0);
+        assert_eq!(h.run(3), vec![1.0, 2.0, 3.0]);
+        h.start_recording();
+        assert_eq!(h.run_input(vec![11., 22., 33.]), vec![4.0, 5.0, 6.0]);
+        h.stop_recording();
+        assert_eq!(h.run(3), vec![11.0, 22.0, 33.0]);
+        assert_eq!(h.run(2), vec![11.0, 22.0]);
+        h.start_recording();
+        assert_eq!(h.run_input(vec![111., 222., 333.]), vec![33.0, 111.0, 222.0]);
+        h.stop_recording();
+        assert_eq!(h.run(3), vec![333.0, 111.0, 222.0]);
     }
 }

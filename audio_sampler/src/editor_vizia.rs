@@ -337,6 +337,7 @@ fn param_slider1<P, FMap>(cx: &mut Context, title: &str, lens: FMap)
         .right(Pixels(10.0));
 }
 
+
 pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         register_noto_sans_bold(cx);
@@ -374,7 +375,7 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
                     param_slider1(cx, "Speed", |params| &params.speed);
-                    param_slider1(cx, "Start offset", |params| &params.start_offset);
+                    //param_slider1(cx, "Start offset", |params| &params.start_offset);
                     param_slider1(cx, "Loop mode", |params| &params.loop_mode);
                 })
                     .width(Percentage(25.0));

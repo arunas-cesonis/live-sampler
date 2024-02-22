@@ -1,5 +1,6 @@
+use log::warn;
 use nih_plug::nih_warn;
-use num_traits::One;
+use num_traits::{Float, One};
 use crate::sampler::LoopMode;
 
 pub type T = f32;
@@ -99,6 +100,25 @@ impl Clip2 {
         self.since = now;
     }
 
+    pub fn update_mode(&mut self, now: usize, mode: Mode) {
+        if mode == self.mode {
+            return;
+        }
+        // many duplicated calculations here!
+        let offset = self.offset(now);
+        self.mode = mode;
+        if let Some(shift) = self.data_to_clip(offset) {
+            if self.is_pingpong_reversing(now) {
+                self.shift = TWO * self.length - shift - ONE;
+            } else {
+                self.shift = shift;
+            }
+        } else {
+            self.shift = ZERO;
+        }
+        self.since = now;
+    }
+
     pub fn update_length(&mut self, now: usize, length: T) {
         if length == self.length {
             return;
@@ -118,6 +138,20 @@ impl Clip2 {
         self.since = now;
     }
 
+
+    pub fn update_data_length(&mut self, now: usize, data_length: T) {
+        if data_length == self.data_length {
+            return;
+        }
+        // many duplicated calculations here!
+        let offset = self.offset(now);
+        self.data_length = data_length;
+        if offset >= self.data_length {
+            self.shift = ZERO;
+            self.since = now;
+        }
+    }
+
     pub fn shift(&self, now: usize) -> Self {
         let mut tmp = self.clone();
         tmp.shift = tmp.offset(now);
@@ -135,7 +169,10 @@ impl Clip2 {
         let r = if s < ZERO { ONE } else { ZERO };
         let dt = self.elapsed(now) as T;
         let x = (self.shift as f32 + (dt + r) * s);
-        let x = match self.mode {
+
+        // eprintln!("{:?}", -0.041839838_f32 + 2314184.0_f32);
+
+        let x1 = match self.mode {
             Mode::Loop => {
                 let x = x % l;
                 if x >= 0.0 {
@@ -153,20 +190,44 @@ impl Clip2 {
                 }
             }
         };
+        // need to clamp x1 due to possible floating poing error, e.g.
+        // -0.041839838_f32 + 2314184.0_f32 = 2314184.0_f32
+        let x1 = x1.min(l - 1.0);
         assert!(
-            x >= 0.0 && x < l,
-            "x={} speed={} length={} elapsed={}",
-            x,
+            x1 >= 0.0 && x1 < l,
+            "x={} speed={} length={} elapsed={} {:#?}",
+            x1,
             s,
             l,
-            dt
+            dt, self
         );
-        x
+        x1
     }
 
     pub fn offset(&self, now: usize) -> T {
         let x = self.clip_offset(now);
         let x = (self.start + x) % (self.data_length as T);
         x
+    }
+}
+
+#[cfg(test)]
+mod test2 {
+    use crate::clip2;
+    use super::*;
+
+    #[test]
+    fn te() {
+        let clip2 = Clip2 {
+            since: 164,
+            start: 0.0,
+            speed: -0.041839838,
+            length: 2314184.0,
+            data_length: 96218.0,
+            mode: Mode::Loop,
+            shift: 0.0,
+        };
+        let index = clip2.offset(164).floor() as usize;
+        eprintln!("index");
     }
 }

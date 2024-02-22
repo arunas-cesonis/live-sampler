@@ -235,28 +235,40 @@ impl Plugin for AudioSampler {
 pub struct AudioSamplerParams {
     #[id = "auto_passthru"]
     pub auto_passthru: BoolParam,
+
     #[id = "speed"]
     pub speed: FloatParam,
+
     #[id = "attack"]
     pub attack: FloatParam,
+
     #[id = "decay"]
     pub decay: FloatParam,
+
     #[id = "loop_mode"]
     pub loop_mode: EnumParam<LoopModeParam>,
+
     #[id = "loop_length_percent"]
     pub loop_length_percent: FloatParam,
+
     #[id = "loop_length_time"]
     pub loop_length_time: FloatParam,
+
     #[id = "loop_length_sync"]
     pub loop_length_sync: FloatParam,
-    #[id = "start_offset"]
-    pub loop_length_unit: EnumParam<TimeOrRatioUnit>,
+
+//    #[id = "start_offset"]
+    //   pub start_offset: FloatParam,
+
     #[id = "loop_length_unit"]
-    pub start_offset: FloatParam,
+    pub loop_length_unit: EnumParam<TimeOrRatioUnit>,
+
     #[id = "volume"]
     pub volume: FloatParam,
+
     #[id = "recording_mode"]
     pub recording_mode: EnumParam<RecordingMode>,
+
     #[id = "midi_channel"]
     pub midi_channel: EnumParam<MIDIChannelParam>,
     /// The editor state, saved together with the parameter state so the custom scaling can be
@@ -336,12 +348,12 @@ impl Default for AudioSamplerParams {
                 },
             )
                 .with_unit(" 1/16 notes"),
-            start_offset: FloatParam::new(
-                "Start offset",
-                0.0,
-                FloatRange::Linear { min: 0.0, max: 1.0 },
-            )
-                .with_unit(" %"),
+            //start_offset: FloatParam::new(
+            //    "Start offset",
+            //    0.0,
+            //    FloatRange::Linear { min: 0.0, max: 1.0 },
+            //)
+            //    .with_unit(" %"),
             volume: FloatParam::new("Gain", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
         }
     }
@@ -474,7 +486,8 @@ impl AudioSampler {
             attack_samples,
             loop_mode: LoopMode::from_param(self.params.loop_mode.value()),
             loop_length: self.loop_length(),
-            start_offset_percent: self.params.start_offset.value(),
+            // start_offset_percent: self.params.start_offset.value(),
+            start_offset_percent: 0.0,
             decay_samples,
             speed: params_speed,
             recording_mode: self.params.recording_mode.value(),
