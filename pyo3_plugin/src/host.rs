@@ -15,7 +15,7 @@ use crate::event::{add_pyo3_note_events, PyO3NoteEvent};
 use crate::source_state::Source;
 
 #[pyfunction(name = "print")]
-#[pyo3(signature = (*args))]
+#[pyo3(signature = (* args))]
 fn host_print(args: &PyTuple) {
     let s = args
         .iter()
@@ -65,8 +65,6 @@ impl Stats {
         self.rt.window_size = self.last_sec.len();
     }
 }
-
-struct State {}
 
 #[derive(Default)]
 pub struct Host {
