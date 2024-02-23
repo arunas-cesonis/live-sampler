@@ -2,9 +2,9 @@
 mod test {
     use std::f32::consts::PI;
 
-    use crate::common_types::{InitParams, Note, Params, RecordingMode, Transport};
+    use crate::common_types::{InitParams, Note, NoteOffBehaviour, Params, RecordingMode};
     use crate::sampler::{LoopMode, Sampler};
-    use crate::time_value::{TimeOrRatio, TimeValue};
+    use crate::time_value::TimeOrRatio;
 
     pub fn one_to_ten() -> Vec<f32> {
         (1..=10).map(|x| x as f32).collect()
@@ -29,6 +29,7 @@ mod test {
             decay_samples: 0,
             loop_length: TimeOrRatio::Ratio(1.0),
             recording_mode: RecordingMode::NoteTriggered,
+            note_off_behavior: NoteOffBehaviour::Decay,
             ..Params::default()
         };
         params
