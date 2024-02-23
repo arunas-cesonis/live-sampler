@@ -18,10 +18,11 @@ pub struct Voice {
     pub clip2: Clip2,
     pub volume: Volume,
     pub finished: bool,
+    pub finished_at: usize,
+    pub is_at_zero_crossing: bool,
+    pub last_sample_value: f32,
+
     // this is only used by the UI to show loop points
     // its hack/workaround for not having loop information easily available
-    pub is_at_zero_crossing: bool,
-    pub waited: usize,
     pub last_sample_index: usize,
-    pub last_sample_value: f32,
 }
