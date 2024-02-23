@@ -82,6 +82,7 @@ impl Channel {
         //eprintln!("now={} stop playing voice={:?}", self.now, voice);
         let channel_index: usize = voice.note.channel.into();
         voice.volume.to(now, params.decay_samples, 0.0);
+        voice.finished_at = now;
         voice.finished = true;
     }
 
@@ -118,7 +119,7 @@ impl Channel {
             volume: Volume::new(0.0),
             finished: false,
             is_at_zero_crossing: false,
-            waited: 0,
+            finished_at: 0,
             last_sample_index: 0,
             last_sample_value: 0.0,
         };
@@ -175,12 +176,11 @@ impl Channel {
         }
     }
 
-    fn should_remove_voice(now: usize, voice: &mut Voice, params: &Params) -> bool {
+    fn should_remove_voice(now: usize, voice: &Voice, params: &Params) -> bool {
         if voice.finished {
             match params.note_off_behavior {
                 crate::common_types::NoteOffBehaviour::ZeroCrossing => {
-                    voice.waited += 1;
-                    if voice.waited >= params.decay_samples {
+                    if now - voice.finished_at >= params.decay_samples {
                         return true;
                     }
                     voice.is_at_zero_crossing
@@ -190,8 +190,7 @@ impl Channel {
                 }
                 crate::common_types::NoteOffBehaviour::DecayAndZeroCrossing => {
                     if !voice.volume.is_static_and_mute() {
-                        voice.waited += 1;
-                        if voice.waited >= params.decay_samples {
+                        if now - voice.finished_at >= params.decay_samples {
                             return true;
                         }
                         voice.is_at_zero_crossing
