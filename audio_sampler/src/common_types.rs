@@ -3,13 +3,29 @@ use std::sync::Arc;
 use nih_plug::prelude::Enum;
 
 use crate::sampler::{VoiceInfo, WaveformSummary};
-use crate::time_value::{TimeOrRatio, TimeUnit, TimeValue};
+use crate::time_value::{TimeOrRatio, TimeValue};
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum LoopMode {
     PlayOnce,
     PingPong,
     Loop,
+}
+
+#[derive(Debug, Enum, PartialEq, Clone, Copy)]
+pub enum NoteOffBehaviour {
+    #[name = "Decay"]
+    Decay,
+    #[name = "Zero crossing"]
+    ZeroCrossing,
+    #[name = "Decay and zero crossing"]
+    DecayAndZeroCrossing,
+}
+
+impl Default for NoteOffBehaviour {
+    fn default() -> Self {
+        NoteOffBehaviour::Decay
+    }
 }
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
@@ -123,6 +139,7 @@ pub struct Params {
     pub sample_id: usize,
     pub transport: Transport,
     pub reverse_speed: f32,
+    pub note_off_behavior: NoteOffBehaviour,
 }
 
 impl Params {
@@ -195,6 +212,7 @@ impl Default for Params {
             fixed_size_samples: 0,
             sample_id: 0,
             transport: Transport::default(),
+            note_off_behavior: NoteOffBehaviour::default(),
         }
     }
 }

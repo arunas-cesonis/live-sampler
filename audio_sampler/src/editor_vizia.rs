@@ -1,25 +1,25 @@
-use atomic_float::AtomicF32;
 use std::cell::Cell;
 use std::f64::consts::PI;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
+use atomic_float::AtomicF32;
 use nih_plug::nih_warn;
 use nih_plug::params::Param;
 use nih_plug::prelude::{Editor, Enum};
+use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 use nih_plug_vizia::assets::register_noto_sans_bold;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
-use nih_plug_vizia::vizia::vg::imgref::Img;
-use nih_plug_vizia::vizia::vg::rgb::RGBA8;
 use nih_plug_vizia::vizia::vg::{Color, ImageId};
 use nih_plug_vizia::vizia::vg::{ImageFlags, ImageSource, Paint, Path, PixelFormat, RenderTarget};
+use nih_plug_vizia::vizia::vg::imgref::Img;
+use nih_plug_vizia::vizia::vg::rgb::RGBA8;
 use nih_plug_vizia::widgets::*;
-use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
-use crate::common_types::Info;
+use crate::{AudioSamplerParams, utils};
+use crate::common_types::{Info, NoteOffBehaviour};
 use crate::time_value::TimeOrRatioUnit;
-use crate::{utils, AudioSamplerParams};
 
 #[derive(Debug, Clone, Default)]
 pub struct DebugData {
@@ -377,6 +377,7 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     param_slider1(cx, "Speed", |params| &params.speed);
                     //param_slider1(cx, "Start offset", |params| &params.start_offset);
                     param_slider1(cx, "Loop mode", |params| &params.loop_mode);
+                    param_slider1(cx, "Note off behaviour", |params| &params.note_off_behavior);
                 })
                     .width(Percentage(25.0));
                 VStack::new(cx, |cx| {

@@ -8,7 +8,8 @@ use nih_plug_vizia::vizia::entity;
 use nih_plug_vizia::vizia::prelude::Role::Time;
 use nih_plug_vizia::ViziaState;
 use num_traits::ToPrimitive;
-use crate::common_types::{Info, InitParams, LoopModeParam, MIDIChannelParam, Note, Params as SamplerParams, RecordingMode, VersionedWaveformSummary};
+
+use crate::common_types::{Info, InitParams, LoopModeParam, MIDIChannelParam, Note, NoteOffBehaviour, Params as SamplerParams, RecordingMode, VersionedWaveformSummary};
 use crate::editor_vizia::DebugData;
 use crate::sampler::{LoopMode, Sampler};
 use crate::time_value::{calc_samples_per_bar, TimeOrRatio, TimeOrRatioUnit, TimeUnit, TimeValue};
@@ -248,6 +249,9 @@ pub struct AudioSamplerParams {
     #[id = "loop_mode"]
     pub loop_mode: EnumParam<LoopModeParam>,
 
+    #[id = "note_off_behavior"]
+    pub note_off_behavior: EnumParam<NoteOffBehaviour>,
+
     #[id = "loop_length_percent"]
     pub loop_length_percent: FloatParam,
 
@@ -355,6 +359,7 @@ impl Default for AudioSamplerParams {
             //)
             //    .with_unit(" %"),
             volume: FloatParam::new("Gain", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            note_off_behavior: EnumParam::new("Note off behavior", NoteOffBehaviour::default()),
         }
     }
 }
@@ -498,6 +503,7 @@ impl AudioSampler {
             transport,
             sample_id,
             reverse_speed: if self.reversing { -1.0 } else { 1.0 },
+            note_off_behavior: self.params.note_off_behavior.value(),
         };
         params
     }

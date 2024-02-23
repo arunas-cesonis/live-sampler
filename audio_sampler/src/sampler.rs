@@ -1,19 +1,12 @@
-use crate::clip2::Clip2;
-use nih_plug::{nih_trace, nih_warn};
 use std::fmt::Debug;
-use std::io::{BufWriter, Write};
-use std::ops::Add;
 
-use crate::clip::Clip;
+use crate::clip2;
+use crate::clip2::Clip2;
+use crate::common_types::{InitParams, Note, Params};
 pub use crate::common_types::LoopMode;
-
-use crate::common_types::{InitParams, Note, Params, RecordingMode};
 use crate::recorder::Recorder;
-use crate::time_value::{TimeOrRatio, TimeValue};
-use crate::utils::normalize_offset;
-use crate::voice::{Player, Voice};
+use crate::voice::Voice;
 use crate::volume::Volume;
-use crate::{clip2, recorder};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Channel {
@@ -124,7 +117,10 @@ impl Channel {
             clip2,
             volume: Volume::new(0.0),
             finished: false,
+            is_at_zero_crossing: false,
+            waited: 0,
             last_sample_index: 0,
+            last_sample_value: 0.0,
         };
         self.next_voice_id += 1;
         voice.volume.to(self.now, params.attack_samples, velocity);
@@ -179,8 +175,34 @@ impl Channel {
         }
     }
 
-    fn should_remove_voice(voice: &Voice, params: &Params) -> bool {
-        voice.volume.is_static_and_mute() && voice.finished
+    fn should_remove_voice(now: usize, voice: &mut Voice, params: &Params) -> bool {
+        if voice.finished {
+            match params.note_off_behavior {
+                crate::common_types::NoteOffBehaviour::ZeroCrossing => {
+                    voice.waited += 1;
+                    if voice.waited >= params.decay_samples {
+                        return true;
+                    }
+                    voice.is_at_zero_crossing
+                }
+                crate::common_types::NoteOffBehaviour::Decay => {
+                    voice.volume.is_static_and_mute()
+                }
+                crate::common_types::NoteOffBehaviour::DecayAndZeroCrossing => {
+                    if !voice.volume.is_static_and_mute() {
+                        voice.waited += 1;
+                        if voice.waited >= params.decay_samples {
+                            return true;
+                        }
+                        voice.is_at_zero_crossing
+                    } else {
+                        true
+                    }
+                }
+            }
+        } else {
+            false
+        }
     }
 
     fn play_voices(&mut self, params: &Params) -> f32 {
@@ -189,7 +211,7 @@ impl Channel {
         for (i, voice) in self.voices.iter_mut().enumerate() {
             // prevents voice playing 1 unnecessary
             // sample at the end when voice is cancelled by note and does not have any decay time
-            if Self::should_remove_voice(voice, params) {
+            if Self::should_remove_voice(self.now, voice, params) {
                 continue;
             }
             let speed = params.speed();
@@ -220,7 +242,9 @@ impl Channel {
 
             output += value;
             voice.played += params.speed();
+            voice.is_at_zero_crossing = value.signum() != voice.last_sample_value.signum() || value == 0.0;
             voice.last_sample_index = index;
+            voice.last_sample_value = value;
 
             if !voice.finished
                 && params.loop_mode == LoopMode::PlayOnce
@@ -232,9 +256,6 @@ impl Channel {
 
         // remove voices that are finished and mute
         while let Some(j) = finished.pop() {
-            {
-                let voice = &self.voices[j];
-            }
             self.finish_voice(self.now, j, params);
         }
 
@@ -242,16 +263,13 @@ impl Channel {
         let mut removed = vec![];
         for (i, voice) in self.voices.iter_mut().enumerate() {
             voice.volume.step(self.now);
-            if voice.volume.is_static_and_mute() && voice.finished {
+            if Self::should_remove_voice(self.now, voice, params) {
                 removed.push(i);
             }
         }
 
         // remove voices that are finished and mute
         while let Some(j) = removed.pop() {
-            {
-                let voice = &self.voices[j];
-            }
             self.voices.remove(j);
         }
         output
