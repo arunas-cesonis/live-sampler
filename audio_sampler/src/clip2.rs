@@ -71,7 +71,7 @@ impl Clip2 {
         }
     }
 
-    fn is_pingpong_reversing(&self, now: usize) -> bool {
+    pub fn is_pingpong_reversing(&self, now: usize) -> bool {
         if self.mode != Mode::PingPong {
             return false;
         }
@@ -93,7 +93,11 @@ impl Clip2 {
         self.speed = speed;
         // FIXME: avoid local -> global -> local conversion
         if let Some(shift) = self.data_to_clip(offset) {
-            self.shift = shift;
+            if self.is_pingpong_reversing(now) {
+                self.shift = TWO * self.length - shift - ONE;
+            } else {
+                self.shift = shift;
+            }
         } else {
             panic!("self.offset returned unreachable offset")
         }
@@ -211,23 +215,3 @@ impl Clip2 {
     }
 }
 
-#[cfg(test)]
-mod test2 {
-    use crate::clip2;
-    use super::*;
-
-    #[test]
-    fn te() {
-        let clip2 = Clip2 {
-            since: 164,
-            start: 0.0,
-            speed: -0.041839838,
-            length: 2314184.0,
-            data_length: 96218.0,
-            mode: Mode::Loop,
-            shift: 0.0,
-        };
-        let index = clip2.offset(164).floor() as usize;
-        eprintln!("index");
-    }
-}
