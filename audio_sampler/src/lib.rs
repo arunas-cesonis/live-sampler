@@ -132,6 +132,7 @@ impl Plugin for AudioSampler {
                 }
                 #[cfg(debug_assertions)]
                 nih_warn!("event: {:?}", event);
+
                 match event {
                     NoteEvent::PolyTuning {
                         note,
@@ -547,18 +548,16 @@ impl ClapPlugin for AudioSampler {
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
     const CLAP_FEATURES: &'static [ClapFeature] = &[
         ClapFeature::AudioEffect,
-        ClapFeature::Instrument,
         ClapFeature::Glitch,
         ClapFeature::Stereo,
         ClapFeature::Mono,
-        ClapFeature::Utility,
     ];
 }
 
 impl Vst3Plugin for AudioSampler {
     const VST3_CLASS_ID: [u8; 16] = *b"AudioSamplerPlug";
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
-        &[Vst3SubCategory::Fx, Vst3SubCategory::Tools];
+        &[Vst3SubCategory::Fx, Vst3SubCategory::Sampler];
 }
 
 nih_export_clap!(AudioSampler);

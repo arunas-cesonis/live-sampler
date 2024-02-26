@@ -2,17 +2,21 @@ This project contains two very generically named CLAP/VST3 plugins that can be u
 audio-sampler operates on audio buffers, midi-sampler operates on midi buffers.
 
 ### audio-sampler
+
 Records audio and plays it back in a loop. Behavior is controlled by MIDI notes:
 
 ![image info](./docs/screenshot.png)
+
 - Note 0 (C-2) records audio while held
 - Notes 12-27 (C#-1) start a new voice playing recorded audio back, each from next 16th offset of the buffer
 - Note 1 (C#-2) reverses playback
+-
 - All other MIDI events are ignored
 - No MIDI events are passed through
 
 To get started using the plugin it should be enough to just try it.
 However it may not be entirely obvious how some edge cases work, so here's a short description of the plugin's behavior:
+
 - the playback and recording simulates two indepentent cursors moving through the buffer
 - initially the buffer has zero length
 - when recording starts, recording cursor is reset to beginning
@@ -20,13 +24,20 @@ However it may not be entirely obvious how some edge cases work, so here's a sho
 - once recording stops, buffer is trimmed to the length of the recording.
 - playback can be started while recording is still in progress
 - initial playback offset is determined by the length of the buffer when playback is started
+- global playback speed multiplier is applied to all active and new voices
+- note pitch changes speed multiplier for individual voices:
+- +1 octave = note speed will be global speed * 2.0
+- -1 octave = note speed will be global speed * 0.0
+- -2 octaves = note speed will be global speed * -1.0
 
 Plugin parameters
+
 - Volume - output volume mulpilier
 - Speed - playback speed multiplier. Applied to all active and new voices
 - Will record (recording mode) - toggles between recording modes:
--- Always on - recording is always on, buffer contains audio of last bar played
--- When note C-2 is held (note triggered) - recording is only on when note C-2 (or note 0 in MIDI) is held. This mode is described in section above 
+  -- Always on - recording is always on, buffer contains audio of last bar played
+  -- When note C-2 is held (note triggered) - recording is only on when note C-2 (or note 0 in MIDI) is held. This mode
+  is described in section above
 - Attack - time in which playback volume is ramped up from 0 to 1 (linearly). Starts on note-on event
 - Decay - time in which playback volume drops up from 1 to 0 (linearly). Starts on note-off event
 - Pass through - disables/enables playing back incoming audio while no buffer playback voices are active
@@ -41,5 +52,6 @@ Plugin parameters
 This has similar concept as audio-sampler but is not as ready for usage.
 
 MIDI
+
 - Note 0 (C-2) records midi events
 - Notes 12-27 (C#-1) start a playing recorded MIDI events back, from 16th offset of the buffer
