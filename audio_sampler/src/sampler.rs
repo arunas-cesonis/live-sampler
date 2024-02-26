@@ -86,6 +86,19 @@ impl Channel {
         voice.finished = true;
     }
 
+    pub fn set_note_speed(&mut self, note: Note, speed: f32) {
+        for v in &mut self.voices {
+            if v.note == note {
+                v.speed = speed;
+                return;
+            }
+        }
+        #[cfg(debug_assertions)]
+        {
+            panic!("set_note_speed: note not found: {:?}", note);
+        }
+    }
+
     pub fn start_playing(
         &mut self,
         loop_start_percent: f32,
@@ -122,6 +135,7 @@ impl Channel {
             finished_at: 0,
             last_sample_index: 0,
             last_sample_value: 0.0,
+            speed: 1.0,
         };
         self.next_voice_id += 1;
         voice.volume.to(self.now, params.attack_samples, velocity);
@@ -213,23 +227,12 @@ impl Channel {
             if Self::should_remove_voice(self.now, voice, params) {
                 continue;
             }
-            let speed = params.speed();
-
-            // README
-            // Changing length at sample rate seems to work ok for both modes
-            //
-            // Next
-            // [x] Improve loop length UX slighly
-            // [x] Check if code main branch is better at responding to loop length automation
-            // [x] Changing speed
-            // [ ] Changing mode
-            // [ ] Changing loop start
-            // [ ] Improve tests to be able to work on it later
+            let voice_speed = voice.speed * params.speed();
 
             voice
                 .clip2
                 .update_length(self.now, params.loop_length(self.data.len()) as clip2::T);
-            voice.clip2.update_speed(self.now, speed);
+            voice.clip2.update_speed(self.now, voice_speed);
             voice.clip2.update_data_length(self.now, self.data.len() as clip2::T);
             voice.clip2.update_mode(self.now, match params.loop_mode {
                 LoopMode::Loop | LoopMode::PlayOnce => clip2::Mode::Loop,
@@ -240,7 +243,7 @@ impl Channel {
             let value = self.data[index] * voice.volume.value(self.now);
 
             output += value;
-            voice.played += params.speed();
+            voice.played += voice_speed;
             voice.is_at_zero_crossing = value.signum() != voice.last_sample_value.signum() || value == 0.0;
             voice.last_sample_index = index;
             voice.last_sample_value = value;
@@ -368,6 +371,10 @@ impl Sampler {
             F: FnMut(&mut Channel),
     {
         self.channels.iter_mut().for_each(f)
+    }
+
+    pub fn set_note_speed(&mut self, note: Note, speed: f32) {
+        self.each(|ch| ch.set_note_speed(note, speed))
     }
 
     pub fn start_playing(&mut self, pos: f32, note: Note, velocity: f32, params: &Params) {

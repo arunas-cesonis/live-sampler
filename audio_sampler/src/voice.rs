@@ -21,6 +21,7 @@ pub struct Voice {
     pub finished_at: usize,
     pub is_at_zero_crossing: bool,
     pub last_sample_value: f32,
+    pub speed: f32,
 
     // this is only used by the UI to show loop points
     // its hack/workaround for not having loop information easily available
