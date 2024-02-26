@@ -6,8 +6,13 @@ mod test {
     use crate::sampler::{LoopMode, Sampler};
     use crate::time_value::TimeOrRatio;
 
+
+    pub fn one_to(n: usize) -> Vec<f32> {
+        (1..=n).map(|x| x as f32).collect()
+    }
+
     pub fn one_to_ten() -> Vec<f32> {
-        (1..=10).map(|x| x as f32).collect()
+        one_to(10)
     }
 
     pub fn one_to_five() -> Vec<f32> {
@@ -661,5 +666,19 @@ mod test {
         assert_eq!(h.run_input(vec![111., 222., 333.]), vec![33.0, 111.0, 222.0]);
         h.stop_recording();
         assert_eq!(h.run(3), vec![333.0, 111.0, 222.0]);
+    }
+
+    #[test]
+    fn test_updating_speed() {
+        let mut h = EasyHost::default();
+        h.record(one_to(50));
+        h.start_playing(0.0);
+        h.params.speed = 2.0;
+        h.params.loop_mode = LoopMode::PingPong;
+        for i in 0..100 {
+            let out = h.run(1);
+            let is_rev = h.sampler.channels[0].voices[0].clip2.is_pingpong_reversing(h.sampler.channels[0].now);
+            eprintln!("now={:>8} {:<8} {:<6} {:?}", i, out[0], is_rev, h.sampler.channels[0].voices[0].clip2);
+        }
     }
 }
