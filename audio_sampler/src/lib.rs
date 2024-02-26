@@ -124,7 +124,7 @@ impl Plugin for AudioSampler {
 
         for (sample_id, channel_samples) in buffer.iter_samples().enumerate() {
             let mut params = self.sampler_params(sample_id, &context.transport());
-            let channel: Option<u8> = self.params.midi_channel.value().try_into().ok();
+            let params_midi_channel: Option<u8> = self.params.midi_channel.value().try_into().ok();
             let params = &mut params;
             while let Some(event) = next_event {
                 if event.timing() != sample_id as u32 {
@@ -133,12 +133,22 @@ impl Plugin for AudioSampler {
                 #[cfg(debug_assertions)]
                 nih_warn!("event: {:?}", event);
                 match event {
+                    NoteEvent::PolyTuning {
+                        note,
+                        channel: note_channel,
+                        tuning,
+                        ..
+                    } if params_midi_channel.is_none() || params_midi_channel == Some(note_channel) => {
+                        let note = Note::new(note, note_channel);
+                        let speed = 1.0 + (tuning / 12.0);
+                        self.sampler.set_note_speed(note, speed);
+                    }
                     NoteEvent::NoteOn {
                         velocity,
                         note,
                         channel: note_channel,
                         ..
-                    } if channel.iter().all(|x| *x == note_channel) => {
+                    } if params_midi_channel.is_none() || params_midi_channel == Some(note_channel) => {
                         let note = Note::new(note, note_channel);
                         match note.note {
                             0 => {

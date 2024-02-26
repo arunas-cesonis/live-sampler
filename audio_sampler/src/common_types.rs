@@ -24,7 +24,7 @@ pub enum NoteOffBehaviour {
 
 impl Default for NoteOffBehaviour {
     fn default() -> Self {
-        NoteOffBehaviour::Decay
+        NoteOffBehaviour::DecayAndZeroCrossing
     }
 }
 
