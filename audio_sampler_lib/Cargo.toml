@@ -1,0 +1,7 @@
+[package]
+version = "0.1.0"
+name = "audio_sampler_lib"
+edition.workspace = true
+
+[lib]
+crate-type = ["lib", "staticlib"]
