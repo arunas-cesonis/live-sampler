@@ -46,8 +46,6 @@ mod test {
         StopPlaying,
         StartRecording,
         StopRecording,
-        SetLoopLength { length_percent: f32 },
-        SetSpeed { speed: f32 },
     }
 
     #[derive(Clone, Debug)]
@@ -95,10 +93,6 @@ mod test {
                             }
                             Cmd::StartRecording => self.sampler.start_recording(&self.params),
                             Cmd::StopRecording => self.sampler.stop_recording(&self.params),
-                            Cmd::SetLoopLength { length_percent } => {
-                                self.params.loop_length = TimeOrRatio::Ratio(length_percent);
-                            }
-                            Cmd::SetSpeed { speed } => self.params.speed = speed,
                         }
                     }
                     self.cmds = rem;
@@ -109,11 +103,6 @@ mod test {
                 })
                 .collect::<Vec<_>>()
         }
-    }
-
-    fn simple_input() -> Vec<f32> {
-        let input: Vec<_> = (0..10).into_iter().map(|x| x as f32).collect();
-        input
     }
 
     #[test]
@@ -212,9 +201,9 @@ mod test {
             ..base_params()
         };
         let ten_tens = vec![100.0; 10];
-        let five_tens = vec![100.0; 5];
+        let _five_tens = vec![100.0; 5];
         let one_to_ten = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-        let one_to_five = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let _one_to_five = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let input = vec![one_to_ten.clone(), ten_tens.clone()].concat();
 
         // backwards crossing data boundary
@@ -508,7 +497,7 @@ mod test {
             loop_length: TimeOrRatio::Ratio(1.0),
             ..params.clone()
         });
-        let tmp = host.clone();
+        let _tmp = host.clone();
         host.schedule(10, Cmd::StartPlaying { start_percent: 0.0 });
         let output = host.run_input(input.clone());
         assert_eq!(input, output);
@@ -525,7 +514,7 @@ mod test {
         };
         let input = (0..44100)
             .map(|x| {
-                let t = ((x as f32) / 44100.0);
+                let t = (x as f32) / 44100.0;
                 let r = t * (180.0 / PI);
                 r.cos()
             })
@@ -584,12 +573,6 @@ mod test {
             self.stop_recording();
             out
         }
-        pub fn play(&mut self, n: usize) -> Vec<f32> {
-            self.start_playing(0.0);
-            let out = self.run(n);
-            self.stop_playing();
-            out
-        }
         pub fn run_input<I>(&mut self, input: I) -> Vec<f32>
             where
                 I: IntoIterator<Item=f32>,
@@ -607,9 +590,6 @@ mod test {
         pub fn start_playing(&mut self, start_position: f32) {
             self.sampler
                 .start_playing(start_position, Note::new(0, 0), 1.0, &self.params);
-        }
-        pub fn stop_playing(&mut self) {
-            self.sampler.stop_playing(Note::new(0, 0), &self.params);
         }
         pub fn start_recording(&mut self) {
             self.sampler.start_recording(&self.params);

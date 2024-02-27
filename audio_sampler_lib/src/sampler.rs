@@ -10,7 +10,6 @@ use crate::volume::Volume;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Channel {
-    pub(crate) index: usize,
     pub(crate) data: Vec<f32>,
     pub(crate) voices: Vec<Voice>,
     pub(crate) now: usize,
@@ -18,19 +17,6 @@ pub(crate) struct Channel {
     pub(crate) passthru_volume: Volume,
     pub(crate) recorder: Recorder,
     pub(crate) next_voice_id: usize,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-enum Recording {
-    Idle,
-    NoteTriggered,
-    Always,
-}
-
-impl Default for Recording {
-    fn default() -> Self {
-        Recording::Idle
-    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -42,8 +28,7 @@ pub struct VoiceInfo {
 
 fn starting_offset(loop_start_percent: f32, data_len: usize) -> f32 {
     let len_f32 = data_len as f32;
-    let start = loop_start_percent * len_f32;
-    start
+    loop_start_percent * len_f32
 }
 
 impl Channel {
@@ -55,9 +40,8 @@ impl Channel {
         self.passthru_volume = Volume::new(0.0);
         self.recorder = Recorder::new();
     }
-    fn new(params: &InitParams, index: usize) -> Self {
+    fn new(params: &InitParams) -> Self {
         Channel {
-            index,
             data: vec![],
             voices: vec![],
             now: 0,
@@ -66,10 +50,6 @@ impl Channel {
             recorder: Recorder::new(),
             next_voice_id: 0,
         }
-    }
-
-    pub fn is_recording(&self) -> bool {
-        self.recorder().is_recording()
     }
 
     pub fn recorder(&self) -> &Recorder {
@@ -337,7 +317,8 @@ pub unsafe extern fn sampler_free(sampler: *mut Sampler) {
 }
 
 impl Sampler {
-    pub fn reset(&mut self) {
+    #[no_mangle]
+    pub extern fn reset(&mut self) {
         self.channels.iter_mut().for_each(|ch| {
             ch.reset();
         });
@@ -373,9 +354,7 @@ impl Sampler {
 
     pub fn new(channel_count: usize, params: &InitParams) -> Self {
         Self {
-            channels: (0..channel_count)
-                .map(|i| Channel::new(params, i))
-                .collect(),
+            channels: vec![Channel::new(params); channel_count],
         }
     }
     fn each<F>(&mut self, f: F)
