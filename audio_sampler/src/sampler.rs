@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use nih_plug::nih_warn;
 
 use crate::clip2;
 use crate::clip2::Clip2;
@@ -139,6 +140,8 @@ impl Channel {
         };
         self.next_voice_id += 1;
         voice.volume.to(self.now, params.attack_samples, velocity);
+        #[cfg(debug_assertions)]
+        nih_warn!("start_playing: voice={:?}", voice);
         self.voices.push(voice);
         self.handle_passthru(params);
     }
@@ -272,6 +275,8 @@ impl Channel {
 
         // remove voices that are finished and mute
         while let Some(j) = removed.pop() {
+            #[cfg(debug_assertions)]
+            nih_warn!("removing: voice={:?}", self.voices[j]);
             self.voices.remove(j);
         }
         output
