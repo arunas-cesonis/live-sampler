@@ -10,8 +10,7 @@ use crate::volume::Volume;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Channel {
-    #[cfg(debug_assertions)]
-    pub(crate) _index: usize,
+    pub(crate) index: usize,
     pub(crate) data: Vec<f32>,
     pub(crate) voices: Vec<Voice>,
     pub(crate) now: usize,
@@ -58,7 +57,7 @@ impl Channel {
     }
     fn new(params: &InitParams, index: usize) -> Self {
         Channel {
-            _index: index,
+            index,
             data: vec![],
             voices: vec![],
             now: 0,
