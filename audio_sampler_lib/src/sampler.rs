@@ -1,5 +1,4 @@
 use std::fmt::Debug;
-use nih_plug::nih_warn;
 
 use crate::clip2;
 use crate::clip2::Clip2;
@@ -11,7 +10,8 @@ use crate::volume::Volume;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Channel {
-    pub(crate) index: usize,
+    #[cfg(debug_assertions)]
+    pub(crate) _index: usize,
     pub(crate) data: Vec<f32>,
     pub(crate) voices: Vec<Voice>,
     pub(crate) now: usize,
@@ -58,7 +58,7 @@ impl Channel {
     }
     fn new(params: &InitParams, index: usize) -> Self {
         Channel {
-            index,
+            _index: index,
             data: vec![],
             voices: vec![],
             now: 0,
@@ -81,7 +81,6 @@ impl Channel {
         let voice = &mut self.voices[index];
         assert!(!voice.finished);
         //eprintln!("now={} stop playing voice={:?}", self.now, voice);
-        let channel_index: usize = voice.note.channel.into();
         voice.volume.to(now, params.decay_samples, 0.0);
         voice.finished_at = now;
         voice.finished = true;
@@ -140,8 +139,8 @@ impl Channel {
         };
         self.next_voice_id += 1;
         voice.volume.to(self.now, params.attack_samples, velocity);
-        #[cfg(debug_assertions)]
-        nih_warn!("start_playing: voice={:?}", voice);
+        // #[cfg(debug_assertions)]
+        // nih_warn!("start_playing: voice={:?}", voice);
         self.voices.push(voice);
         self.handle_passthru(params);
     }
@@ -154,9 +153,6 @@ impl Channel {
             .iter()
             .position(|v| v.note == note && !v.finished)
         {
-            {
-                let voice = &self.voices[i];
-            }
             self.finish_voice(self.now, i, params);
             self.handle_passthru(params);
         }
@@ -275,8 +271,8 @@ impl Channel {
 
         // remove voices that are finished and mute
         while let Some(j) = removed.pop() {
-            #[cfg(debug_assertions)]
-            nih_warn!("removing: voice={:?}", self.voices[j]);
+            // #[cfg(debug_assertions)]
+            // nih_warn!("removing: voice={:?}", self.voices[j]);
             self.voices.remove(j);
         }
         output
@@ -327,6 +323,18 @@ pub struct WaveformSummary {
     pub data: Vec<f32>,
     pub min: f32,
     pub max: f32,
+}
+
+#[no_mangle]
+pub extern fn sampler_new(channel_count: usize, params: &InitParams) -> *mut Sampler {
+    let b = Box::new(Sampler::new(channel_count, params));
+    let b_ptr = Box::into_raw(b);
+    b_ptr
+}
+
+#[no_mangle]
+pub unsafe extern fn sampler_free(sampler: *mut Sampler) {
+    let _ = Box::from_raw(sampler);
 }
 
 impl Sampler {
@@ -455,5 +463,27 @@ impl Sampler {
                 VoiceInfo { start, end, pos }
             })
             .collect()
+    }
+
+
+    #[cfg(debug_assertions)]
+    pub fn dump_crash_info(&mut self) {
+        let data_lengths: Vec<_> = self
+            .channels
+            .iter()
+            .map(|ch| ch.data.len())
+            .collect::<Vec<_>>();
+        self
+            .channels
+            .iter_mut()
+            .for_each(|ch| ch.data.clear());
+        eprintln!(
+            "sampler just before death: {:#?}\ndatas have been clear, had lengths: {:?}",
+            self, data_lengths
+        );
+        let count = self.channels[0].voices.len();
+        for (i, v) in self.channels[0].voices.iter().enumerate() {
+            eprintln!("voice[{} of {}]: {:?}", i, count, v);
+        }
     }
 }

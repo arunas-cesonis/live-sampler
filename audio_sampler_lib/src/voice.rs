@@ -1,4 +1,3 @@
-use crate::clip::Clip;
 use crate::clip2::Clip2;
 use crate::common_types::{LoopMode, Note};
 use crate::volume::Volume;

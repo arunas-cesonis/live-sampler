@@ -28,14 +28,6 @@ impl From<&common_types::Params> for Params {
 }
 
 impl Params {
-    pub fn with_trigger(&self, trigger: bool) -> Self {
-        Self {
-            transport_pos_samples: self.transport_pos_samples,
-            sample_id: self.sample_id,
-            recording_mode: self.recording_mode,
-            fixed_size_samples: self.fixed_size_samples,
-        }
-    }
     pub fn with_transport_pos_samples(&self, transport_pos_samples: i64) -> Self {
         Self {
             transport_pos_samples: transport_pos_samples as f32,

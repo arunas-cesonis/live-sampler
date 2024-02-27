@@ -1,6 +1,3 @@
-use log::warn;
-use nih_plug::nih_warn;
-use num_traits::{Float, One};
 use crate::sampler::LoopMode;
 
 pub type T = f32;
