@@ -10,6 +10,13 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+#[cfg(mimalloc)]
+use mimalloc::MiMalloc;
+
+#[cfg(mimalloc)]
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 use std::sync::Arc;
 
 use nih_plug::prelude::*;
