@@ -1,17 +1,11 @@
 use crate::common_types;
-use nih_plug::prelude::{Enum, Transport};
 
-#[derive(Debug, Enum, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TimeUnit {
-    #[name = "1/16 notes"]
     SixteenthNotes,
-    #[name = "1/4 notes"]
     QuarterNotes,
-    #[name = "Seconds"]
     Seconds,
-    #[name = "Samples"]
     Samples,
-    #[name = "Bars"]
     Bars,
 }
 
@@ -34,13 +28,10 @@ pub enum TimeOrRatio {
 
 impl TimeOrRatio {}
 
-#[derive(Debug, Enum, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TimeOrRatioUnit {
-    #[name = "1/16 notes"]
     SixteenthNotes,
-    #[name = "Seconds"]
     Seconds,
-    #[name = "Percentage of length"]
     Ratio,
 }
 

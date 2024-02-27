@@ -17,9 +17,9 @@ use nih_plug_vizia::vizia::vg::imgref::Img;
 use nih_plug_vizia::vizia::vg::rgb::RGBA8;
 use nih_plug_vizia::widgets::*;
 
-use crate::{AudioSamplerParams, utils};
-use crate::common_types::{Info, NoteOffBehaviour};
-use crate::time_value::TimeOrRatioUnit;
+use crate::{AudioSamplerParams};
+use crate::common_types::{Info, NoteOffBehaviourParam};
+use crate::common_types::TimeOrRatioUnitParam;
 
 #[derive(Debug, Clone, Default)]
 pub struct DebugData {
@@ -292,12 +292,12 @@ pub enum EditorEvent {
     Choice(usize),
 }
 
-fn loop_length_slider<P, FMap>(cx: &mut Context, unit: TimeOrRatioUnit, lens: FMap)
+fn loop_length_slider<P, FMap>(cx: &mut Context, unit: TimeOrRatioUnitParam, lens: FMap)
     where
         P: Param + 'static,
         FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
 {
-    let title = <TimeOrRatioUnit as Enum>::variants()[unit.to_index()];
+    let title = <TimeOrRatioUnitParam as Enum>::variants()[unit.to_index()];
     VStack::new(cx, |cx| {
         Label::new(cx, title).top(Pixels(10.0));
         ParamSlider::new(cx, Data::params, lens)
@@ -338,6 +338,18 @@ fn param_slider1<P, FMap>(cx: &mut Context, title: &str, lens: FMap)
 }
 
 
+// https://github.com/robbert-vdh/nih-plug/blob/92ce73700005255565c6be45412609ea87eb8b41/src/util.rs#L38
+pub const MINUS_INFINITY_GAIN: f32 = 1e-5; // 10f32.powf(MINUS_INFINITY_DB / 20)
+
+/// Convert a voltage gain ratio to decibels. Gain ratios that aren't positive will be treated as
+///
+/// [`MINUS_INFINITY_DB`].
+#[inline]
+pub fn gain_to_db(gain: f32) -> f32 {
+    f32::max(gain, MINUS_INFINITY_GAIN).log10() * 20.0
+}
+
+
 pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         register_noto_sans_bold(cx);
@@ -357,7 +369,7 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                 PeakMeter::new(
                     cx,
                     Data::peak_meter
-                        .map(|peak_meter| utils::gain_to_db(peak_meter.load(Ordering::Relaxed))),
+                        .map(|peak_meter| gain_to_db(peak_meter.load(Ordering::Relaxed))),
                     Some(Duration::from_millis(600)),
                 )
                     .width(Stretch(0.25))
@@ -387,13 +399,13 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     .width(Percentage(25.0));
 
                 VStack::new(cx, |cx| {
-                    loop_length_slider(cx, TimeOrRatioUnit::Ratio, |params| {
+                    loop_length_slider(cx, TimeOrRatioUnitParam::Ratio, |params| {
                         &params.loop_length_percent
                     });
-                    loop_length_slider(cx, TimeOrRatioUnit::Seconds, |params| {
+                    loop_length_slider(cx, TimeOrRatioUnitParam::Seconds, |params| {
                         &params.loop_length_time
                     });
-                    loop_length_slider(cx, TimeOrRatioUnit::SixteenthNotes, |params| {
+                    loop_length_slider(cx, TimeOrRatioUnitParam::SixteenthNotes, |params| {
                         &params.loop_length_sync
                     });
                     param_slider(cx, "Loop length unit", |params| &params.loop_length_unit);

@@ -24,27 +24,20 @@ use nih_plug_vizia::vizia::entity;
 use nih_plug_vizia::vizia::prelude::Role::Time;
 use nih_plug_vizia::ViziaState;
 use num_traits::ToPrimitive;
+use audio_sampler_lib::common_types::{InitParams, Note, VersionedWaveformSummary};
+use audio_sampler_lib::sampler::Sampler;
+use audio_sampler_lib::time_value::{TimeOrRatio, TimeValue};
+use audio_sampler_lib::common_types::{Params as SamplerParams};
+use crate::common_types::{Info, LoopModeParam, MIDIChannelParam, NoteOffBehaviourParam, RecordingModeParam, TimeOrRatioUnitParam};
 
-use crate::common_types::{Info, InitParams, LoopModeParam, MIDIChannelParam, Note, NoteOffBehaviour, Params as SamplerParams, RecordingMode, VersionedWaveformSummary};
 use crate::editor_vizia::DebugData;
-use crate::sampler::{LoopMode, Sampler};
-use crate::time_value::{calc_samples_per_bar, TimeOrRatio, TimeOrRatioUnit, TimeUnit, TimeValue};
-use crate::utils::normalize_offset;
 
 // mod editor;
-mod clip;
-mod clip2;
-mod common_types;
 mod editor_vizia;
-mod recorder;
-mod sampler;
-mod test_sampler;
-mod time_value;
-mod utils;
-mod voice;
-mod volume;
+mod common_types;
 
 type SysEx = ();
+
 
 pub struct AudioSampler {
     audio_io_layout: AudioIOLayout,
@@ -277,7 +270,7 @@ pub struct AudioSamplerParams {
     pub loop_mode: EnumParam<LoopModeParam>,
 
     #[id = "note_off_behavior"]
-    pub note_off_behavior: EnumParam<NoteOffBehaviour>,
+    pub note_off_behavior: EnumParam<NoteOffBehaviourParam>,
 
     #[id = "loop_length_percent"]
     pub loop_length_percent: FloatParam,
@@ -292,13 +285,13 @@ pub struct AudioSamplerParams {
     //   pub start_offset: FloatParam,
 
     #[id = "loop_length_unit"]
-    pub loop_length_unit: EnumParam<TimeOrRatioUnit>,
+    pub loop_length_unit: EnumParam<TimeOrRatioUnitParam>,
 
     #[id = "volume"]
     pub volume: FloatParam,
 
     #[id = "recording_mode"]
-    pub recording_mode: EnumParam<RecordingMode>,
+    pub recording_mode: EnumParam<RecordingModeParam>,
 
     #[id = "midi_channel"]
     pub midi_channel: EnumParam<MIDIChannelParam>,
@@ -347,8 +340,8 @@ impl Default for AudioSamplerParams {
                 .with_unit(" ms"),
             midi_channel: EnumParam::new("MIDI channel", MIDIChannelParam::All),
             loop_mode: EnumParam::new("Loop mode", LoopModeParam::Loop),
-            loop_length_unit: EnumParam::new("Loop length unit", TimeOrRatioUnit::Ratio),
-            recording_mode: EnumParam::new("Recording mode", RecordingMode::default()),
+            loop_length_unit: EnumParam::new("Loop length unit", TimeOrRatioUnitParam::Ratio),
+            recording_mode: EnumParam::new("Recording mode", RecordingModeParam::default()),
             loop_length_percent: FloatParam::new(
                 "Loop length (%)",
                 100.0,
@@ -386,7 +379,7 @@ impl Default for AudioSamplerParams {
             //)
             //    .with_unit(" %"),
             volume: FloatParam::new("Gain", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
-            note_off_behavior: EnumParam::new("Note off behavior", NoteOffBehaviour::default()),
+            note_off_behavior: EnumParam::new("Note off behavior", NoteOffBehaviourParam::default()),
         }
     }
 }
@@ -432,24 +425,7 @@ impl AudioSampler {
             .filter(|note| !self.is_note_active(note))
             .collect();
         if !ghost_notes.is_empty() {
-            let data_lengths: Vec<_> = self
-                .sampler
-                .channels
-                .iter()
-                .map(|ch| ch.data.len())
-                .collect::<Vec<_>>();
-            self.sampler
-                .channels
-                .iter_mut()
-                .for_each(|ch| ch.data.clear());
-            eprintln!(
-                "sampler just before death: {:#?}\ndatas have been clear, had lengths: {:?}",
-                self.sampler, data_lengths
-            );
-            let count = self.sampler.channels[0].voices.len();
-            for (i, v) in self.sampler.channels[0].voices.iter().enumerate() {
-                eprintln!("voice[{} of {}]: {:?}", i, count, v);
-            }
+            self.sampler.dump_crash_info();
             panic!("Ghost notes: {:?}", ghost_notes);
         }
     }
@@ -486,13 +462,13 @@ impl AudioSampler {
     fn loop_length(&self) -> TimeOrRatio {
         let unit = self.params.loop_length_unit.value();
         match unit {
-            TimeOrRatioUnit::Ratio => {
+            TimeOrRatioUnitParam::Ratio => {
                 TimeOrRatio::Ratio(self.params.loop_length_percent.value() / 100.0)
             }
-            TimeOrRatioUnit::Seconds => {
+            TimeOrRatioUnitParam::Seconds => {
                 TimeOrRatio::Time(TimeValue::Seconds(self.params.loop_length_time.value()))
             }
-            TimeOrRatioUnit::SixteenthNotes => TimeOrRatio::Time(TimeValue::QuarterNotes(
+            TimeOrRatioUnitParam::SixteenthNotes => TimeOrRatio::Time(TimeValue::QuarterNotes(
                 self.params.loop_length_sync.value() / 4.0,
             )),
         }
@@ -506,7 +482,7 @@ impl AudioSampler {
         let decay_millis = self.params.decay.smoothed.next();
         let decay_samples = (decay_millis * self.sample_rate / 1000.0) as usize;
 
-        let transport = common_types::Transport {
+        let transport = audio_sampler_lib::common_types::Transport {
             sample_rate: self.sample_rate,
             tempo: transport.tempo.unwrap() as f32,
             pos_samples: transport.pos_samples().unwrap() as f32,
@@ -516,13 +492,13 @@ impl AudioSampler {
         let params = SamplerParams {
             auto_passthru: params_passthru,
             attack_samples,
-            loop_mode: LoopMode::from_param(self.params.loop_mode.value()),
+            loop_mode: self.params.loop_mode.value().into(),
             loop_length: self.loop_length(),
             // start_offset_percent: self.params.start_offset.value(),
             start_offset_percent: 0.0,
             decay_samples,
             speed: params_speed,
-            recording_mode: self.params.recording_mode.value(),
+            recording_mode: self.params.recording_mode.value().into(),
             fixed_size_samples: TimeValue::bars(1.0)
                 .as_samples(&transport)
                 .to_usize()
@@ -530,7 +506,7 @@ impl AudioSampler {
             transport,
             sample_id,
             reverse_speed: if self.reversing { -1.0 } else { 1.0 },
-            note_off_behavior: self.params.note_off_behavior.value(),
+            note_off_behavior: self.params.note_off_behavior.value().into(),
         };
         params
     }
