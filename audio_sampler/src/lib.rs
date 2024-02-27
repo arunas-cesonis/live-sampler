@@ -1,6 +1,15 @@
 #![allow(unused)]
 #![feature(extend_one)]
 
+#[cfg(jemalloc)]
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(jemalloc)]
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 use std::sync::Arc;
 
 use nih_plug::prelude::*;

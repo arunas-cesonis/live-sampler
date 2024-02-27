@@ -12,8 +12,10 @@ name = "audio-sampler"
 path = "src/main.rs"
 
 [features]
-clip-version = []
+jemalloc = ["tikv-jemallocator"]
 
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { version = "0.5", optional = true }
 
 [dependencies.nih_plug]
 git = "https://github.com/robbert-vdh/nih-plug"
