@@ -1,10 +1,8 @@
-use crate::sampler::LoopMode;
-
 pub type T = f32;
 
-pub const ZERO: T = 0.0;
-pub const ONE: T = 1.0;
-pub const TWO: T = 2.0;
+const ZERO: T = 0.0;
+const ONE: T = 1.0;
+const TWO: T = 2.0;
 
 #[derive(Copy, Debug, Clone, PartialEq)]
 pub enum Mode {
@@ -43,12 +41,6 @@ impl Clip2 {
         }
     }
 
-    pub fn clip_to_data(&self, x: T) -> T {
-        assert!(ZERO <= x && x < self.length);
-        let x = (self.start + x) % (self.data_length as T);
-        x
-    }
-
     pub fn data_to_clip(&self, x: T) -> Option<T> {
         assert!(ZERO <= x && x < self.data_length as T);
         if x >= self.start {
@@ -77,7 +69,7 @@ impl Clip2 {
         let r = if s < ZERO { ONE } else { ZERO };
         let dt = self.elapsed(now) as T;
         let x = self.shift as T + ((dt + r) as f32) * s;
-        let x = (x.abs() % ((TWO * l) as T));
+        let x = x.abs() % ((TWO * l) as T);
         x >= l
     }
 
@@ -153,13 +145,6 @@ impl Clip2 {
         }
     }
 
-    pub fn shift(&self, now: usize) -> Self {
-        let mut tmp = self.clone();
-        tmp.shift = tmp.offset(now);
-        tmp.since = now;
-        tmp
-    }
-
     pub fn elapsed(&self, now: usize) -> usize {
         now - self.since
     }
@@ -169,7 +154,7 @@ impl Clip2 {
         let s = self.speed;
         let r = if s < ZERO { ONE } else { ZERO };
         let dt = self.elapsed(now) as T;
-        let x = (self.shift as f32 + (dt + r) * s);
+        let x = self.shift as f32 + (dt + r) * s;
 
         // eprintln!("{:?}", -0.041839838_f32 + 2314184.0_f32);
 
@@ -191,6 +176,7 @@ impl Clip2 {
                 }
             }
         };
+
         // need to clamp x1 due to possible floating poing error, e.g.
         // -0.041839838_f32 + 2314184.0_f32 = 2314184.0_f32
         let x1 = x1.min(l - 1.0);

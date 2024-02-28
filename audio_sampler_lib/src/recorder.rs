@@ -28,6 +28,7 @@ impl From<&common_types::Params> for Params {
 }
 
 impl Params {
+    #[cfg(test)]
     pub fn with_transport_pos_samples(&self, transport_pos_samples: i64) -> Self {
         Self {
             transport_pos_samples: transport_pos_samples as f32,
@@ -36,6 +37,7 @@ impl Params {
             fixed_size_samples: self.fixed_size_samples,
         }
     }
+    #[cfg(test)]
     pub fn with_recording_mode(&self, recording_mode: RecordingMode) -> Self {
         Self {
             transport_pos_samples: self.transport_pos_samples,
@@ -44,12 +46,6 @@ impl Params {
             fixed_size_samples: self.fixed_size_samples,
         }
     }
-}
-
-#[derive(Clone, Debug)]
-pub enum Triggers {
-    Start,
-    Stop,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -82,17 +78,17 @@ impl Recorder {
         )
     }
 
-    fn always_on(&mut self, data: &mut Vec<f32>, params: &Params) {
+    fn always_on(&mut self, _data: &mut Vec<f32>, _params: &Params) {
         self.state = State::AlwaysOn {
             last_recorded_offset: None,
         };
     }
 
-    fn always_off(&mut self, params: &Params) {
+    fn always_off(&mut self, _params: &Params) {
         self.state = State::Idle;
     }
 
-    pub fn stop(&mut self, data: &mut Vec<f32>, params: &Params) {
+    pub fn stop(&mut self, data: &mut Vec<f32>, _params: &Params) {
         match self.state {
             State::Triggered { write } => {
                 data.truncate(write);
@@ -140,7 +136,7 @@ impl Recorder {
     }
 
     fn handle_state_transitions(&mut self, data: &mut Vec<f32>, params: &Params) {
-        match (params.recording_mode) {
+        match params.recording_mode {
             RecordingMode::AlwaysOn => match self.state {
                 State::Idle => self.always_on(data, params),
                 State::Triggered { .. } => self.always_on(data, params),
