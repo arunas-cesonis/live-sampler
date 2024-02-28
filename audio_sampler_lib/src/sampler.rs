@@ -304,21 +304,8 @@ pub struct WaveformSummary {
     pub max: f32,
 }
 
-#[no_mangle]
-pub extern fn sampler_new(channel_count: usize, params: &InitParams) -> *mut Sampler {
-    let b = Box::new(Sampler::new(channel_count, params));
-    let b_ptr = Box::into_raw(b);
-    b_ptr
-}
-
-#[no_mangle]
-pub unsafe extern fn sampler_free(sampler: *mut Sampler) {
-    let _ = Box::from_raw(sampler);
-}
-
 impl Sampler {
-    #[no_mangle]
-    pub extern fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.channels.iter_mut().for_each(|ch| {
             ch.reset();
         });
@@ -382,16 +369,6 @@ impl Sampler {
 
     pub fn stop_recording(&mut self, params: &Params) {
         self.each(|ch| Channel::stop_recording(ch, params));
-    }
-
-    pub fn process_sample<'a>(
-        &mut self,
-        iter: impl IntoIterator<Item=&'a mut f32>,
-        params: &Params,
-    ) {
-        for (i, sample) in iter.into_iter().enumerate() {
-            self.channels[i].process_sample(sample, params);
-        }
     }
 
     pub fn process_frame<'a>(&mut self, frame: &mut [&'a mut f32], params: &Params) {

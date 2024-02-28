@@ -1,6 +1,7 @@
 use crate::sampler::{WaveformSummary};
 use crate::time_value::{TimeOrRatio, TimeValue};
 
+#[repr(C)]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum NoteOffBehaviour {
     Decay,
@@ -8,12 +9,14 @@ pub enum NoteOffBehaviour {
     DecayAndZeroCrossing,
 }
 
+#[repr(C)]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum RecordingMode {
     NoteTriggered,
     AlwaysOn,
 }
 
+#[repr(C)]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum LoopMode {
     PlayOnce,
@@ -74,6 +77,7 @@ impl Params {
 
 pub const DEFAULT_AUTO_PASSTHRU: bool = true;
 
+#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Transport {
     pub sample_rate: f32,
@@ -115,6 +119,7 @@ impl Default for Params {
     }
 }
 
+#[repr(C)]
 pub struct InitParams {
     pub auto_passthru: bool,
 }

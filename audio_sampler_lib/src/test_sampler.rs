@@ -96,10 +96,11 @@ mod test {
                         }
                     }
                     self.cmds = rem;
-                    let mut frame = vec![x];
-                    self.sampler.process_sample(&mut frame, &self.params);
+                    let mut x = x;
+                    let mut frame = vec![&mut x];
+                    self.sampler.process_frame(&mut frame, &self.params);
                     self.now += 1;
-                    frame[0]
+                    x
                 })
                 .collect::<Vec<_>>()
         }
