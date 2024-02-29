@@ -1,4 +1,4 @@
-use crate::sampler::{WaveformSummary};
+use crate::sampler::{Sampler, WaveformSummary};
 use crate::time_value::{TimeOrRatio, TimeValue};
 
 #[repr(C)]
@@ -23,7 +23,6 @@ pub enum LoopMode {
     Loop,
     PingPong,
 }
-
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -70,7 +69,12 @@ impl Params {
                 len_f32 * ratio
             }
         };
-        debug_assert!(length > 0.0 || data_len == 0, "length={} self={:?}", length, self);
+        debug_assert!(
+            length > 0.0 || data_len == 0,
+            "length={} self={:?}",
+            length,
+            self
+        );
         length.max(1.0)
     }
 }

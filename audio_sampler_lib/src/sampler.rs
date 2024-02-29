@@ -261,9 +261,7 @@ impl Channel {
         output
     }
 
-    pub fn process_sample<'a>(&mut self, io: &mut f32, params: &Params) {
-        let input = *io;
-
+    pub fn process_sample<'a>(&mut self, input: f32, params: &Params) -> f32 {
         self.recorder
             .process_sample(input, &mut self.data, &params.into());
 
@@ -292,7 +290,7 @@ impl Channel {
 
         //eprintln!("self.now={} play output={}", self.now, output);
         self.now += 1;
-        *io = output;
+        output
     }
 }
 
@@ -314,14 +312,17 @@ impl Sampler {
             ch.reset();
         });
     }
-    pub fn print_error_info(&self) -> String {
-        self.channels[0].recorder().print_error_info()
+    pub fn print_error_info(&self, channel: usize) -> String {
+        self.channels[channel].recorder().print_error_info()
     }
-    pub fn iter_active_notes(&self) -> impl Iterator<Item = Note> + '_ {
-        self.channels[0]
-            .voices
-            .iter()
-            .filter_map(|v| if !v.finished { Some(v.note) } else { None })
+    pub fn iter_active_notes(&self, channel: usize) -> impl Iterator<Item = Note> + '_ {
+        self.channels[channel].voices.iter().filter_map(|v| {
+            if !v.finished {
+                Some(v.note)
+            } else {
+                None
+            }
+        })
     }
     pub fn get_waveform_summary(&self, resolution: usize) -> WaveformSummary {
         let data = &self.channels[0].data;
@@ -375,18 +376,22 @@ impl Sampler {
         self.each(|ch| Channel::stop_recording(ch, params));
     }
 
+    pub fn process_sample<'a>(&mut self, channel: usize, input: f32, params: &Params) -> f32 {
+        self.channels[channel].process_sample(input, params)
+    }
+
     pub fn process_frame<'a>(&mut self, frame: &mut [&'a mut f32], params: &Params) {
         for j in 0..frame.len() {
-            self.channels[j].process_sample(frame[j], params);
+            *frame[j] = self.process_sample(j, *frame[j], params);
         }
     }
 
-    pub fn get_frames_processed(&self) -> usize {
-        self.channels[0].now
+    pub fn get_frames_processed(&self, channel: usize) -> usize {
+        self.channels[channel].now
     }
 
-    pub fn is_recording(&self) -> bool {
-        let yes = self.channels[0].recorder.is_recording();
+    pub fn is_recording(&self, channel: usize) -> bool {
+        let yes = self.channels[channel].recorder.is_recording();
         debug_assert!(
             self.channels
                 .iter()
@@ -403,16 +408,16 @@ impl Sampler {
             .collect()
     }
 
-    pub fn get_data_len(&self) -> usize {
-        let ch = &self.channels[0];
+    pub fn get_data_len(&self, channel: usize) -> usize {
+        let ch = &self.channels[channel];
         ch.data.len()
     }
 
-    pub fn get_voice_info(&self, params: &Params) -> Vec<VoiceInfo> {
-        let data_len_f32 = self.channels[0].data.len() as f32;
+    pub fn get_voice_info(&self, channel: usize, params: &Params) -> Vec<VoiceInfo> {
+        let data_len_f32 = self.channels[channel].data.len() as f32;
 
-        let l = params.loop_length(self.get_data_len());
-        self.channels[0]
+        let l = params.loop_length(self.get_data_len(0));
+        self.channels[channel]
             .voices
             .iter()
             .map(|v| {
