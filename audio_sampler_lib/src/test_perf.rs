@@ -84,7 +84,7 @@ mod test {
         h.start_playing(0.5);
         h.params.loop_mode = LoopMode::PingPong;
         for i in 0..1000 {
-            let v = (i / 10) % 3;
+            let _v = (i / 10) % 3;
             match (i / 10) % 3 {
                 0 => h.start_playing_note(0.0, 1),
                 1 => h.stop_playing_note(1),
