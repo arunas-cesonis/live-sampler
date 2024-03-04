@@ -1,7 +1,7 @@
 extern crate core;
 
 mod capi;
-mod clip2;
+mod clip;
 pub mod common_types;
 mod recorder;
 pub mod sampler;

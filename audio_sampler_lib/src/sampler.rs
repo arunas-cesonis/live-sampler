@@ -1,9 +1,9 @@
 use std::fmt::Debug;
 
-use crate::clip2;
-use crate::clip2::Clip2;
-use crate::common_types::{InitParams, Note, Params};
+use crate::clip;
+use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
+use crate::common_types::{InitParams, Note, Params};
 use crate::recorder::Recorder;
 use crate::voice::Voice;
 use crate::volume::Volume;
@@ -92,15 +92,15 @@ impl Channel {
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
         let offset = starting_offset(loop_start_percent, self.data.len());
         let length = params.loop_length(self.data.len());
-        let clip2 = Clip2::new(
+        let clip2 = Clip::new(
             self.now,
             offset,
             params.speed(),
             length,
-            self.data.len() as clip2::T,
+            self.data.len() as clip::T,
             match params.loop_mode {
-                LoopMode::Loop | LoopMode::PlayOnce => clip2::Mode::Loop,
-                LoopMode::PingPong => clip2::Mode::PingPong,
+                LoopMode::Loop | LoopMode::PlayOnce => clip::Mode::Loop,
+                LoopMode::PingPong => clip::Mode::PingPong,
             },
         );
         let mut voice = Voice {
@@ -177,9 +177,7 @@ impl Channel {
                     }
                     voice.is_at_zero_crossing
                 }
-                crate::common_types::NoteOffBehaviour::Decay => {
-                    voice.volume.is_static_and_mute()
-                }
+                crate::common_types::NoteOffBehaviour::Decay => voice.volume.is_static_and_mute(),
                 crate::common_types::NoteOffBehaviour::DecayAndZeroCrossing => {
                     if !voice.volume.is_static_and_mute() {
                         if now - voice.finished_at >= params.decay_samples {
@@ -209,20 +207,26 @@ impl Channel {
 
             voice
                 .clip2
-                .update_length(self.now, params.loop_length(self.data.len()) as clip2::T);
+                .update_length(self.now, params.loop_length(self.data.len()) as clip::T);
             voice.clip2.update_speed(self.now, voice_speed);
-            voice.clip2.update_data_length(self.now, self.data.len() as clip2::T);
-            voice.clip2.update_mode(self.now, match params.loop_mode {
-                LoopMode::Loop | LoopMode::PlayOnce => clip2::Mode::Loop,
-                LoopMode::PingPong => clip2::Mode::PingPong,
-            });
+            voice
+                .clip2
+                .update_data_length(self.now, self.data.len() as clip::T);
+            voice.clip2.update_mode(
+                self.now,
+                match params.loop_mode {
+                    LoopMode::Loop | LoopMode::PlayOnce => clip::Mode::Loop,
+                    LoopMode::PingPong => clip::Mode::PingPong,
+                },
+            );
             let index = voice.clip2.offset(self.now).floor() as usize;
 
             let value = self.data[index] * voice.volume.value(self.now);
 
             output += value;
             voice.played += voice_speed;
-            voice.is_at_zero_crossing = value.signum() != voice.last_sample_value.signum() || value == 0.0;
+            voice.is_at_zero_crossing =
+                value.signum() != voice.last_sample_value.signum() || value == 0.0;
             voice.last_sample_index = index;
             voice.last_sample_value = value;
 
@@ -313,7 +317,7 @@ impl Sampler {
     pub fn print_error_info(&self) -> String {
         self.channels[0].recorder().print_error_info()
     }
-    pub fn iter_active_notes(&self) -> impl Iterator<Item=Note> + '_ {
+    pub fn iter_active_notes(&self) -> impl Iterator<Item = Note> + '_ {
         self.channels[0]
             .voices
             .iter()
@@ -345,8 +349,8 @@ impl Sampler {
         }
     }
     fn each<F>(&mut self, f: F)
-        where
-            F: FnMut(&mut Channel),
+    where
+        F: FnMut(&mut Channel),
     {
         self.channels.iter_mut().for_each(f)
     }
@@ -420,7 +424,6 @@ impl Sampler {
             .collect()
     }
 
-
     #[cfg(debug_assertions)]
     pub fn dump_crash_info(&mut self) {
         let data_lengths: Vec<_> = self
@@ -428,10 +431,7 @@ impl Sampler {
             .iter()
             .map(|ch| ch.data.len())
             .collect::<Vec<_>>();
-        self
-            .channels
-            .iter_mut()
-            .for_each(|ch| ch.data.clear());
+        self.channels.iter_mut().for_each(|ch| ch.data.clear());
         eprintln!(
             "sampler just before death: {:#?}\ndatas have been clear, had lengths: {:?}",
             self, data_lengths
