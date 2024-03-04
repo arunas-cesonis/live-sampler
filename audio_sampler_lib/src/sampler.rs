@@ -361,10 +361,17 @@ impl Sampler {
     }
 
     pub fn start_playing(&mut self, pos: f32, note: Note, velocity: f32, params: &Params) {
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "sampler: start_playing({}, {:?}, {}, {:?})",
+            pos, note, velocity, params
+        );
         self.each(|ch| ch.start_playing(pos, note, velocity, params));
     }
 
     pub fn stop_playing(&mut self, note: Note, params: &Params) {
+        #[cfg(debug_assertions)]
+        eprintln!("sampler: stop_playing({:?}, {:?})", note, params);
         self.each(|ch| ch.stop_playing(note, params));
     }
 
@@ -377,7 +384,7 @@ impl Sampler {
     }
 
     pub fn process_sample<'a>(&mut self, channel: usize, input: f32, params: &Params) -> f32 {
-        self.channels[channel].process_sample(input, params)
+        params.volume * self.channels[channel].process_sample(input, params)
     }
 
     pub fn process_frame<'a>(&mut self, frame: &mut [&'a mut f32], params: &Params) {

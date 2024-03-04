@@ -1,7 +1,38 @@
 mod sampler1 {
-    use crate::common_types::{InitParams, Params};
-    use crate::sampler::Sampler;
+    use crate::common_types::{EnumIndex, InitParams, NoteOffBehaviour, Params, RecordingMode};
+    use crate::sampler::{LoopMode, Sampler};
     use core::slice;
+    use smallvec::SmallVec;
+
+    #[no_mangle]
+    pub extern "C" fn loop_mode_to_f32(lm: &LoopMode) -> f32 {
+        lm.to_f32()
+    }
+
+    #[no_mangle]
+    pub extern "C" fn loop_mode_from_f32(x: f32) -> LoopMode {
+        LoopMode::from_f32(x)
+    }
+
+    #[no_mangle]
+    pub extern "C" fn recording_mode_to_f32(rm: RecordingMode) -> f32 {
+        rm.to_f32()
+    }
+
+    #[no_mangle]
+    pub extern "C" fn recording_mode_from_f32(x: f32) -> RecordingMode {
+        RecordingMode::from_f32(x)
+    }
+
+    #[no_mangle]
+    pub extern "C" fn note_off_behaviour_to_f32(nob: NoteOffBehaviour) -> f32 {
+        nob.to_f32()
+    }
+
+    #[no_mangle]
+    pub extern "C" fn note_off_behaviour_from_f32(x: f32) -> NoteOffBehaviour {
+        NoteOffBehaviour::from_f32(x)
+    }
 
     #[no_mangle]
     pub extern "C" fn sampler_params_default() -> Params {
@@ -34,12 +65,12 @@ mod sampler1 {
         params: &Params,
     ) {
         let out: &[*mut f32] = slice::from_raw_parts(outputs, sampler.channels.len());
-        let mut out: Vec<&mut [f32]> = out
+        let mut out: SmallVec<&mut [f32], 2> = out
             .into_iter()
             .map(|v| slice::from_raw_parts_mut(*v, frames))
             .collect();
         let inputs: &[*const f32] = slice::from_raw_parts(inputs, sampler.channels.len());
-        let inputs: Vec<&[f32]> = inputs
+        let inputs: SmallVec<&[f32], 2> = inputs
             .into_iter()
             .map(|v| slice::from_raw_parts(*v, frames))
             .collect();
