@@ -6,7 +6,6 @@
 
 [audio_sampler]
 name = "Audio Sampler"
-extra-args = ""
 
 # [pyo3_plugin]
 # name = "PyO3 Plugin"
