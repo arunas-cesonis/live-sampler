@@ -1,19 +1,19 @@
 #![allow(unused)]
 #![feature(extend_one)]
 
-#[cfg(jemalloc)]
+#[cfg(feature = "use_jemalloc")]
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
-#[cfg(jemalloc)]
+#[cfg(feature = "use_jemalloc")]
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-#[cfg(mimalloc)]
+#[cfg(feature = "use_mimalloc")]
 use mimalloc::MiMalloc;
 
-#[cfg(mimalloc)]
+#[cfg(feature = "use_mimalloc")]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
@@ -28,21 +28,21 @@ use audio_sampler_lib::common_types::{InitParams, Note, VersionedWaveformSummary
 use audio_sampler_lib::sampler::Sampler;
 use audio_sampler_lib::time_value::{TimeOrRatio, TimeValue};
 use nih_plug::prelude::*;
-#[cfg(use_vizia)]
+#[cfg(feature = "use_vizia")]
 use nih_plug_vizia::vizia::entity;
-#[cfg(use_vizia)]
+#[cfg(feature = "use_vizia")]
 use nih_plug_vizia::vizia::prelude::Role::Time;
-#[cfg(use_vizia)]
+#[cfg(feature = "use_vizia")]
 use nih_plug_vizia::ViziaState;
 use num_traits::ToPrimitive;
 
-#[cfg(use_vizia)]
+#[cfg(feature = "use_vizia")]
 use crate::editor_vizia::DebugData;
 
 // mod editor;
 mod common_types;
 
-#[cfg(use_vizia)]
+#[cfg(feature = "use_vizia")]
 mod editor_vizia;
 
 type SysEx = ();
@@ -54,9 +54,9 @@ pub struct AudioSampler {
     sampler: Sampler,
     peak_meter: Arc<AtomicF32>,
 
-    #[cfg(use_vizia)]
+    #[cfg(feature = "use_vizia")]
     debug_data_in: Arc<parking_lot::Mutex<triple_buffer::Input<DebugData>>>,
-    #[cfg(use_vizia)]
+    #[cfg(feature = "use_vizia")]
     debug_data_out: Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>,
 
     peak_meter_decay_weight: f32,
@@ -107,7 +107,7 @@ impl Plugin for AudioSampler {
         self.params.clone()
     }
 
-    #[cfg(use_vizia)]
+    #[cfg(feature = "use_vizia")]
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         // Using vizia as Iced doesn't support drawing bitmap images under OpenGL
 
@@ -232,7 +232,7 @@ impl Plugin for AudioSampler {
             //for sample in channel_samples {
             //    amplitude += *sample;
             //}
-            #[cfg(use_vizia)]
+            #[cfg(feature = "use_vizia")]
             if self.params.editor_state.is_open() {
                 self.update_peak_meter(&mut frame);
 
@@ -313,7 +313,7 @@ pub struct AudioSamplerParams {
     pub midi_channel: EnumParam<MIDIChannelParam>,
     /// The editor state, saved together with the parameter state so the custom scaling can be
     /// restored.
-    #[cfg(use_vizia)]
+    #[cfg(feature = "use_vizia")]
     #[persist = "editor-state"]
     editor_state: Arc<ViziaState>,
 }
@@ -325,7 +325,7 @@ const LOOP_LENGTH_SKEW_SYNC: f32 = 0.25;
 impl Default for AudioSamplerParams {
     fn default() -> Self {
         Self {
-            #[cfg(use_vizia)]
+            #[cfg(feature = "use_vizia")]
             editor_state: editor_vizia::default_state(),
             auto_passthru: BoolParam::new("Pass through", true),
             speed: FloatParam::new(
@@ -407,7 +407,7 @@ impl Default for AudioSamplerParams {
 
 impl Default for AudioSampler {
     fn default() -> Self {
-        #[cfg(use_vizia)]
+        #[cfg(feature = "use_vizia")]
         let (debug_data_in, debug_data_out) = triple_buffer::TripleBuffer::default().split();
         Self {
             audio_io_layout: AudioIOLayout::default(),
@@ -416,9 +416,9 @@ impl Default for AudioSampler {
             peak_meter_decay_weight: 1.0,
             sampler: Sampler::new(0, &InitParams::default()),
             peak_meter: Default::default(), //debug: Arc::new(Mutex::new(None)),
-            #[cfg(use_vizia)]
+            #[cfg(feature = "use_vizia")]
             debug_data_in: Arc::new(parking_lot::Mutex::new(debug_data_in)),
-            #[cfg(use_vizia)]
+            #[cfg(feature = "use_vizia")]
             debug_data_out: Arc::new(parking_lot::Mutex::new(debug_data_out)),
             waveform_summary: Arc::new(VersionedWaveformSummary::default()),
             last_frame_recorded: 0,

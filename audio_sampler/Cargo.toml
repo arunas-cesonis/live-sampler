@@ -12,9 +12,9 @@ name = "audio-sampler"
 path = "src/main.rs"
 
 [features]
-use-jemalloc = ["tikv-jemallocator"]
-use-mimalloc = ["mimalloc"]
-use-vizia = ["nih_plug_vizia"]
+use_jemalloc = ["tikv-jemallocator"]
+use_mimalloc = ["mimalloc"]
+use_vizia = ["nih_plug_vizia"]
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { version = "0.5", optional = true }
