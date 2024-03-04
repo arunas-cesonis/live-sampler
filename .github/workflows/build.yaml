@@ -21,9 +21,11 @@ jobs:
     strategy:
       matrix:
         include:
-          - { name: ubuntu-20.04,       os: ubuntu-20.04,   cross-target: '' }
-          - { name: macos-universal,    os: macos-11,       cross-target: aarch64-apple-darwin }
-          - { name: windows,            os: windows-latest, cross-target: '' }
+          - { name: ubuntu-20.04,       os: ubuntu-20.04,   cross-target: '', extra-args: '' }
+          - { name: macos-universal,    os: macos-11,       cross-target: aarch64-apple-darwin, extra-args: '' }
+          - { name: windows,            os: windows-latest, cross-target: '', extra-args: '' }
+          - { name: vizia_macos-universal,    os: macos-11,       cross-target: aarch64-apple-darwin, extra-args: '--features use_vizia' }
+          - { name: vizia_windows,      os: windows-latest, cross-target: '', extra-args: '--features use_vizia' }
     name: Package plugin binaries
 #    if: false
     runs-on: ${{ matrix.os }}
@@ -84,16 +86,17 @@ jobs:
           done
 
           runner_name=${{ matrix.name }}
+          extra_args=${{ matrix.extra-args }}
           if [[ $runner_name = 'macos-universal' ]]; then
             export MACOSX_DEPLOYMENT_TARGET=10.13
-            cargo xtask bundle-universal "${package_args[@]}" --release
+            cargo xtask bundle-universal "${package_args[@]}" --release ${{extra_args}}
           else
             cross_target=${{ matrix.cross-target }}
             if [[ -n $cross_target ]]; then
               package_args+=("--target" "$cross_target")
             fi
 
-            cargo xtask bundle "${package_args[@]}" --release
+            cargo xtask bundle "${package_args[@]}" --release ${{extra_args}}
           fi
 
       - name: Determine build archive name
