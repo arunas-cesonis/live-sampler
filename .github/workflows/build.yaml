@@ -21,11 +21,12 @@ jobs:
     strategy:
       matrix:
         include:
-          - { name: ubuntu-20.04,       os: ubuntu-20.04,   cross-target: '', vizia_build: "0" }
-          - { name: macos-universal,    os: macos-11,       cross-target: aarch64-apple-darwin, vizia_build: "0" }
-          - { name: windows,            os: windows-latest, cross-target: '', vizia_build: "0" }
-          - { name: vizia_macos-universal,    os: macos-11,       cross-target: aarch64-apple-darwin, vizia_build: "1" }
-          - { name: vizia_windows,      os: windows-latest, cross-target: '', vizia_build: "1" }
+          - { name: ubuntu-20.04,          os: ubuntu-20.04,   cross-target: '', vizia_build: "0" }
+          - { name: macos-universal,       os: macos-11,       cross-target: aarch64-apple-darwin, vizia_build: "0" }
+          - { name: windows,               os: windows-latest, cross-target: '', vizia_build: "0" }
+          - { name: vizia_ubuntu-20.04,    os: ubuntu-20.04,   cross-target: '', vizia_build: "1" }
+          - { name: vizia_macos-universal, os: macos-11,       cross-target: aarch64-apple-darwin, vizia_build: "1" }
+          - { name: vizia_windows,         os: windows-latest, cross-target: '', vizia_build: "1" }
     name: Package plugin binaries
     #    if: false
     runs-on: ${{ matrix.os }}
