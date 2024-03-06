@@ -20,6 +20,7 @@ impl TryFrom<TimeOrRatioUnit> for TimeUnit {
     }
 }
 
+#[repr(C)]
 #[derive(Debug, Clone)]
 pub enum TimeOrRatio {
     Time(TimeValue),
@@ -28,6 +29,7 @@ pub enum TimeOrRatio {
 
 impl TimeOrRatio {}
 
+#[repr(C)]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TimeOrRatioUnit {
     SixteenthNotes,
@@ -35,6 +37,7 @@ pub enum TimeOrRatioUnit {
     Ratio,
 }
 
+#[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub enum TimeValue {
     QuarterNotes(f32),

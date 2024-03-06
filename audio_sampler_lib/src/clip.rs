@@ -11,7 +11,7 @@ pub enum Mode {
 }
 
 #[derive(Copy, Debug, Clone)]
-pub struct Clip2 {
+pub struct Clip {
     pub since: usize,
     pub start: T,
     pub speed: f32,
@@ -21,15 +21,8 @@ pub struct Clip2 {
     pub shift: T,
 }
 
-impl Clip2 {
-    pub fn new(
-        since: usize,
-        start: T,
-        speed: f32,
-        length: T,
-        data_length: T,
-        mode: Mode,
-    ) -> Self {
+impl Clip {
+    pub fn new(since: usize, start: T, speed: f32, length: T, data_length: T, mode: Mode) -> Self {
         Self {
             since,
             start,
@@ -131,7 +124,6 @@ impl Clip2 {
         self.since = now;
     }
 
-
     pub fn update_data_length(&mut self, now: usize, data_length: T) {
         if data_length == self.data_length {
             return;
@@ -186,7 +178,8 @@ impl Clip2 {
             x1,
             s,
             l,
-            dt, self
+            dt,
+            self
         );
         x1
     }
@@ -197,4 +190,3 @@ impl Clip2 {
         x
     }
 }
-

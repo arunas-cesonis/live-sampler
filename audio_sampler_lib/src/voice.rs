@@ -1,4 +1,4 @@
-use crate::clip2::Clip2;
+use crate::clip::Clip;
 use crate::common_types::{LoopMode, Note};
 use crate::volume::Volume;
 
@@ -14,7 +14,7 @@ pub struct Voice {
     pub note: Note,
     pub loop_start_percent: f32,
     pub played: f32,
-    pub clip2: Clip2,
+    pub clip2: Clip,
     pub volume: Volume,
     pub finished: bool,
     pub finished_at: usize,

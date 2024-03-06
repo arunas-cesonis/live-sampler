@@ -1,11 +1,9 @@
 #[cfg(test)]
 mod test {
-    use std::f32::consts::PI;
 
     use crate::common_types::{InitParams, Note, NoteOffBehaviour, Params, RecordingMode};
     use crate::sampler::{LoopMode, Sampler};
     use crate::time_value::TimeOrRatio;
-
 
     pub fn one_to(n: usize) -> Vec<f32> {
         (1..=n).map(|x| x as f32).collect()
@@ -75,8 +73,8 @@ mod test {
         }
 
         fn run_input<I>(&mut self, input: I) -> Vec<f32>
-            where
-                I: IntoIterator<Item=f32>,
+        where
+            I: IntoIterator<Item = f32>,
         {
             input
                 .into_iter()
@@ -96,10 +94,11 @@ mod test {
                         }
                     }
                     self.cmds = rem;
-                    let mut frame = vec![x];
-                    self.sampler.process_sample(&mut frame, &self.params);
+                    let mut x = x;
+                    let mut frame = vec![&mut x];
+                    self.sampler.process_frame(&mut frame, &self.params);
                     self.now += 1;
-                    frame[0]
+                    x
                 })
                 .collect::<Vec<_>>()
         }
@@ -153,7 +152,7 @@ mod test {
                 one_to_ten(),
                 vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 100.0, 100.0, 100.0],
             ]
-                .concat()
+            .concat()
         );
 
         // record first 10 samples, then wait for 2 samples and PlayOnce with loop length 100%
@@ -173,7 +172,7 @@ mod test {
                 vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
                 vec![9.0, 10.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
-                .concat()
+            .concat()
         );
 
         // same as above, but backwards
@@ -187,7 +186,7 @@ mod test {
                 vec![100.0, 100.0, 10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0],
                 vec![1.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
-                .concat()
+            .concat()
         );
     }
 
@@ -224,7 +223,7 @@ mod test {
                 vec![5.0, 4.0, 3.0, 2.0, 1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
                 vec![100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
-                .concat()
+            .concat()
         );
     }
 
@@ -293,7 +292,7 @@ mod test {
                 vec![100.0, 100.0],
                 vec![3.0, 4.0, 5.0, 6.0, 7.0, 3.0, 4.0, 5.0],
             ]
-                .concat()
+            .concat()
         );
 
         // record first 10 samples, then play loop length 50% from 80%
@@ -318,7 +317,7 @@ mod test {
                 vec![9.0, 10.0, 1.0, 2.0, 3.0],
                 vec![9.0, 10.0, 1.0, 2.0, 3.0],
             ]
-                .concat()
+            .concat()
         );
     }
 
@@ -356,7 +355,7 @@ mod test {
                 vec![1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
                 vec![1.0, 10.0, 9.0, 8.0],
             ]
-                .concat()
+            .concat()
         );
     }
 
@@ -397,7 +396,7 @@ mod test {
                 vec![1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
                 vec![1.0, 10.0, 9.0, 8.0],
             ]
-                .concat()
+            .concat()
         );
     }
 
@@ -470,7 +469,7 @@ mod test {
             one_to_five().into_iter().rev().collect(),
             ten_tens(),
         ]
-            .concat();
+        .concat();
         for i in 0..output.len() {
             eprintln!(
                 "i: {} input: {} output: {} expected: {} ",
@@ -515,7 +514,7 @@ mod test {
         let input = (0..44100)
             .map(|x| {
                 let t = (x as f32) / 44100.0;
-                let r = t * (180.0 / PI);
+                let r = t * (180.0 / 3.14);
                 r.cos()
             })
             .collect::<Vec<_>>();
@@ -565,8 +564,8 @@ mod test {
             self.run_input(std::iter::repeat(0.0).take(n))
         }
         pub fn record<I>(&mut self, input: I) -> Vec<f32>
-            where
-                I: IntoIterator<Item=f32>,
+        where
+            I: IntoIterator<Item = f32>,
         {
             self.start_recording();
             let out = self.run_input(input);
@@ -574,8 +573,8 @@ mod test {
             out
         }
         pub fn run_input<I>(&mut self, input: I) -> Vec<f32>
-            where
-                I: IntoIterator<Item=f32>,
+        where
+            I: IntoIterator<Item = f32>,
         {
             let mut output = vec![];
             for mut x in input {
@@ -643,7 +642,10 @@ mod test {
         assert_eq!(h.run(3), vec![11.0, 22.0, 33.0]);
         assert_eq!(h.run(2), vec![11.0, 22.0]);
         h.start_recording();
-        assert_eq!(h.run_input(vec![111., 222., 333.]), vec![33.0, 111.0, 222.0]);
+        assert_eq!(
+            h.run_input(vec![111., 222., 333.]),
+            vec![33.0, 111.0, 222.0]
+        );
         h.stop_recording();
         assert_eq!(h.run(3), vec![333.0, 111.0, 222.0]);
     }
@@ -657,8 +659,13 @@ mod test {
         h.params.loop_mode = LoopMode::PingPong;
         for i in 0..100 {
             let out = h.run(1);
-            let is_rev = h.sampler.channels[0].voices[0].clip2.is_pingpong_reversing(h.sampler.channels[0].now);
-            eprintln!("now={:>8} {:<8} {:<6} {:?}", i, out[0], is_rev, h.sampler.channels[0].voices[0].clip2);
+            let is_rev = h.sampler.channels[0].voices[0]
+                .clip2
+                .is_pingpong_reversing(h.sampler.channels[0].now);
+            eprintln!(
+                "now={:>8} {:<8} {:<6} {:?}",
+                i, out[0], is_rev, h.sampler.channels[0].voices[0].clip2
+            );
         }
     }
 }

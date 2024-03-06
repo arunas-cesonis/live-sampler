@@ -1,25 +1,25 @@
 use std::cell::Cell;
 use std::f64::consts::PI;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use atomic_float::AtomicF32;
 use nih_plug::nih_warn;
 use nih_plug::params::Param;
 use nih_plug::prelude::{Editor, Enum};
-use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 use nih_plug_vizia::assets::register_noto_sans_bold;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
-use nih_plug_vizia::vizia::vg::{Color, ImageId};
-use nih_plug_vizia::vizia::vg::{ImageFlags, ImageSource, Paint, Path, PixelFormat, RenderTarget};
 use nih_plug_vizia::vizia::vg::imgref::Img;
 use nih_plug_vizia::vizia::vg::rgb::RGBA8;
+use nih_plug_vizia::vizia::vg::{Color, ImageId};
+use nih_plug_vizia::vizia::vg::{ImageFlags, ImageSource, Paint, Path, PixelFormat, RenderTarget};
 use nih_plug_vizia::widgets::*;
+use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
-use crate::{AudioSamplerParams};
-use crate::common_types::{Info, NoteOffBehaviourParam};
 use crate::common_types::TimeOrRatioUnitParam;
+use crate::common_types::{Info, NoteOffBehaviourParam};
+use crate::AudioSamplerParams;
 
 #[derive(Debug, Clone, Default)]
 pub struct DebugData {
@@ -34,10 +34,10 @@ pub struct Data {
 }
 
 impl Model for Data {
-//     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
-//         event.map(|editor_event, _| match editor_event {
-//         });
-//     }
+    //     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+    //         event.map(|editor_event, _| match editor_event {
+    //         });
+    //     }
 }
 
 #[cfg(debug_assertions)]
@@ -74,26 +74,25 @@ fn display_notes(cx: &mut Context) {
                 .width(Percentage(100.0 / 16.0));
         }
     })
-        .child_left(Stretch(1.0))
-        .child_right(Stretch(1.0))
-        .child_top(Pixels(-20.0))
-        .width(Percentage(100.0))
-        .height(Percentage(100.0));
+    .child_left(Stretch(1.0))
+    .child_right(Stretch(1.0))
+    .child_top(Pixels(-20.0))
+    .width(Percentage(100.0))
+    .height(Percentage(100.0));
 }
 
-impl WaveformView
-{
+impl WaveformView {
     pub fn new<LDebugData>(cx: &mut Context, debug_data_lens: LDebugData) -> Handle<Self>
-        where
-            LDebugData: Lens<Target=Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>>,
+    where
+        LDebugData: Lens<Target = Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>>,
     {
         Self {
             debug_data: debug_data_lens.get(cx),
             image: Cell::new(None),
         }
-            .build(cx, |cx| {
-                display_notes(cx);
-            })
+        .build(cx, |cx| {
+            display_notes(cx);
+        })
     }
 
     fn get_image(&self, canvas: &mut Canvas, info: &Info) -> ImageId {
@@ -202,8 +201,7 @@ fn rectangle_path(x: f32, y: f32, w: f32, h: f32) -> Path {
     path
 }
 
-impl View for WaveformView
-{
+impl View for WaveformView {
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
         //self.draw_image(cx, canvas);
         let mut background_path = Path::new();
@@ -293,9 +291,9 @@ pub enum EditorEvent {
 }
 
 fn loop_length_slider<P, FMap>(cx: &mut Context, unit: TimeOrRatioUnitParam, lens: FMap)
-    where
-        P: Param + 'static,
-        FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
+where
+    P: Param + 'static,
+    FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
 {
     let title = <TimeOrRatioUnitParam as Enum>::variants()[unit.to_index()];
     VStack::new(cx, |cx| {
@@ -304,16 +302,16 @@ fn loop_length_slider<P, FMap>(cx: &mut Context, unit: TimeOrRatioUnitParam, len
             .width(Stretch(0.75))
             .right(Pixels(10.0));
     })
-        .width(Stretch(1.0))
-        .right(Pixels(10.0))
-        .height(Auto)
-        .display(Data::params.map(move |params| params.loop_length_unit.value() == unit));
+    .width(Stretch(1.0))
+    .right(Pixels(10.0))
+    .height(Auto)
+    .display(Data::params.map(move |params| params.loop_length_unit.value() == unit));
 }
 
 fn param_slider<P, FMap>(cx: &mut Context, title: &str, lens: FMap)
-    where
-        P: Param + 'static,
-        FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
+where
+    P: Param + 'static,
+    FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
 {
     VStack::new(cx, |cx| {
         Label::new(cx, title).top(Pixels(10.0));
@@ -321,22 +319,21 @@ fn param_slider<P, FMap>(cx: &mut Context, title: &str, lens: FMap)
             .width(Stretch(0.75))
             .right(Pixels(10.0));
     })
-        .width(Stretch(1.0))
-        .right(Pixels(10.0))
-        .height(Auto);
+    .width(Stretch(1.0))
+    .right(Pixels(10.0))
+    .height(Auto);
 }
 
 fn param_slider1<P, FMap>(cx: &mut Context, title: &str, lens: FMap)
-    where
-        P: Param + 'static,
-        FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
+where
+    P: Param + 'static,
+    FMap: Fn(&Arc<AudioSamplerParams>) -> &P + Copy + 'static,
 {
     Label::new(cx, title).top(Pixels(10.0));
     ParamSlider::new(cx, Data::params, lens)
         .width(Stretch(1.0))
         .right(Pixels(10.0));
 }
-
 
 // https://github.com/robbert-vdh/nih-plug/blob/92ce73700005255565c6be45412609ea87eb8b41/src/util.rs#L38
 pub const MINUS_INFINITY_GAIN: f32 = 1e-5; // 10f32.powf(MINUS_INFINITY_DB / 20)
@@ -348,7 +345,6 @@ pub const MINUS_INFINITY_GAIN: f32 = 1e-5; // 10f32.powf(MINUS_INFINITY_DB / 20)
 pub fn gain_to_db(gain: f32) -> f32 {
     f32::max(gain, MINUS_INFINITY_GAIN).log10() * 20.0
 }
-
 
 pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
@@ -372,11 +368,11 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                         .map(|peak_meter| gain_to_db(peak_meter.load(Ordering::Relaxed))),
                     Some(Duration::from_millis(600)),
                 )
-                    .width(Stretch(0.25))
-                    .left(Pixels(20.0))
-                    .top(Pixels(19.0));
+                .width(Stretch(0.25))
+                .left(Pixels(20.0))
+                .top(Pixels(19.0));
             })
-                .height(Pixels(42.0));
+            .height(Pixels(42.0));
             HStack::new(cx, |cx| {
                 VStack::new(cx, |cx| {
                     param_slider1(cx, "Volume", |params| &params.volume);
@@ -384,19 +380,19 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     param_slider1(cx, "Decay", |params| &params.decay);
                     param_slider1(cx, "Passthru", |params| &params.auto_passthru);
                 })
-                    .width(Percentage(25.0));
+                .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
                     param_slider1(cx, "Speed", |params| &params.speed);
                     //param_slider1(cx, "Start offset", |params| &params.start_offset);
                     param_slider1(cx, "Loop mode", |params| &params.loop_mode);
                     param_slider1(cx, "Note off behaviour", |params| &params.note_off_behavior);
                 })
-                    .width(Percentage(25.0));
+                .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
                     param_slider1(cx, "Will record", |params| &params.recording_mode);
                     param_slider1(cx, "MIDI channel", |params| &params.midi_channel);
                 })
-                    .width(Percentage(25.0));
+                .width(Percentage(25.0));
 
                 VStack::new(cx, |cx| {
                     loop_length_slider(cx, TimeOrRatioUnitParam::Ratio, |params| {
@@ -415,7 +411,7 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
             //});
             WaveformView::new(cx, Data::debug_data_out).height(Pixels(50.0));
         })
-            .border_width(Pixels(10.0));
+        .border_width(Pixels(10.0));
 
         ResizeHandle::new(cx);
     })
