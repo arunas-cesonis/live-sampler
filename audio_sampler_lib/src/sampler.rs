@@ -72,10 +72,14 @@ impl Channel {
                 return;
             }
         }
-        #[cfg(debug_assertions)]
-        {
-            panic!("set_note_speed: note not found: {:?}", note);
-        }
+        //
+        // This happens quite often in Bitwig when the project has just loaded.
+        // May be due to another bug in this project as well.
+        //
+        // #[cfg(debug_assertions)]
+        // {
+        //     panic!("set_note_speed: note not found: {:?}", note);
+        // }
     }
 
     pub fn start_playing(
