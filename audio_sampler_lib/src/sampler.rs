@@ -1,15 +1,15 @@
 use std::fmt::Debug;
 
-use crate::clip2;
-use crate::clip2::Clip2;
-use crate::common_types::{InitParams, Note, Params};
+use crate::clip;
+use crate::clip::Clip;
 pub use crate::common_types::LoopMode;
+use crate::common_types::{InitParams, Note, Params};
 use crate::recorder::Recorder;
 use crate::voice::Voice;
 use crate::volume::Volume;
 
 #[derive(Clone, Debug)]
-pub(crate) struct Channel {
+pub struct Channel {
     pub(crate) data: Vec<f32>,
     pub(crate) voices: Vec<Voice>,
     pub(crate) now: usize,
@@ -69,13 +69,20 @@ impl Channel {
         for v in &mut self.voices {
             if v.note == note {
                 v.speed = speed;
-                return;
+                // Not returning here as there may be multiple voices with the same note.
+                // This is a bug; voice with same note should probably reset the state of
+                // existing one and not create new voice.
+                // return;
             }
         }
-        #[cfg(debug_assertions)]
-        {
-            panic!("set_note_speed: note not found: {:?}", note);
-        }
+        //
+        // This happens quite often in Bitwig when the project has just loaded.
+        // May be due to another bug in this project as well.
+        //
+        // #[cfg(debug_assertions)]
+        // {
+        //     panic!("set_note_speed: note not found: {:?}", note);
+        // }
     }
 
     pub fn start_playing(
@@ -92,15 +99,15 @@ impl Channel {
         assert!(loop_start_percent >= 0.0 && loop_start_percent <= 1.0);
         let offset = starting_offset(loop_start_percent, self.data.len());
         let length = params.loop_length(self.data.len());
-        let clip2 = Clip2::new(
+        let clip2 = Clip::new(
             self.now,
             offset,
             params.speed(),
             length,
-            self.data.len() as clip2::T,
+            self.data.len() as clip::T,
             match params.loop_mode {
-                LoopMode::Loop | LoopMode::PlayOnce => clip2::Mode::Loop,
-                LoopMode::PingPong => clip2::Mode::PingPong,
+                LoopMode::Loop | LoopMode::PlayOnce => clip::Mode::Loop,
+                LoopMode::PingPong => clip::Mode::PingPong,
             },
         );
         let mut voice = Voice {
@@ -177,9 +184,7 @@ impl Channel {
                     }
                     voice.is_at_zero_crossing
                 }
-                crate::common_types::NoteOffBehaviour::Decay => {
-                    voice.volume.is_static_and_mute()
-                }
+                crate::common_types::NoteOffBehaviour::Decay => voice.volume.is_static_and_mute(),
                 crate::common_types::NoteOffBehaviour::DecayAndZeroCrossing => {
                     if !voice.volume.is_static_and_mute() {
                         if now - voice.finished_at >= params.decay_samples {
@@ -209,20 +214,26 @@ impl Channel {
 
             voice
                 .clip2
-                .update_length(self.now, params.loop_length(self.data.len()) as clip2::T);
+                .update_length(self.now, params.loop_length(self.data.len()) as clip::T);
             voice.clip2.update_speed(self.now, voice_speed);
-            voice.clip2.update_data_length(self.now, self.data.len() as clip2::T);
-            voice.clip2.update_mode(self.now, match params.loop_mode {
-                LoopMode::Loop | LoopMode::PlayOnce => clip2::Mode::Loop,
-                LoopMode::PingPong => clip2::Mode::PingPong,
-            });
+            voice
+                .clip2
+                .update_data_length(self.now, self.data.len() as clip::T);
+            voice.clip2.update_mode(
+                self.now,
+                match params.loop_mode {
+                    LoopMode::Loop | LoopMode::PlayOnce => clip::Mode::Loop,
+                    LoopMode::PingPong => clip::Mode::PingPong,
+                },
+            );
             let index = voice.clip2.offset(self.now).floor() as usize;
 
             let value = self.data[index] * voice.volume.value(self.now);
 
             output += value;
             voice.played += voice_speed;
-            voice.is_at_zero_crossing = value.signum() != voice.last_sample_value.signum() || value == 0.0;
+            voice.is_at_zero_crossing =
+                value.signum() != voice.last_sample_value.signum() || value == 0.0;
             voice.last_sample_index = index;
             voice.last_sample_value = value;
 
@@ -257,9 +268,7 @@ impl Channel {
         output
     }
 
-    pub fn process_sample<'a>(&mut self, io: &mut f32, params: &Params) {
-        let input = *io;
-
+    pub fn process_sample<'a>(&mut self, input: f32, params: &Params) -> f32 {
         self.recorder
             .process_sample(input, &mut self.data, &params.into());
 
@@ -288,13 +297,13 @@ impl Channel {
 
         //eprintln!("self.now={} play output={}", self.now, output);
         self.now += 1;
-        *io = output;
+        output
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct Sampler {
-    pub(crate) channels: Vec<Channel>,
+    pub channels: Vec<Channel>,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -304,33 +313,23 @@ pub struct WaveformSummary {
     pub max: f32,
 }
 
-#[no_mangle]
-pub extern fn sampler_new(channel_count: usize, params: &InitParams) -> *mut Sampler {
-    let b = Box::new(Sampler::new(channel_count, params));
-    let b_ptr = Box::into_raw(b);
-    b_ptr
-}
-
-#[no_mangle]
-pub unsafe extern fn sampler_free(sampler: *mut Sampler) {
-    let _ = Box::from_raw(sampler);
-}
-
 impl Sampler {
-    #[no_mangle]
-    pub extern fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.channels.iter_mut().for_each(|ch| {
             ch.reset();
         });
     }
-    pub fn print_error_info(&self) -> String {
-        self.channels[0].recorder().print_error_info()
+    pub fn print_error_info(&self, channel: usize) -> String {
+        self.channels[channel].recorder().print_error_info()
     }
-    pub fn iter_active_notes(&self) -> impl Iterator<Item=Note> + '_ {
-        self.channels[0]
-            .voices
-            .iter()
-            .filter_map(|v| if !v.finished { Some(v.note) } else { None })
+    pub fn iter_active_notes(&self, channel: usize) -> impl Iterator<Item = Note> + '_ {
+        self.channels[channel].voices.iter().filter_map(|v| {
+            if !v.finished {
+                Some(v.note)
+            } else {
+                None
+            }
+        })
     }
     pub fn get_waveform_summary(&self, resolution: usize) -> WaveformSummary {
         let data = &self.channels[0].data;
@@ -358,8 +357,8 @@ impl Sampler {
         }
     }
     fn each<F>(&mut self, f: F)
-        where
-            F: FnMut(&mut Channel),
+    where
+        F: FnMut(&mut Channel),
     {
         self.channels.iter_mut().for_each(f)
     }
@@ -369,10 +368,17 @@ impl Sampler {
     }
 
     pub fn start_playing(&mut self, pos: f32, note: Note, velocity: f32, params: &Params) {
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "sampler: start_playing({}, {:?}, {}, {:?})",
+            pos, note, velocity, params
+        );
         self.each(|ch| ch.start_playing(pos, note, velocity, params));
     }
 
     pub fn stop_playing(&mut self, note: Note, params: &Params) {
+        #[cfg(debug_assertions)]
+        eprintln!("sampler: stop_playing({:?}, {:?})", note, params);
         self.each(|ch| ch.stop_playing(note, params));
     }
 
@@ -384,28 +390,22 @@ impl Sampler {
         self.each(|ch| Channel::stop_recording(ch, params));
     }
 
-    pub fn process_sample<'a>(
-        &mut self,
-        iter: impl IntoIterator<Item=&'a mut f32>,
-        params: &Params,
-    ) {
-        for (i, sample) in iter.into_iter().enumerate() {
-            self.channels[i].process_sample(sample, params);
-        }
+    pub fn process_sample<'a>(&mut self, channel: usize, input: f32, params: &Params) -> f32 {
+        params.volume * self.channels[channel].process_sample(input, params)
     }
 
     pub fn process_frame<'a>(&mut self, frame: &mut [&'a mut f32], params: &Params) {
         for j in 0..frame.len() {
-            self.channels[j].process_sample(frame[j], params);
+            *frame[j] = self.process_sample(j, *frame[j], params);
         }
     }
 
-    pub fn get_frames_processed(&self) -> usize {
-        self.channels[0].now
+    pub fn get_frames_processed(&self, channel: usize) -> usize {
+        self.channels[channel].now
     }
 
-    pub fn is_recording(&self) -> bool {
-        let yes = self.channels[0].recorder.is_recording();
+    pub fn is_recording(&self, channel: usize) -> bool {
+        let yes = self.channels[channel].recorder.is_recording();
         debug_assert!(
             self.channels
                 .iter()
@@ -422,16 +422,16 @@ impl Sampler {
             .collect()
     }
 
-    pub fn get_data_len(&self) -> usize {
-        let ch = &self.channels[0];
+    pub fn get_data_len(&self, channel: usize) -> usize {
+        let ch = &self.channels[channel];
         ch.data.len()
     }
 
-    pub fn get_voice_info(&self, params: &Params) -> Vec<VoiceInfo> {
-        let data_len_f32 = self.channels[0].data.len() as f32;
+    pub fn get_voice_info(&self, channel: usize, params: &Params) -> Vec<VoiceInfo> {
+        let data_len_f32 = self.channels[channel].data.len() as f32;
 
-        let l = params.loop_length(self.get_data_len());
-        self.channels[0]
+        let l = params.loop_length(self.get_data_len(0));
+        self.channels[channel]
             .voices
             .iter()
             .map(|v| {
@@ -443,7 +443,6 @@ impl Sampler {
             .collect()
     }
 
-
     #[cfg(debug_assertions)]
     pub fn dump_crash_info(&mut self) {
         let data_lengths: Vec<_> = self
@@ -451,10 +450,7 @@ impl Sampler {
             .iter()
             .map(|ch| ch.data.len())
             .collect::<Vec<_>>();
-        self
-            .channels
-            .iter_mut()
-            .for_each(|ch| ch.data.clear());
+        self.channels.iter_mut().for_each(|ch| ch.data.clear());
         eprintln!(
             "sampler just before death: {:#?}\ndatas have been clear, had lengths: {:?}",
             self, data_lengths

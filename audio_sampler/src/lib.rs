@@ -1,43 +1,51 @@
 #![allow(unused)]
 #![feature(extend_one)]
 
-#[cfg(jemalloc)]
+#[cfg(feature = "use_jemalloc")]
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
-#[cfg(jemalloc)]
+#[cfg(feature = "use_jemalloc")]
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-#[cfg(mimalloc)]
+#[cfg(feature = "use_mimalloc")]
 use mimalloc::MiMalloc;
 
-#[cfg(mimalloc)]
+#[cfg(feature = "use_mimalloc")]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
 use std::sync::Arc;
 
-use nih_plug::prelude::*;
-use nih_plug_vizia::vizia::entity;
-use nih_plug_vizia::vizia::prelude::Role::Time;
-use nih_plug_vizia::ViziaState;
-use num_traits::ToPrimitive;
+use crate::common_types::{
+    Info, LoopModeParam, MIDIChannelParam, NoteOffBehaviourParam, RecordingModeParam,
+    TimeOrRatioUnitParam,
+};
+use audio_sampler_lib::common_types::Params as SamplerParams;
 use audio_sampler_lib::common_types::{InitParams, Note, VersionedWaveformSummary};
 use audio_sampler_lib::sampler::Sampler;
 use audio_sampler_lib::time_value::{TimeOrRatio, TimeValue};
-use audio_sampler_lib::common_types::{Params as SamplerParams};
-use crate::common_types::{Info, LoopModeParam, MIDIChannelParam, NoteOffBehaviourParam, RecordingModeParam, TimeOrRatioUnitParam};
+use nih_plug::prelude::*;
+#[cfg(feature = "use_vizia")]
+use nih_plug_vizia::vizia::entity;
+#[cfg(feature = "use_vizia")]
+use nih_plug_vizia::vizia::prelude::Role::Time;
+#[cfg(feature = "use_vizia")]
+use nih_plug_vizia::ViziaState;
+use num_traits::ToPrimitive;
 
+#[cfg(feature = "use_vizia")]
 use crate::editor_vizia::DebugData;
 
 // mod editor;
-mod editor_vizia;
 mod common_types;
 
-type SysEx = ();
+#[cfg(feature = "use_vizia")]
+mod editor_vizia;
 
+type SysEx = ();
 
 pub struct AudioSampler {
     audio_io_layout: AudioIOLayout,
@@ -45,13 +53,18 @@ pub struct AudioSampler {
     sample_rate: f32,
     sampler: Sampler,
     peak_meter: Arc<AtomicF32>,
+
+    #[cfg(feature = "use_vizia")]
     debug_data_in: Arc<parking_lot::Mutex<triple_buffer::Input<DebugData>>>,
+    #[cfg(feature = "use_vizia")]
     debug_data_out: Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>,
+
     peak_meter_decay_weight: f32,
     waveform_summary: Arc<VersionedWaveformSummary>,
     last_frame_recorded: usize,
     last_waveform_updated: usize,
     active_notes: [[i16; 256]; 16],
+    iteration: usize,
     reversing: bool,
 }
 
@@ -95,6 +108,7 @@ impl Plugin for AudioSampler {
         self.params.clone()
     }
 
+    #[cfg(feature = "use_vizia")]
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         // Using vizia as Iced doesn't support drawing bitmap images under OpenGL
 
@@ -106,7 +120,6 @@ impl Plugin for AudioSampler {
 
         editor_vizia::create(self.params.editor_state.clone(), data)
     }
-
 
     fn initialize(
         &mut self,
@@ -140,7 +153,7 @@ impl Plugin for AudioSampler {
                     break;
                 }
                 #[cfg(debug_assertions)]
-                nih_warn!("event: {:?}", event);
+                nih_warn!("event: iteration={:<20} {:?}", self.iteration, event);
 
                 match event {
                     NoteEvent::PolyTuning {
@@ -148,7 +161,9 @@ impl Plugin for AudioSampler {
                         channel: note_channel,
                         tuning,
                         ..
-                    } if params_midi_channel.is_none() || params_midi_channel == Some(note_channel) => {
+                    } if params_midi_channel.is_none()
+                        || params_midi_channel == Some(note_channel) =>
+                    {
                         let note = Note::new(note, note_channel);
                         let speed = 1.0 + (tuning / 12.0);
                         self.sampler.set_note_speed(note, speed);
@@ -158,7 +173,9 @@ impl Plugin for AudioSampler {
                         note,
                         channel: note_channel,
                         ..
-                    } if params_midi_channel.is_none() || params_midi_channel == Some(note_channel) => {
+                    } if params_midi_channel.is_none()
+                        || params_midi_channel == Some(note_channel) =>
+                    {
                         let note = Note::new(note, note_channel);
                         match note.note {
                             0 => {
@@ -206,8 +223,8 @@ impl Plugin for AudioSampler {
                 next_event = context.next_event();
             }
 
-            if self.sampler.is_recording() {
-                self.last_frame_recorded = self.sampler.get_frames_processed();
+            if self.sampler.is_recording(0) {
+                self.last_frame_recorded = self.sampler.get_frames_processed(0);
             }
 
             let mut frame = channel_samples.into_iter().collect::<Vec<_>>();
@@ -216,6 +233,7 @@ impl Plugin for AudioSampler {
             //for sample in channel_samples {
             //    amplitude += *sample;
             //}
+            #[cfg(feature = "use_vizia")]
             if self.params.editor_state.is_open() {
                 self.update_peak_meter(&mut frame);
 
@@ -224,11 +242,11 @@ impl Plugin for AudioSampler {
                     self.update_waveform();
                     self.last_waveform_updated = self.last_frame_recorded;
                 }
-                let voice_info = self.sampler.get_voice_info(params);
+                let voice_info = self.sampler.get_voice_info(0, params);
                 let info = Info {
                     voices: voice_info,
                     last_recorded_indices: self.sampler.get_last_recorded_offsets(),
-                    data_len: self.sampler.get_data_len(),
+                    data_len: self.sampler.get_data_len(0),
                     waveform_summary: self.waveform_summary.clone(),
                 };
                 self.debug_data_in.lock().write(DebugData { info });
@@ -248,6 +266,7 @@ impl Plugin for AudioSampler {
             }
         }
 
+        self.iteration += 1;
         ProcessStatus::Normal
     }
 }
@@ -281,9 +300,8 @@ pub struct AudioSamplerParams {
     #[id = "loop_length_sync"]
     pub loop_length_sync: FloatParam,
 
-//    #[id = "start_offset"]
+    //    #[id = "start_offset"]
     //   pub start_offset: FloatParam,
-
     #[id = "loop_length_unit"]
     pub loop_length_unit: EnumParam<TimeOrRatioUnitParam>,
 
@@ -297,6 +315,7 @@ pub struct AudioSamplerParams {
     pub midi_channel: EnumParam<MIDIChannelParam>,
     /// The editor state, saved together with the parameter state so the custom scaling can be
     /// restored.
+    #[cfg(feature = "use_vizia")]
     #[persist = "editor-state"]
     editor_state: Arc<ViziaState>,
 }
@@ -308,6 +327,7 @@ const LOOP_LENGTH_SKEW_SYNC: f32 = 0.25;
 impl Default for AudioSamplerParams {
     fn default() -> Self {
         Self {
+            #[cfg(feature = "use_vizia")]
             editor_state: editor_vizia::default_state(),
             auto_passthru: BoolParam::new("Pass through", true),
             speed: FloatParam::new(
@@ -327,7 +347,7 @@ impl Default for AudioSamplerParams {
                     factor: ATTACK_DECAY_SKEW_FACTOR,
                 },
             )
-                .with_unit(" ms"),
+            .with_unit(" ms"),
             decay: FloatParam::new(
                 "Decay",
                 0.1,
@@ -337,7 +357,7 @@ impl Default for AudioSamplerParams {
                     factor: ATTACK_DECAY_SKEW_FACTOR,
                 },
             )
-                .with_unit(" ms"),
+            .with_unit(" ms"),
             midi_channel: EnumParam::new("MIDI channel", MIDIChannelParam::All),
             loop_mode: EnumParam::new("Loop mode", LoopModeParam::Loop),
             loop_length_unit: EnumParam::new("Loop length unit", TimeOrRatioUnitParam::Ratio),
@@ -351,7 +371,7 @@ impl Default for AudioSamplerParams {
                     factor: LOOP_LENGTH_SKEW_FACTOR,
                 },
             )
-                .with_unit("%"),
+            .with_unit("%"),
             loop_length_time: FloatParam::new(
                 "Loop length (seconds)",
                 1.0,
@@ -361,7 +381,7 @@ impl Default for AudioSamplerParams {
                     factor: LOOP_LENGTH_SKEW_FACTOR,
                 },
             )
-                .with_unit("s"),
+            .with_unit("s"),
             loop_length_sync: FloatParam::new(
                 "Loop length (16th notes)",
                 4.0,
@@ -371,7 +391,7 @@ impl Default for AudioSamplerParams {
                     factor: LOOP_LENGTH_SKEW_SYNC,
                 },
             )
-                .with_unit(" 1/16 notes"),
+            .with_unit(" 1/16 notes"),
             //start_offset: FloatParam::new(
             //    "Start offset",
             //    0.0,
@@ -379,13 +399,17 @@ impl Default for AudioSamplerParams {
             //)
             //    .with_unit(" %"),
             volume: FloatParam::new("Gain", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
-            note_off_behavior: EnumParam::new("Note off behavior", NoteOffBehaviourParam::default()),
+            note_off_behavior: EnumParam::new(
+                "Note off behavior",
+                NoteOffBehaviourParam::default(),
+            ),
         }
     }
 }
 
 impl Default for AudioSampler {
     fn default() -> Self {
+        #[cfg(feature = "use_vizia")]
         let (debug_data_in, debug_data_out) = triple_buffer::TripleBuffer::default().split();
         Self {
             audio_io_layout: AudioIOLayout::default(),
@@ -394,13 +418,16 @@ impl Default for AudioSampler {
             peak_meter_decay_weight: 1.0,
             sampler: Sampler::new(0, &InitParams::default()),
             peak_meter: Default::default(), //debug: Arc::new(Mutex::new(None)),
+            #[cfg(feature = "use_vizia")]
             debug_data_in: Arc::new(parking_lot::Mutex::new(debug_data_in)),
+            #[cfg(feature = "use_vizia")]
             debug_data_out: Arc::new(parking_lot::Mutex::new(debug_data_out)),
             waveform_summary: Arc::new(VersionedWaveformSummary::default()),
             last_frame_recorded: 0,
             last_waveform_updated: 0,
             active_notes: [[0; 256]; 16],
             reversing: false,
+            iteration: 0,
         }
     }
 }
@@ -421,7 +448,7 @@ impl AudioSampler {
     fn verify_active_notes(&mut self) {
         let mut ghost_notes: Vec<_> = self
             .sampler
-            .iter_active_notes()
+            .iter_active_notes(0)
             .filter(|note| !self.is_note_active(note))
             .collect();
         if !ghost_notes.is_empty() {
@@ -492,6 +519,7 @@ impl AudioSampler {
         let params = SamplerParams {
             auto_passthru: params_passthru,
             attack_samples,
+            volume: self.params.volume.value(),
             loop_mode: self.params.loop_mode.value().into(),
             loop_length: self.loop_length(),
             // start_offset_percent: self.params.start_offset.value(),

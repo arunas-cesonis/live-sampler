@@ -5,3 +5,9 @@ edition.workspace = true
 
 [lib]
 crate-type = ["lib", "staticlib"]
+
+[build-dependencies]
+cbindgen = "0.24.0"
+
+[dependencies.smallvec]
+version = "2.0.0-alpha.3"
