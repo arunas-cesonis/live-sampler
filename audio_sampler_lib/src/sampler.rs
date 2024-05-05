@@ -9,7 +9,7 @@ use crate::voice::Voice;
 use crate::volume::Volume;
 
 #[derive(Clone, Debug)]
-pub(crate) struct Channel {
+pub struct Channel {
     pub(crate) data: Vec<f32>,
     pub(crate) voices: Vec<Voice>,
     pub(crate) now: usize,
@@ -69,7 +69,10 @@ impl Channel {
         for v in &mut self.voices {
             if v.note == note {
                 v.speed = speed;
-                return;
+                // Not returning here as there may be multiple voices with the same note.
+                // This is a bug; voice with same note should probably reset the state of
+                // existing one and not create new voice.
+                // return;
             }
         }
         //
@@ -300,7 +303,7 @@ impl Channel {
 
 #[derive(Clone, Debug)]
 pub struct Sampler {
-    pub(crate) channels: Vec<Channel>,
+    pub channels: Vec<Channel>,
 }
 
 #[derive(Default, Clone, Debug)]

@@ -64,6 +64,7 @@ pub struct AudioSampler {
     last_frame_recorded: usize,
     last_waveform_updated: usize,
     active_notes: [[i16; 256]; 16],
+    iteration: usize,
     reversing: bool,
 }
 
@@ -152,7 +153,7 @@ impl Plugin for AudioSampler {
                     break;
                 }
                 #[cfg(debug_assertions)]
-                nih_warn!("event: {:?}", event);
+                nih_warn!("event: iteration={:<20} {:?}", self.iteration, event);
 
                 match event {
                     NoteEvent::PolyTuning {
@@ -265,6 +266,7 @@ impl Plugin for AudioSampler {
             }
         }
 
+        self.iteration += 1;
         ProcessStatus::Normal
     }
 }
@@ -425,6 +427,7 @@ impl Default for AudioSampler {
             last_waveform_updated: 0,
             active_notes: [[0; 256]; 16],
             reversing: false,
+            iteration: 0,
         }
     }
 }
