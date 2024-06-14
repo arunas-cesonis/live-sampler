@@ -163,11 +163,12 @@ impl Plugin for AudioSampler {
                         ..
                     } if params_midi_channel.is_none()
                         || params_midi_channel == Some(note_channel) =>
-                    {
-                        let note = Note::new(note, note_channel);
-                        let speed = 1.0 + (tuning / 12.0);
-                        self.sampler.set_note_speed(note, speed);
-                    }
+                        {
+                            let note = Note::new(note, note_channel);
+                            let mult = self.params.pitch_speed_multiplier.value();
+                            let speed = 1.0 + (tuning / 12.0) * mult;
+                            self.sampler.set_note_speed(note, speed);
+                        }
                     NoteEvent::NoteOn {
                         velocity,
                         note,
@@ -175,26 +176,26 @@ impl Plugin for AudioSampler {
                         ..
                     } if params_midi_channel.is_none()
                         || params_midi_channel == Some(note_channel) =>
-                    {
-                        let note = Note::new(note, note_channel);
-                        match note.note {
-                            0 => {
-                                self.set_note_active(&note, true);
-                                self.sampler.start_recording(params);
-                            }
-                            1 => {
-                                self.set_note_active(&note, true);
-                                self.reversing = true;
-                                params.reverse_speed = -1.0;
-                            }
-                            12..=27 => {
-                                self.set_note_active(&note, true);
-                                let pos = (note.note - 12) as f32 / 16.0;
-                                self.sampler.start_playing(pos, note, velocity, params);
-                            }
-                            _ => (),
-                        };
-                    }
+                        {
+                            let note = Note::new(note, note_channel);
+                            match note.note {
+                                0 => {
+                                    self.set_note_active(&note, true);
+                                    self.sampler.start_recording(params);
+                                }
+                                1 => {
+                                    self.set_note_active(&note, true);
+                                    self.reversing = true;
+                                    params.reverse_speed = -1.0;
+                                }
+                                12..=27 => {
+                                    self.set_note_active(&note, true);
+                                    let pos = (note.note - 12) as f32 / 16.0;
+                                    self.sampler.start_playing(pos, note, velocity, params);
+                                }
+                                _ => (),
+                            };
+                        }
                     NoteEvent::NoteOff {
                         note,
                         channel: note_channel,
@@ -313,6 +314,10 @@ pub struct AudioSamplerParams {
 
     #[id = "midi_channel"]
     pub midi_channel: EnumParam<MIDIChannelParam>,
+
+    #[id = "pitch_speed_multiplier"]
+    pub pitch_speed_multiplier: FloatParam,
+
     /// The editor state, saved together with the parameter state so the custom scaling can be
     /// restored.
     #[cfg(feature = "use_vizia")]
@@ -347,7 +352,7 @@ impl Default for AudioSamplerParams {
                     factor: ATTACK_DECAY_SKEW_FACTOR,
                 },
             )
-            .with_unit(" ms"),
+                .with_unit(" ms"),
             decay: FloatParam::new(
                 "Decay",
                 0.1,
@@ -357,8 +362,15 @@ impl Default for AudioSamplerParams {
                     factor: ATTACK_DECAY_SKEW_FACTOR,
                 },
             )
-            .with_unit(" ms"),
+                .with_unit(" ms"),
             midi_channel: EnumParam::new("MIDI channel", MIDIChannelParam::All),
+            pitch_speed_multiplier: FloatParam::new("Pitch Speed Multiplier",
+                                                    1.0,
+                                                    FloatRange::Linear {
+                                                        min: 0.1,
+                                                        max: 2.0,
+                                                    },
+            ),
             loop_mode: EnumParam::new("Loop mode", LoopModeParam::Loop),
             loop_length_unit: EnumParam::new("Loop length unit", TimeOrRatioUnitParam::Ratio),
             recording_mode: EnumParam::new("Recording mode", RecordingModeParam::default()),
@@ -371,7 +383,7 @@ impl Default for AudioSamplerParams {
                     factor: LOOP_LENGTH_SKEW_FACTOR,
                 },
             )
-            .with_unit("%"),
+                .with_unit("%"),
             loop_length_time: FloatParam::new(
                 "Loop length (seconds)",
                 1.0,
@@ -381,7 +393,7 @@ impl Default for AudioSamplerParams {
                     factor: LOOP_LENGTH_SKEW_FACTOR,
                 },
             )
-            .with_unit("s"),
+                .with_unit("s"),
             loop_length_sync: FloatParam::new(
                 "Loop length (16th notes)",
                 4.0,
@@ -391,7 +403,7 @@ impl Default for AudioSamplerParams {
                     factor: LOOP_LENGTH_SKEW_SYNC,
                 },
             )
-            .with_unit(" 1/16 notes"),
+                .with_unit(" 1/16 notes"),
             //start_offset: FloatParam::new(
             //    "Start offset",
             //    0.0,
