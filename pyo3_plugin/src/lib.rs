@@ -79,7 +79,6 @@ impl PyO3Plugin {
     }
 
     fn read_source_path(&self) -> String {
-        self.params.param1.value()
         self.params.source_path.0.lock().clone()
     }
 
