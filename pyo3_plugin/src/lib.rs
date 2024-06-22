@@ -79,6 +79,7 @@ impl PyO3Plugin {
     }
 
     fn read_source_path(&self) -> String {
+        self.params.param1.value()
         self.params.source_path.0.lock().clone()
     }
 
@@ -158,8 +159,8 @@ impl Plugin for PyO3Plugin {
             ..AudioIOLayout::const_default()
         },
     ];
-    const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
-    const MIDI_OUTPUT: MidiConfig = MidiConfig::Basic;
+    const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
+    const MIDI_OUTPUT: MidiConfig = MidiConfig::MidiCCs;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
     type SysExMessage = SysEx;
 
@@ -242,7 +243,7 @@ impl Plugin for PyO3Plugin {
                 };
                 if self.params.editor_state.is_open()
                     && self.now - self.stats_updated
-                        >= (self.stats_update_every.as_secs_f64() * sample_rate as f64) as usize
+                    >= (self.stats_update_every.as_secs_f64() * sample_rate as f64) as usize
                 {
                     self.stats_updated = self.now;
                     self.publish_stats();
