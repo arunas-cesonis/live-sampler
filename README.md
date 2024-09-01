@@ -10,7 +10,6 @@ Records audio and plays it back in a loop. Behavior is controlled by MIDI notes:
 - Note 0 (C-2) records audio while held
 - Notes 12-27 (C#-1) start a new voice playing recorded audio back, each from next 16th offset of the buffer
 - Note 1 (C#-2) reverses playback
--
 - All other MIDI events are ignored
 - No MIDI events are passed through
 
