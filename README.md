@@ -3,7 +3,7 @@ audio-sampler operates on audio buffers, midi-sampler operates on midi buffers.
 
 ### audio-sampler
 
-Records audio and plays it back in a loop. Behavior is controlled by MIDI notes:
+Records audio and plays it back in a loop. Behavior is controlled by MIDI events
 
 ![image info](./docs/screenshot.png)
 
@@ -45,3 +45,4 @@ Plugin parameters
 - MIDI channel - MIDI channel over which controlling notes are received
 - Show debug data - toggles displaying debug data on the plugin's UI
 - Loop mode - toggles between looping and playing the loop region once
+- Pitch speed multiplier - multiplier applied to polyphonic pitch events
