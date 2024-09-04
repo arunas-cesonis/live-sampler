@@ -22,10 +22,10 @@ jobs:
       matrix:
         include:
           - { name: ubuntu-20.04,          os: ubuntu-20.04,   cross-target: '', vizia_build: "0" }
-          - { name: macos-universal,       os: macos-11,       cross-target: aarch64-apple-darwin, vizia_build: "0" }
+          - { name: macos-universal,       os: macos-12,       cross-target: aarch64-apple-darwin, vizia_build: "0" }
           - { name: windows,               os: windows-latest, cross-target: '', vizia_build: "0" }
           - { name: vizia_ubuntu-20.04,    os: ubuntu-20.04,   cross-target: '', vizia_build: "1" }
-          - { name: vizia_macos-universal, os: macos-11,       cross-target: aarch64-apple-darwin, vizia_build: "1" }
+          - { name: vizia_macos-universal, os: macos-12,       cross-target: aarch64-apple-darwin, vizia_build: "1" }
           - { name: vizia_windows,         os: windows-latest, cross-target: '', vizia_build: "1" }
     name: Package plugin binaries
     #    if: false
@@ -123,19 +123,19 @@ jobs:
     runs-on: ubuntu-20.04
     if: startsWith(github.ref, 'refs/tags/')
     steps:
-    - name: Checkout
-      uses: actions/checkout@v3
-    - name: Download Artifacts
-      uses: actions/download-artifact@v4
-    - name: List Files
-      run: find .
-    - name: Compress Artifacts
-      run: |
-        for X in live-sampler-*; do
-          zip $X.zip -r $X;
-        done
-    - name: Release
-      uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
-      with:
-        files: live-sampler-*.zip
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+      - name: List Files
+        run: find .
+      - name: Compress Artifacts
+        run: |
+          for X in live-sampler-*; do
+            zip $X.zip -r $X;
+          done
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: live-sampler-*.zip
