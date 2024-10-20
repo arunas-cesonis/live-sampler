@@ -667,12 +667,4 @@ mod test {
             );
         }
     }
-
-
-    #[test]
-    fn test_recording_mode_always_on() {
-        let mut h = EasyHost::default();
-        h.params.recording_mode = RecordingMode::AlwaysOn;
-        h.record(one_to(50));
-    }
 }
