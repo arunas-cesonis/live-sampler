@@ -34,8 +34,8 @@ Plugin parameters
 - Volume - output volume mulpilier
 - Speed - playback speed multiplier. Applied to all active and new voices
 - Will record (recording mode) - toggles between recording modes:
-  -- Always on - recording is always on, buffer contains audio of last bar played
-  -- When note C-2 is held (note triggered) - recording is only on when note C-2 (or note 0 in MIDI) is held. This mode
+  - Always on - recording is always on, buffer contains audio of last bar played **(broken)**
+  - When note C-2 is held (note triggered) - recording is only on when note C-2 (or note 0 in MIDI) is held. This mode
   is described in section above
 - Attack - time in which playback volume is ramped up from 0 to 1 (linearly). Starts on note-on event
 - Decay - time in which playback volume drops up from 1 to 0 (linearly). Starts on note-off event
