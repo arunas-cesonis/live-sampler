@@ -1,5 +1,3 @@
-#![feature(atomic_bool_fetch_not)]
-#![feature(associated_type_bounds)]
 extern crate core;
 
 use std::num::NonZeroU32;

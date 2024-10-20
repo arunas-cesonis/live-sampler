@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod test {
-
     use crate::common_types::{InitParams, Note, NoteOffBehaviour, Params, RecordingMode};
     use crate::sampler::{LoopMode, Sampler};
     use crate::time_value::TimeOrRatio;
@@ -74,7 +73,7 @@ mod test {
 
         fn run_input<I>(&mut self, input: I) -> Vec<f32>
         where
-            I: IntoIterator<Item = f32>,
+            I: IntoIterator<Item=f32>,
         {
             input
                 .into_iter()
@@ -152,7 +151,7 @@ mod test {
                 one_to_ten(),
                 vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 100.0, 100.0, 100.0],
             ]
-            .concat()
+                .concat()
         );
 
         // record first 10 samples, then wait for 2 samples and PlayOnce with loop length 100%
@@ -172,7 +171,7 @@ mod test {
                 vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
                 vec![9.0, 10.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
-            .concat()
+                .concat()
         );
 
         // same as above, but backwards
@@ -186,7 +185,7 @@ mod test {
                 vec![100.0, 100.0, 10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0],
                 vec![1.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
-            .concat()
+                .concat()
         );
     }
 
@@ -223,7 +222,7 @@ mod test {
                 vec![5.0, 4.0, 3.0, 2.0, 1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
                 vec![100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
-            .concat()
+                .concat()
         );
     }
 
@@ -292,7 +291,7 @@ mod test {
                 vec![100.0, 100.0],
                 vec![3.0, 4.0, 5.0, 6.0, 7.0, 3.0, 4.0, 5.0],
             ]
-            .concat()
+                .concat()
         );
 
         // record first 10 samples, then play loop length 50% from 80%
@@ -317,7 +316,7 @@ mod test {
                 vec![9.0, 10.0, 1.0, 2.0, 3.0],
                 vec![9.0, 10.0, 1.0, 2.0, 3.0],
             ]
-            .concat()
+                .concat()
         );
     }
 
@@ -355,7 +354,7 @@ mod test {
                 vec![1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
                 vec![1.0, 10.0, 9.0, 8.0],
             ]
-            .concat()
+                .concat()
         );
     }
 
@@ -396,7 +395,7 @@ mod test {
                 vec![1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
                 vec![1.0, 10.0, 9.0, 8.0],
             ]
-            .concat()
+                .concat()
         );
     }
 
@@ -469,7 +468,7 @@ mod test {
             one_to_five().into_iter().rev().collect(),
             ten_tens(),
         ]
-        .concat();
+            .concat();
         for i in 0..output.len() {
             eprintln!(
                 "i: {} input: {} output: {} expected: {} ",
@@ -565,7 +564,7 @@ mod test {
         }
         pub fn record<I>(&mut self, input: I) -> Vec<f32>
         where
-            I: IntoIterator<Item = f32>,
+            I: IntoIterator<Item=f32>,
         {
             self.start_recording();
             let out = self.run_input(input);
@@ -574,7 +573,7 @@ mod test {
         }
         pub fn run_input<I>(&mut self, input: I) -> Vec<f32>
         where
-            I: IntoIterator<Item = f32>,
+            I: IntoIterator<Item=f32>,
         {
             let mut output = vec![];
             for mut x in input {
@@ -667,5 +666,13 @@ mod test {
                 i, out[0], is_rev, h.sampler.channels[0].voices[0].clip2
             );
         }
+    }
+
+
+    #[test]
+    fn test_recording_mode_always_on() {
+        let mut h = EasyHost::default();
+        h.params.recording_mode = RecordingMode::AlwaysOn;
+        h.record(one_to(50));
     }
 }

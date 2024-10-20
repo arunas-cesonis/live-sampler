@@ -1,5 +1,4 @@
 #![allow(unused)]
-#![feature(extend_one)]
 
 #[cfg(feature = "use_jemalloc")]
 #[cfg(not(target_env = "msvc"))]
