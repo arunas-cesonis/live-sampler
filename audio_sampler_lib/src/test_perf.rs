@@ -21,7 +21,6 @@ mod test {
                     attack_samples: 0,
                     decay_samples: 0,
                     loop_length: TimeOrRatio::Ratio(1.0),
-                    recording_mode: RecordingMode::NoteTriggered,
                     ..Params::default()
                 },
                 output: vec![],
@@ -35,7 +34,7 @@ mod test {
         }
         pub fn record<I>(&mut self, input: I) -> Vec<f32>
         where
-            I: IntoIterator<Item = f32>,
+            I: IntoIterator<Item=f32>,
         {
             self.start_recording();
             let out = self.run_input(input);
@@ -44,7 +43,7 @@ mod test {
         }
         pub fn run_input<I>(&mut self, input: I) -> Vec<f32>
         where
-            I: IntoIterator<Item = f32>,
+            I: IntoIterator<Item=f32>,
         {
             let mut output = vec![];
             for mut x in input {

@@ -1,18 +1,15 @@
 use crate::common_types;
-use crate::common_types::RecordingMode;
 use crate::utils::normalize_offset;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum State {
     Triggered { write: usize },
-    AlwaysOn { last_recorded_offset: Option<usize> },
     Idle,
 }
 
 pub struct Params {
     pub transport_pos_samples: f32,
     pub sample_id: usize,
-    pub recording_mode: RecordingMode,
     pub fixed_size_samples: usize,
 }
 
@@ -21,7 +18,6 @@ impl From<&common_types::Params> for Params {
         Self {
             transport_pos_samples: params.transport.pos_samples,
             sample_id: params.sample_id,
-            recording_mode: params.recording_mode,
             fixed_size_samples: params.fixed_size_samples,
         }
     }
@@ -33,16 +29,6 @@ impl Params {
         Self {
             transport_pos_samples: transport_pos_samples as f32,
             sample_id: self.sample_id,
-            recording_mode: self.recording_mode,
-            fixed_size_samples: self.fixed_size_samples,
-        }
-    }
-    #[cfg(test)]
-    pub fn with_recording_mode(&self, recording_mode: RecordingMode) -> Self {
-        Self {
-            transport_pos_samples: self.transport_pos_samples,
-            sample_id: self.sample_id,
-            recording_mode,
             fixed_size_samples: self.fixed_size_samples,
         }
     }
@@ -78,12 +64,6 @@ impl Recorder {
         )
     }
 
-    fn always_on(&mut self, _data: &mut Vec<f32>, _params: &Params) {
-        self.state = State::AlwaysOn {
-            last_recorded_offset: None,
-        };
-    }
-
     fn always_off(&mut self, _params: &Params) {
         self.state = State::Idle;
     }
@@ -104,10 +84,6 @@ impl Recorder {
 
     pub fn last_recorded_offset(&self) -> Option<usize> {
         match self.state {
-            State::AlwaysOn {
-                last_recorded_offset,
-                ..
-            } => last_recorded_offset,
             State::Triggered { write, .. } => Some(write),
             _ => None,
         }
@@ -116,7 +92,6 @@ impl Recorder {
     pub fn is_recording(&self) -> bool {
         match self.state {
             State::Triggered { .. } => true,
-            State::AlwaysOn { .. } => true,
             _ => false,
         }
     }
@@ -136,19 +111,9 @@ impl Recorder {
     }
 
     fn handle_state_transitions(&mut self, data: &mut Vec<f32>, params: &Params) {
-        match params.recording_mode {
-            RecordingMode::AlwaysOn => match self.state {
-                State::Idle => self.always_on(data, params),
-                State::Triggered { .. } => self.always_on(data, params),
-                State::AlwaysOn { .. } => (),
-            },
-            RecordingMode::NoteTriggered => match self.state {
-                State::Idle => (),
-                State::Triggered { .. } => (),
-                State::AlwaysOn { .. } => {
-                    self.always_off(params);
-                }
-            },
+        match self.state {
+            State::Idle => (),
+            State::Triggered { .. } => (),
         }
     }
 
@@ -166,32 +131,6 @@ impl Recorder {
                 }
                 *write += 1;
             }
-            State::AlwaysOn {
-                last_recorded_offset,
-            } => {
-                let transport_pos_samples = params.transport_pos_samples;
-                data.resize(params.fixed_size_samples, 0.0);
-                if transport_pos_samples < 0.0 {
-                    self.errors
-                        .negative_transport_pos
-                        .push(transport_pos_samples);
-                }
-                let i = normalize_offset(
-                    transport_pos_samples + params.sample_id as f32,
-                    params.fixed_size_samples as f32,
-                );
-                assert!(i >= 0.0, "i={}", i);
-                let i = i as usize;
-                data[i] = sample;
-                if let Some(prev_offset) = *last_recorded_offset {
-                    if !(i == 1 + prev_offset
-                        || i == 0 && prev_offset == params.fixed_size_samples - 1)
-                    {
-                        self.errors.skipped_samples.push((i, prev_offset));
-                    }
-                }
-                *last_recorded_offset = Some(i);
-            }
             _ => (),
         }
     }
@@ -208,7 +147,6 @@ mod test {
         let params = Params {
             transport_pos_samples: 0.0,
             fixed_size_samples: 100,
-            recording_mode: RecordingMode::NoteTriggered,
             sample_id: 0,
         };
         let params = &params;
@@ -224,19 +162,5 @@ mod test {
         rec.start(&mut data, params);
         rec.process_sample(100.0, &mut data, params);
         assert_eq!(data[0], 100.0);
-        let params = params.with_recording_mode(RecordingMode::AlwaysOn);
-        rec.process_sample(101.0, &mut data, &params.with_transport_pos_samples(210));
-        rec.process_sample(102.0, &mut data, &params.with_transport_pos_samples(211));
-        rec.start(&mut data, &params);
-        rec.process_sample(103.0, &mut data, &params.with_transport_pos_samples(212));
-
-        assert_eq!(data[10], 101.0);
-        assert_eq!(data[11], 102.0);
-        assert_eq!(data[12], 103.0);
-        let params = params.with_recording_mode(RecordingMode::NoteTriggered);
-        rec.start(&mut data, &params);
-        rec.process_sample(104.0, &mut data, &params.with_transport_pos_samples(213));
-        rec.stop(&mut data, &params.with_transport_pos_samples(214));
-        assert_eq!(data, vec![104.0], "{:#?}", rec);
     }
 }
