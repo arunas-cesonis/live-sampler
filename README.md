@@ -2,7 +2,7 @@
 
 - Records audio and plays it back in a loop.
 - Behavior is controlled by MIDI events
-- As sample accurate as your DAW allows
+- As precise & sample accurate as your DAW allows
 
 ![image info](./docs/screenshot.png)
 
