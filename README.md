@@ -1,6 +1,6 @@
 ### audio-sampler
 
-- Records audio and plays it back in a loop.
+- Records audio and plays it back in a loop
 - Behavior is controlled by MIDI events
 - As precise & sample accurate as your DAW allows
 
