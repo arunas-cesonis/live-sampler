@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod test {
-    use crate::common_types::{InitParams, Note, NoteOffBehaviour, Params, RecordingMode};
+    use crate::common_types::{InitParams, Note, NoteOffBehaviour, Params, Transport};
     use crate::sampler::{LoopMode, Sampler};
-    use crate::time_value::TimeOrRatio;
+    use crate::time_value::{TimeOrRatio, TimeValue};
 
     pub fn one_to(n: usize) -> Vec<f32> {
         (1..=n).map(|x| x as f32).collect()
@@ -30,7 +30,6 @@ mod test {
             attack_samples: 0,
             decay_samples: 0,
             loop_length: TimeOrRatio::Ratio(1.0),
-            recording_mode: RecordingMode::NoteTriggered,
             note_off_behavior: NoteOffBehaviour::Decay,
             ..Params::default()
         };
@@ -543,6 +542,13 @@ mod test {
 
     impl Default for EasyHost {
         fn default() -> Self {
+            Self::from_transport(Params::default().transport)
+        }
+    }
+
+    impl EasyHost {
+        pub fn from_transport(transport: Transport) -> Self {
+            let params = Params::default();
             Self {
                 sampler: Sampler::new(1, &InitParams::default()),
                 params: Params {
@@ -550,15 +556,14 @@ mod test {
                     attack_samples: 0,
                     decay_samples: 0,
                     loop_length: TimeOrRatio::Ratio(1.0),
-                    recording_mode: RecordingMode::NoteTriggered,
-                    ..Params::default()
+                    fixed_size_samples: (TimeValue::bars(1.0)
+                        .as_samples(&transport)
+                        as usize),
+                    ..params
                 },
                 output: vec![],
             }
         }
-    }
-
-    impl EasyHost {
         pub fn run(&mut self, n: usize) -> Vec<f32> {
             self.run_input(std::iter::repeat(0.0).take(n))
         }
@@ -579,6 +584,7 @@ mod test {
             for mut x in input {
                 let mut frame = vec![&mut x];
                 self.sampler.process_frame(&mut frame, &self.params);
+                self.params.transport.pos_samples += 1.0;
                 let y = *frame[0];
                 self.output.push(y);
                 output.push(y);

@@ -45,29 +45,6 @@ pub trait EnumIndex: Sized {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub enum RecordingMode {
-    NoteTriggered,
-    AlwaysOn,
-}
-impl EnumIndex for RecordingMode {
-    const LENGTH: usize = 2;
-    fn to_index(&self) -> usize {
-        match self {
-            RecordingMode::NoteTriggered => 0,
-            RecordingMode::AlwaysOn => 1,
-        }
-    }
-    fn from_index(index: usize) -> Self {
-        match index {
-            0 => RecordingMode::NoteTriggered,
-            1 => RecordingMode::AlwaysOn,
-            _ => panic!("Invalid index for RecordingMode"),
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum LoopMode {
     PlayOnce,
     Loop,
@@ -126,7 +103,6 @@ pub struct Params {
     pub loop_length: TimeOrRatio,
     pub start_offset_percent: f32,
     pub speed: f32,
-    pub recording_mode: RecordingMode,
     pub fixed_size_samples: usize,
     pub sample_id: usize,
     pub transport: Transport,
@@ -207,7 +183,6 @@ impl Default for Params {
             decay_samples: 100,
             speed: 1.0,
             reverse_speed: 1.0,
-            recording_mode: RecordingMode::NoteTriggered,
             fixed_size_samples: 0,
             sample_id: 0,
             transport: Transport::default(),

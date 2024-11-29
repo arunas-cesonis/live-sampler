@@ -1,5 +1,5 @@
 mod sampler1 {
-    use crate::common_types::{EnumIndex, InitParams, NoteOffBehaviour, Params, RecordingMode};
+    use crate::common_types::{EnumIndex, InitParams, NoteOffBehaviour, Params};
     use crate::sampler::{LoopMode, Sampler};
     use core::slice;
     use smallvec::SmallVec;
@@ -12,16 +12,6 @@ mod sampler1 {
     #[no_mangle]
     pub extern "C" fn loop_mode_from_f32(x: f32) -> LoopMode {
         LoopMode::from_f32(x)
-    }
-
-    #[no_mangle]
-    pub extern "C" fn recording_mode_to_f32(rm: RecordingMode) -> f32 {
-        rm.to_f32()
-    }
-
-    #[no_mangle]
-    pub extern "C" fn recording_mode_from_f32(x: f32) -> RecordingMode {
-        RecordingMode::from_f32(x)
     }
 
     #[no_mangle]
