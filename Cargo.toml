@@ -1,7 +1,7 @@
 [workspace]
 
 # FIXME: include pyo3_plugin once PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 is no longer required
-members = ["audio_sampler", "midi_sampler", "audio_sampler_lib", "xtask"]
+members = ["audio_sampler", "midi_sampler", "audio_sampler_lib", "xtask", "pyo3_plugin"]
 # members = ["audio_sampler", "midi_sampler", "pyo3_plugin", "audio_sampler_lib", "xtask"]
 
 resolver = "2"

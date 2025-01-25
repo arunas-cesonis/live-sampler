@@ -19,6 +19,7 @@ mod host;
 mod params;
 mod source_path;
 mod source_state;
+mod transport;
 
 type SysEx = ();
 
@@ -70,10 +71,6 @@ impl PyO3Plugin {
         self.runtime_stats_in
             .lock()
             .write(self.host.runtime_stats().cloned());
-    }
-
-    fn write_source_path(&self, path: String) {
-        *self.params.source_path.0.lock() = path;
     }
 
     fn read_source_path(&self) -> String {
@@ -190,12 +187,9 @@ impl Plugin for PyO3Plugin {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = Some(buffer_config.sample_rate);
-        std::env::var("PYO3_PLUGIN_SOURCE_PATH")
-            .into_iter()
-            .for_each(|path| {
-                self.write_source_path(path);
-                self.load();
-            });
+        if !self.params.source_path.0.lock().is_empty() {
+            self.load();
+        }
         true
     }
 
@@ -222,7 +216,17 @@ impl Plugin for PyO3Plugin {
                 while let Some(next_event) = context.next_event() {
                     events.push(next_event.into());
                 }
-                let result = self.host.run(self.now, sample_rate, buffer, events, source);
+                let ctx_transport = context.transport();
+                let transport = transport::Transport {
+                    sample_rate: ctx_transport.sample_rate,
+                    tempo: ctx_transport.tempo,
+                    pos_samples: ctx_transport.pos_samples(),
+                    time_sig_numerator: ctx_transport.time_sig_numerator,
+                    time_sig_denominator: ctx_transport.time_sig_denominator,
+                };
+                let result =
+                    self.host
+                        .run(self.now, sample_rate, buffer, events, &transport, source);
                 match result {
                     Ok(processed_events) => {
                         processed_events
@@ -240,7 +244,7 @@ impl Plugin for PyO3Plugin {
                 };
                 if self.params.editor_state.is_open()
                     && self.now - self.stats_updated
-                    >= (self.stats_update_every.as_secs_f64() * sample_rate as f64) as usize
+                        >= (self.stats_update_every.as_secs_f64() * sample_rate as f64) as usize
                 {
                     self.stats_updated = self.now;
                     self.publish_stats();

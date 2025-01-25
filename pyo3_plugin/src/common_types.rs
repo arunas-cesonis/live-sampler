@@ -44,7 +44,6 @@ pub struct RuntimeStats {
     pub last_duration: Duration,
     pub last_rolling_avg: Duration,
     pub iterations: usize,
-    pub source_loaded: Option<Instant>,
     pub events_to_pyo3: usize,
     pub events_from_pyo3: usize,
     pub window_size: usize,

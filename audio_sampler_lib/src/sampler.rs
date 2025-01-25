@@ -144,8 +144,8 @@ impl Channel {
         }
     }
 
-    pub fn start_recording(&mut self, params: &Params) {
-        self.recorder.start(&mut self.data, &params.into());
+    pub fn start_recording(&mut self) {
+        self.recorder.start();
     }
 
     pub fn stop_recording(&mut self, params: &Params) {
@@ -269,8 +269,7 @@ impl Channel {
     }
 
     pub fn process_sample<'a>(&mut self, input: f32, params: &Params) -> f32 {
-        self.recorder
-            .process_sample(input, &mut self.data, &params.into());
+        self.recorder.process_sample(input, &mut self.data);
 
         let mut output = 0.0;
         if !self.data.is_empty() {
@@ -382,8 +381,8 @@ impl Sampler {
         self.each(|ch| ch.stop_playing(note, params));
     }
 
-    pub fn start_recording(&mut self, params: &Params) {
-        self.each(|ch| Channel::start_recording(ch, params));
+    pub fn start_recording(&mut self) {
+        self.each(|ch| Channel::start_recording(ch));
     }
 
     pub fn stop_recording(&mut self, params: &Params) {

@@ -1,5 +1,4 @@
 use crate::common_types;
-use crate::utils::normalize_offset;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum State {
@@ -64,10 +63,6 @@ impl Recorder {
         )
     }
 
-    fn always_off(&mut self, _params: &Params) {
-        self.state = State::Idle;
-    }
-
     pub fn stop(&mut self, data: &mut Vec<f32>, _params: &Params) {
         match self.state {
             State::Triggered { write } => {
@@ -96,8 +91,7 @@ impl Recorder {
         }
     }
 
-    pub fn start(&mut self, data: &mut Vec<f32>, params: &Params) {
-        self.handle_state_transitions(data, params);
+    pub fn start(&mut self) {
         match self.state {
             State::Idle => {
                 self.state = State::Triggered { write: 0 };
@@ -110,15 +104,7 @@ impl Recorder {
         }
     }
 
-    fn handle_state_transitions(&mut self, data: &mut Vec<f32>, params: &Params) {
-        match self.state {
-            State::Idle => (),
-            State::Triggered { .. } => (),
-        }
-    }
-
-    pub fn process_sample(&mut self, sample: f32, data: &mut Vec<f32>, params: &Params) {
-        self.handle_state_transitions(data, params);
+    pub fn process_sample(&mut self, sample: f32, data: &mut Vec<f32>) {
         match &mut self.state {
             State::Triggered { write } => {
                 let n = data.len();
@@ -150,17 +136,17 @@ mod test {
             sample_id: 0,
         };
         let params = &params;
-        rec.process_sample(1.0, &mut data, params);
+        rec.process_sample(1.0, &mut data);
         assert!(data.iter().all(|&x| x == 0.0));
-        rec.start(&mut data, params);
+        rec.start();
         for i in 1..20 {
-            rec.process_sample(i as f32, &mut data, params);
+            rec.process_sample(i as f32, &mut data);
         }
         rec.stop(&mut data, params);
-        rec.process_sample(0.0, &mut data, params);
+        rec.process_sample(0.0, &mut data);
         assert_eq!(data, (1..20).map(|x| x as f32).collect::<Vec<_>>());
-        rec.start(&mut data, params);
-        rec.process_sample(100.0, &mut data, params);
+        rec.start();
+        rec.process_sample(100.0, &mut data);
         assert_eq!(data[0], 100.0);
     }
 }

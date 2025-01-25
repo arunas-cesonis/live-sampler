@@ -1,9 +1,11 @@
 use nih_plug::midi::NoteEvent;
+use std::convert::Infallible;
 
 use pyo3::prelude::PyModule;
 
 use pyo3::{
-    pyclass, pymethods, pymodule, FromPyObject, IntoPy, Py, PyObject, PyResult, Python, ToPyObject,
+    pyclass, pymethods, pymodule, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, PyAny,
+    PyResult, Python,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -19,6 +21,7 @@ pub struct NoteOn {
 #[pymethods]
 impl NoteOn {
     #[new]
+    #[pyo3(signature = (timing, channel, note, velocity, voice_id=None))]
     pub fn new(timing: u32, channel: u8, note: u8, velocity: f32, voice_id: Option<i32>) -> Self {
         NoteOn {
             timing,
@@ -43,6 +46,7 @@ pub struct NoteOff {
 #[pymethods]
 impl NoteOff {
     #[new]
+    #[pyo3(signature = (timing, channel, note, velocity, voice_id=None))]
     pub fn new(timing: u32, channel: u8, note: u8, velocity: f32, voice_id: Option<i32>) -> Self {
         NoteOff {
             timing,
@@ -66,6 +70,7 @@ pub struct Choke {
 #[pymethods]
 impl Choke {
     #[new]
+    #[pyo3(signature = (timing, channel, note, voice_id=None))]
     pub fn new(timing: u32, channel: u8, note: u8, voice_id: Option<i32>) -> Self {
         Choke {
             timing,
@@ -88,6 +93,7 @@ pub struct VoiceTerminated {
 #[pymethods]
 impl VoiceTerminated {
     #[new]
+    #[pyo3(signature = (timing, channel, note, voice_id=None))]
     pub fn new(timing: u32, channel: u8, note: u8, voice_id: Option<i32>) -> Self {
         VoiceTerminated {
             timing,
@@ -158,6 +164,7 @@ pub struct PolyPressure {
 #[pymethods]
 impl PolyPressure {
     #[new]
+    #[pyo3(signature = (timing, channel, note, pressure, voice_id=None))]
     pub fn new(timing: u32, channel: u8, note: u8, pressure: f32, voice_id: Option<i32>) -> Self {
         PolyPressure {
             timing,
@@ -182,6 +189,7 @@ pub struct PolyVolume {
 #[pymethods]
 impl PolyVolume {
     #[new]
+    #[pyo3(signature = (timing, channel, note, gain, voice_id=None))]
     pub fn new(timing: u32, channel: u8, note: u8, gain: f32, voice_id: Option<i32>) -> Self {
         PolyVolume {
             timing,
@@ -206,6 +214,7 @@ pub struct PolyPan {
 #[pymethods]
 impl PolyPan {
     #[new]
+    #[pyo3(signature = (timing, channel, note, pan, voice_id=None))]
     pub fn new(timing: u32, channel: u8, note: u8, pan: f32, voice_id: Option<i32>) -> Self {
         PolyPan {
             timing,
@@ -230,6 +239,7 @@ pub struct PolyTuning {
 #[pymethods]
 impl PolyTuning {
     #[new]
+    #[pyo3(signature = (timing, channel, note, tuning, voice_id=None))]
     pub fn new(timing: u32, channel: u8, note: u8, tuning: f32, voice_id: Option<i32>) -> Self {
         PolyTuning {
             timing,
@@ -254,6 +264,7 @@ pub struct PolyVibrato {
 #[pymethods]
 impl PolyVibrato {
     #[new]
+    #[pyo3(signature = (timing, channel, note, vibrato, voice_id=None))]
     pub fn new(timing: u32, channel: u8, note: u8, vibrato: f32, voice_id: Option<i32>) -> Self {
         PolyVibrato {
             timing,
@@ -278,6 +289,7 @@ pub struct PolyExpression {
 #[pymethods]
 impl PolyExpression {
     #[new]
+    #[pyo3(signature = (timing, channel, note, expression, voice_id=None))]
     pub fn new(timing: u32, channel: u8, note: u8, expression: f32, voice_id: Option<i32>) -> Self {
         PolyExpression {
             timing,
@@ -302,6 +314,7 @@ pub struct PolyBrightness {
 #[pymethods]
 impl PolyBrightness {
     #[new]
+    #[pyo3(signature = (timing, channel, note, brightness, voice_id=None))]
     pub fn new(timing: u32, channel: u8, note: u8, brightness: f32, voice_id: Option<i32>) -> Self {
         PolyBrightness {
             timing,
@@ -410,7 +423,8 @@ impl MidiSysEx {
 }
 
 #[pymodule]
-pub fn add_pyo3_note_events(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn add_pyo3_note_events(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    use pyo3::prelude::PyModuleMethods;
     m.add_class::<NoteOn>()?;
     m.add_class::<NoteOff>()?;
     m.add_class::<Choke>()?;
@@ -454,28 +468,38 @@ pub enum PyO3NoteEvent {
     MidiSysEx(MidiSysEx),
 }
 
-impl ToPyObject for PyO3NoteEvent {
-    fn to_object(&self, py: Python) -> PyObject {
-        match self {
-            PyO3NoteEvent::NoteOn(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::NoteOff(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::Choke(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::VoiceTerminated(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::PolyModulation(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::MonoAutomation(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::PolyPressure(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::PolyVolume(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::PolyPan(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::PolyTuning(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::PolyVibrato(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::PolyExpression(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::PolyBrightness(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::MidiChannelPressure(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::MidiPitchBend(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::MidiCC(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::MidiProgramChange(x) => Py::new(py, *x).unwrap().into_py(py),
-            PyO3NoteEvent::MidiSysEx(x) => Py::new(py, *x).unwrap().into_py(py),
-        }
+fn conv<'py, A>(a: A, py: Python<'py>) -> Bound<'py, PyAny>
+where
+    A: for<'a> IntoPyObject<'a>,
+{
+    a.into_bound_py_any(py).unwrap()
+}
+
+impl<'py> IntoPyObject<'py> for PyO3NoteEvent {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        Ok(match self {
+            PyO3NoteEvent::NoteOn(x) => conv(x, py),
+            PyO3NoteEvent::NoteOff(x) => conv(x, py),
+            PyO3NoteEvent::Choke(x) => conv(x, py),
+            PyO3NoteEvent::VoiceTerminated(x) => conv(x, py),
+            PyO3NoteEvent::PolyModulation(x) => conv(x, py),
+            PyO3NoteEvent::MonoAutomation(x) => conv(x, py),
+            PyO3NoteEvent::PolyPressure(x) => conv(x, py),
+            PyO3NoteEvent::PolyVolume(x) => conv(x, py),
+            PyO3NoteEvent::PolyPan(x) => conv(x, py),
+            PyO3NoteEvent::PolyTuning(x) => conv(x, py),
+            PyO3NoteEvent::PolyVibrato(x) => conv(x, py),
+            PyO3NoteEvent::PolyExpression(x) => conv(x, py),
+            PyO3NoteEvent::PolyBrightness(x) => conv(x, py),
+            PyO3NoteEvent::MidiChannelPressure(x) => conv(x, py),
+            PyO3NoteEvent::MidiPitchBend(x) => conv(x, py),
+            PyO3NoteEvent::MidiCC(x) => conv(x, py),
+            PyO3NoteEvent::MidiProgramChange(x) => conv(x, py),
+            PyO3NoteEvent::MidiSysEx(x) => conv(x, py),
+        })
     }
 }
 
