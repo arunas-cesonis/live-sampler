@@ -218,6 +218,7 @@ impl Plugin for PyO3Plugin {
                 }
                 let ctx_transport = context.transport();
                 let transport = transport::Transport {
+                    playing: ctx_transport.playing,
                     sample_rate: ctx_transport.sample_rate,
                     tempo: ctx_transport.tempo,
                     pos_samples: ctx_transport.pos_samples(),

@@ -3,6 +3,7 @@ use pyo3::pyclass;
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[pyclass(get_all, set_all)]
 pub struct Transport {
+    pub playing: bool,
     pub sample_rate: f32,
     pub tempo: Option<f64>,
     pub pos_samples: Option<i64>,
@@ -13,6 +14,7 @@ pub struct Transport {
 impl Default for Transport {
     fn default() -> Self {
         Self {
+            playing: false,
             sample_rate: 44100.0,
             tempo: None,
             pos_samples: None,
