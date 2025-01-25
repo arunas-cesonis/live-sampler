@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::time::Duration;
 
-use crate::common_types::{EvalError, RuntimeStats};
 use crate::event::{add_pyo3_note_events, PyO3NoteEvent};
+use crate::utils::{EvalError, RuntimeStats};
 use nih_plug::buffer::Buffer;
 use nih_plug::nih_log;
 use pyo3::ffi::c_str;

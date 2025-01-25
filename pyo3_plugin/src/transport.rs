@@ -9,6 +9,8 @@ pub struct Transport {
     pub pos_samples: Option<i64>,
     pub time_sig_numerator: Option<i32>,
     pub time_sig_denominator: Option<i32>,
+    pub pos_beats: Option<f64>,
+    pub bar_number: Option<i32>,
 }
 
 impl Default for Transport {
@@ -20,6 +22,8 @@ impl Default for Transport {
             pos_samples: None,
             time_sig_numerator: None,
             time_sig_denominator: None,
+            pos_beats: None,
+            bar_number: None,
         }
     }
 }

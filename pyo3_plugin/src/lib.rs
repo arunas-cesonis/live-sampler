@@ -6,13 +6,12 @@ use std::time::Duration;
 
 use nih_plug::prelude::*;
 
-use crate::common_types::{EvalStatus, RuntimeStats, Status, UICommand};
 use crate::event::PyO3NoteEvent;
 use crate::host::Host;
 use crate::params::{ModeParam, PyO3PluginParams2};
 use crate::source_state::SourceState;
+use crate::utils::{note_event_timing, EvalStatus, RuntimeStats, Status, UICommand};
 
-mod common_types;
 mod editor_vizia;
 pub mod event;
 mod host;
@@ -20,6 +19,7 @@ mod params;
 mod source_path;
 mod source_state;
 mod transport;
+mod utils;
 
 type SysEx = ();
 
@@ -224,15 +224,22 @@ impl Plugin for PyO3Plugin {
                     pos_samples: ctx_transport.pos_samples(),
                     time_sig_numerator: ctx_transport.time_sig_numerator,
                     time_sig_denominator: ctx_transport.time_sig_denominator,
+                    pos_beats: ctx_transport.pos_beats(),
+                    bar_number: ctx_transport.bar_number(),
                 };
                 let result =
                     self.host
                         .run(self.now, sample_rate, buffer, events, &transport, source);
                 match result {
                     Ok(processed_events) => {
-                        processed_events
-                            .into_iter()
-                            .for_each(|e| context.send_event(e.into()));
+                        processed_events.into_iter().for_each(|e| {
+                            let e: NoteEvent<()> = e.into();
+                            assert!(
+                                note_event_timing(&e).unwrap()
+                                    < buffer.samples().try_into().unwrap()
+                            );
+                            context.send_event(e);
+                        });
                         if self.status.eval_status != EvalStatus::Ok {
                             self.status.eval_status = EvalStatus::Ok;
                             self.publish_status();

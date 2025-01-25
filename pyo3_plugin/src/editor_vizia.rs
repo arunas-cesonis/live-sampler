@@ -8,8 +8,8 @@ use nih_plug_vizia::widgets::param_base::ParamWidgetBase;
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
-use crate::common_types::{RuntimeStats, Status, UICommand};
 use crate::params::{ModeParam, PyO3PluginParams2};
+use crate::utils::{RuntimeStats, Status, UICommand};
 
 #[derive(Clone, Lens)]
 pub struct Data {

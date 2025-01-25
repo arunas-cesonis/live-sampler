@@ -1,3 +1,4 @@
+use nih_plug::midi::NoteEvent;
 use std::time::{Duration, Instant};
 
 #[derive(PartialEq, Clone, Debug)]
@@ -66,4 +67,28 @@ impl Default for EvalStatus {
     fn default() -> Self {
         Self::NotExecuted
     }
+}
+
+pub fn note_event_timing<S>(note_event: &NoteEvent<S>) -> Option<u32> {
+    Some(match note_event {
+        NoteEvent::NoteOn { timing, .. } => *timing,
+        NoteEvent::NoteOff { timing, .. } => *timing,
+        NoteEvent::Choke { timing, .. } => *timing,
+        NoteEvent::VoiceTerminated { timing, .. } => *timing,
+        NoteEvent::PolyModulation { timing, .. } => *timing,
+        NoteEvent::MonoAutomation { timing, .. } => *timing,
+        NoteEvent::PolyPressure { timing, .. } => *timing,
+        NoteEvent::PolyVolume { timing, .. } => *timing,
+        NoteEvent::PolyPan { timing, .. } => *timing,
+        NoteEvent::PolyTuning { timing, .. } => *timing,
+        NoteEvent::PolyVibrato { timing, .. } => *timing,
+        NoteEvent::PolyExpression { timing, .. } => *timing,
+        NoteEvent::PolyBrightness { timing, .. } => *timing,
+        NoteEvent::MidiChannelPressure { timing, .. } => *timing,
+        NoteEvent::MidiPitchBend { timing, .. } => *timing,
+        NoteEvent::MidiCC { timing, .. } => *timing,
+        NoteEvent::MidiProgramChange { timing, .. } => *timing,
+        NoteEvent::MidiSysEx { timing, .. } => *timing,
+        _ => return None,
+    })
 }
