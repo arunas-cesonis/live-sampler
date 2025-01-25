@@ -1,5 +1,5 @@
 use crate::clip::Clip;
-use crate::common_types::{Note};
+use crate::common_types::Note;
 use crate::volume::Volume;
 
 #[derive(Clone, Debug)]
