@@ -9,7 +9,7 @@ use nih_plug::prelude::*;
 use crate::event::PyO3NoteEvent;
 use crate::host::Host;
 use crate::params::{ModeParam, PyO3PluginParams2};
-use crate::source_state::SourceState;
+use crate::source_state::{Source, SourceState};
 use crate::utils::{note_event_timing, EvalStatus, RuntimeStats, Status, UICommand};
 
 mod editor_vizia;
@@ -132,6 +132,20 @@ impl PyO3Plugin {
     }
 }
 
+struct RunResult {
+    buffer: Vec<Vec<f32>>,
+    events: Vec<PyO3NoteEvent>,
+}
+
+struct RunParams {
+    now: usize,
+    sample_rate: f32,
+    buffer: Vec<Vec<f32>>,
+    events: Vec<PyO3NoteEvent>,
+    transport: transport::Transport,
+    source: Source,
+}
+
 impl Plugin for PyO3Plugin {
     const NAME: &'static str = "PyO3Plugin";
     const VENDOR: &'static str = "seunje";
@@ -158,7 +172,18 @@ impl Plugin for PyO3Plugin {
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
     type SysExMessage = SysEx;
 
-    type BackgroundTask = ();
+    // now: usize,
+    // sample_rate: f32,
+    // buffer: &mut Buffer,
+    // events: Vec<PyO3NoteEvent>,
+    // transport: &transport::Transport,
+    // source: &Source,
+    // ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
+
+    type BackgroundTask = (
+        crossbeam_channel::Sender<RunParams>,
+        crossbeam_channel::Receiver<RunResult>,
+    );
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
