@@ -34,7 +34,7 @@ mod test {
         }
         pub fn record<I>(&mut self, input: I) -> Vec<f32>
         where
-            I: IntoIterator<Item=f32>,
+            I: IntoIterator<Item = f32>,
         {
             self.start_recording();
             let out = self.run_input(input);
@@ -43,7 +43,7 @@ mod test {
         }
         pub fn run_input<I>(&mut self, input: I) -> Vec<f32>
         where
-            I: IntoIterator<Item=f32>,
+            I: IntoIterator<Item = f32>,
         {
             let mut output = vec![];
             for mut x in input {
@@ -67,7 +67,7 @@ mod test {
             self.sampler.stop_playing(Note::new(note, 0), &self.params);
         }
         pub fn start_recording(&mut self) {
-            self.sampler.start_recording(&self.params);
+            self.sampler.start_recording();
         }
         pub fn stop_recording(&mut self) {
             self.sampler.stop_recording(&self.params);

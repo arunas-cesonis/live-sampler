@@ -74,25 +74,25 @@ fn display_notes(cx: &mut Context) {
                 .width(Percentage(100.0 / 16.0));
         }
     })
-        .child_left(Stretch(1.0))
-        .child_right(Stretch(1.0))
-        .child_top(Pixels(-20.0))
-        .width(Percentage(100.0))
-        .height(Percentage(100.0));
+    .child_left(Stretch(1.0))
+    .child_right(Stretch(1.0))
+    .child_top(Pixels(-20.0))
+    .width(Percentage(100.0))
+    .height(Percentage(100.0));
 }
 
 impl WaveformView {
     pub fn new<LDebugData>(cx: &mut Context, debug_data_lens: LDebugData) -> Handle<Self>
     where
-        LDebugData: Lens<Target=Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>>,
+        LDebugData: Lens<Target = Arc<parking_lot::Mutex<triple_buffer::Output<DebugData>>>>,
     {
         Self {
             debug_data: debug_data_lens.get(cx),
             image: Cell::new(None),
         }
-            .build(cx, |cx| {
-                display_notes(cx);
-            })
+        .build(cx, |cx| {
+            display_notes(cx);
+        })
     }
 
     fn get_image(&self, canvas: &mut Canvas, info: &Info) -> ImageId {
@@ -302,10 +302,10 @@ where
             .width(Stretch(0.75))
             .right(Pixels(10.0));
     })
-        .width(Stretch(1.0))
-        .right(Pixels(10.0))
-        .height(Auto)
-        .display(Data::params.map(move |params| params.loop_length_unit.value() == unit));
+    .width(Stretch(1.0))
+    .right(Pixels(10.0))
+    .height(Auto)
+    .display(Data::params.map(move |params| params.loop_length_unit.value() == unit));
 }
 
 fn param_slider<P, FMap>(cx: &mut Context, title: &str, lens: FMap)
@@ -319,9 +319,9 @@ where
             .width(Stretch(0.75))
             .right(Pixels(10.0));
     })
-        .width(Stretch(1.0))
-        .right(Pixels(10.0))
-        .height(Auto);
+    .width(Stretch(1.0))
+    .right(Pixels(10.0))
+    .height(Auto);
 }
 
 fn param_slider1<P, FMap>(cx: &mut Context, title: &str, lens: FMap)
@@ -368,11 +368,11 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                         .map(|peak_meter| gain_to_db(peak_meter.load(Ordering::Relaxed))),
                     Some(Duration::from_millis(600)),
                 )
-                    .width(Stretch(0.25))
-                    .left(Pixels(20.0))
-                    .top(Pixels(19.0));
+                .width(Stretch(0.25))
+                .left(Pixels(20.0))
+                .top(Pixels(19.0));
             })
-                .height(Pixels(42.0));
+            .height(Pixels(42.0));
             HStack::new(cx, |cx| {
                 VStack::new(cx, |cx| {
                     param_slider1(cx, "Volume", |params| &params.volume);
@@ -380,18 +380,18 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
                     param_slider1(cx, "Decay", |params| &params.decay);
                     param_slider1(cx, "Passthru", |params| &params.auto_passthru);
                 })
-                    .width(Percentage(25.0));
+                .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
                     param_slider1(cx, "Speed", |params| &params.speed);
                     //param_slider1(cx, "Start offset", |params| &params.start_offset);
                     param_slider1(cx, "Loop mode", |params| &params.loop_mode);
                     param_slider1(cx, "Note off behaviour", |params| &params.note_off_behavior);
                 })
-                    .width(Percentage(25.0));
+                .width(Percentage(25.0));
                 VStack::new(cx, |cx| {
                     param_slider1(cx, "MIDI channel", |params| &params.midi_channel);
                 })
-                    .width(Percentage(25.0));
+                .width(Percentage(25.0));
 
                 VStack::new(cx, |cx| {
                     loop_length_slider(cx, TimeOrRatioUnitParam::Ratio, |params| {
@@ -410,7 +410,7 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dy
             //});
             WaveformView::new(cx, Data::debug_data_out).height(Pixels(50.0));
         })
-            .border_width(Pixels(10.0));
+        .border_width(Pixels(10.0));
 
         ResizeHandle::new(cx);
     })

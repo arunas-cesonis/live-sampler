@@ -834,8 +834,8 @@ mod test {
     use super::*;
 
     pub fn test_event_tag_serde(py: Python, e: PyO3NoteEvent) {
-        let o = e.to_object(py);
-        let g: PyO3NoteEvent = o.extract(py).unwrap();
+        let o = e.into_pyobject(py).unwrap();
+        let g: PyO3NoteEvent = o.unbind().extract(py).unwrap();
         assert_eq!(e, g);
     }
 

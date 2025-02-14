@@ -1,8 +1,8 @@
-use std::convert::TryInto;
-use std::sync::Arc;
-use nih_plug::prelude::Enum;
 use audio_sampler_lib::common_types::{LoopMode, NoteOffBehaviour, VersionedWaveformSummary};
 use audio_sampler_lib::sampler::VoiceInfo;
+use nih_plug::prelude::Enum;
+use std::convert::TryInto;
+use std::sync::Arc;
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum MIDIChannelParam {
@@ -127,7 +127,6 @@ pub enum TimeOrRatioUnitParam {
     #[name = "Percentage of length"]
     Ratio,
 }
-
 
 #[derive(Clone, Default, Debug)]
 pub struct Info {
