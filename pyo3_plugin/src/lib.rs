@@ -180,10 +180,11 @@ impl Plugin for PyO3Plugin {
     // source: &Source,
     // ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
 
-    type BackgroundTask = (
-        crossbeam_channel::Sender<RunParams>,
-        crossbeam_channel::Receiver<RunResult>,
-    );
+    type BackgroundTask = ();
+    //type BackgroundTask = (
+    //    crossbeam_channel::Sender<RunParams>,
+    //    crossbeam_channel::Receiver<RunResult>,
+    //);
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
