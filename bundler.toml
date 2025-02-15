@@ -7,8 +7,8 @@
 [audio_sampler]
 name = "Audio Sampler"
 
-# [pyo3_plugin]
-# name = "PyO3 Plugin"
+[pyo3_plugin]
+name = "PyO3 Plugin"
 
 # [midi_sampler]
 # name = "MIDI Sampler"

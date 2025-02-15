@@ -15,12 +15,6 @@ path = "src/main.rs"
 git = "https://github.com/robbert-vdh/nih-plug"
 features = ["standalone", "vst3"]
 
-[dependencies.atomic_float]
-version = "0.1"
-
-# [dependencies.numpy]
-# version = "0.20.0"
-
 [dependencies.notify]
 version = "6.1.1"
 
@@ -29,9 +23,6 @@ version = "0.5.13"
 
 [dependencies.nih_plug_vizia]
 git = "https://github.com/robbert-vdh/nih-plug"
-
-[dependencies.intmap]
-version = "2.0.0"
 
 [dependencies.parking_lot]
 version = "0.12.3"
@@ -42,7 +33,3 @@ version = "8.0.0"
 [dependencies.pyo3]
 version = "0.23.4"
 features = ["auto-initialize", "macros"]
-
-[dependencies.serde]
-version = "1.0.203"
-
