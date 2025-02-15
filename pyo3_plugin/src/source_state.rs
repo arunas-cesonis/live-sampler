@@ -1,4 +1,4 @@
-use crate::common_types::FileStatus;
+use crate::utils::FileStatus;
 
 use notify::event::{CreateKind, ModifyKind};
 use notify::{RecommendedWatcher, Watcher};

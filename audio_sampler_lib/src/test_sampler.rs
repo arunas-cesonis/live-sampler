@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod test {
-    use crate::common_types::{InitParams, Note, NoteOffBehaviour, Params, RecordingMode};
+    use crate::common_types::{InitParams, Note, NoteOffBehaviour, Params, Transport};
     use crate::sampler::{LoopMode, Sampler};
-    use crate::time_value::TimeOrRatio;
+    use crate::time_value::{TimeOrRatio, TimeValue};
 
     pub fn one_to(n: usize) -> Vec<f32> {
         (1..=n).map(|x| x as f32).collect()
@@ -30,7 +30,6 @@ mod test {
             attack_samples: 0,
             decay_samples: 0,
             loop_length: TimeOrRatio::Ratio(1.0),
-            recording_mode: RecordingMode::NoteTriggered,
             note_off_behavior: NoteOffBehaviour::Decay,
             ..Params::default()
         };
@@ -73,7 +72,7 @@ mod test {
 
         fn run_input<I>(&mut self, input: I) -> Vec<f32>
         where
-            I: IntoIterator<Item=f32>,
+            I: IntoIterator<Item = f32>,
         {
             input
                 .into_iter()
@@ -88,7 +87,7 @@ mod test {
                             Cmd::StopPlaying => {
                                 self.sampler.stop_playing(Note::new(11, 0), &self.params)
                             }
-                            Cmd::StartRecording => self.sampler.start_recording(&self.params),
+                            Cmd::StartRecording => self.sampler.start_recording(),
                             Cmd::StopRecording => self.sampler.stop_recording(&self.params),
                         }
                     }
@@ -151,7 +150,7 @@ mod test {
                 one_to_ten(),
                 vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 100.0, 100.0, 100.0],
             ]
-                .concat()
+            .concat()
         );
 
         // record first 10 samples, then wait for 2 samples and PlayOnce with loop length 100%
@@ -171,7 +170,7 @@ mod test {
                 vec![100.0, 100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
                 vec![9.0, 10.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
-                .concat()
+            .concat()
         );
 
         // same as above, but backwards
@@ -185,7 +184,7 @@ mod test {
                 vec![100.0, 100.0, 10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0],
                 vec![1.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
-                .concat()
+            .concat()
         );
     }
 
@@ -222,7 +221,7 @@ mod test {
                 vec![5.0, 4.0, 3.0, 2.0, 1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
                 vec![100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
             ]
-                .concat()
+            .concat()
         );
     }
 
@@ -291,7 +290,7 @@ mod test {
                 vec![100.0, 100.0],
                 vec![3.0, 4.0, 5.0, 6.0, 7.0, 3.0, 4.0, 5.0],
             ]
-                .concat()
+            .concat()
         );
 
         // record first 10 samples, then play loop length 50% from 80%
@@ -316,7 +315,7 @@ mod test {
                 vec![9.0, 10.0, 1.0, 2.0, 3.0],
                 vec![9.0, 10.0, 1.0, 2.0, 3.0],
             ]
-                .concat()
+            .concat()
         );
     }
 
@@ -354,7 +353,7 @@ mod test {
                 vec![1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
                 vec![1.0, 10.0, 9.0, 8.0],
             ]
-                .concat()
+            .concat()
         );
     }
 
@@ -395,7 +394,7 @@ mod test {
                 vec![1.0, 10.0, 9.0, 8.0, 7.0, 6.0],
                 vec![1.0, 10.0, 9.0, 8.0],
             ]
-                .concat()
+            .concat()
         );
     }
 
@@ -468,7 +467,7 @@ mod test {
             one_to_five().into_iter().rev().collect(),
             ten_tens(),
         ]
-            .concat();
+        .concat();
         for i in 0..output.len() {
             eprintln!(
                 "i: {} input: {} output: {} expected: {} ",
@@ -543,6 +542,13 @@ mod test {
 
     impl Default for EasyHost {
         fn default() -> Self {
+            Self::from_transport(Params::default().transport)
+        }
+    }
+
+    impl EasyHost {
+        pub fn from_transport(transport: Transport) -> Self {
+            let params = Params::default();
             Self {
                 sampler: Sampler::new(1, &InitParams::default()),
                 params: Params {
@@ -550,21 +556,18 @@ mod test {
                     attack_samples: 0,
                     decay_samples: 0,
                     loop_length: TimeOrRatio::Ratio(1.0),
-                    recording_mode: RecordingMode::NoteTriggered,
-                    ..Params::default()
+                    fixed_size_samples: (TimeValue::bars(1.0).as_samples(&transport) as usize),
+                    ..params
                 },
                 output: vec![],
             }
         }
-    }
-
-    impl EasyHost {
         pub fn run(&mut self, n: usize) -> Vec<f32> {
             self.run_input(std::iter::repeat(0.0).take(n))
         }
         pub fn record<I>(&mut self, input: I) -> Vec<f32>
         where
-            I: IntoIterator<Item=f32>,
+            I: IntoIterator<Item = f32>,
         {
             self.start_recording();
             let out = self.run_input(input);
@@ -573,12 +576,13 @@ mod test {
         }
         pub fn run_input<I>(&mut self, input: I) -> Vec<f32>
         where
-            I: IntoIterator<Item=f32>,
+            I: IntoIterator<Item = f32>,
         {
             let mut output = vec![];
             for mut x in input {
                 let mut frame = vec![&mut x];
                 self.sampler.process_frame(&mut frame, &self.params);
+                self.params.transport.pos_samples += 1.0;
                 let y = *frame[0];
                 self.output.push(y);
                 output.push(y);
@@ -590,7 +594,7 @@ mod test {
                 .start_playing(start_position, Note::new(0, 0), 1.0, &self.params);
         }
         pub fn start_recording(&mut self) {
-            self.sampler.start_recording(&self.params);
+            self.sampler.start_recording();
         }
         pub fn stop_recording(&mut self) {
             self.sampler.stop_recording(&self.params);

@@ -6,19 +6,20 @@ use std::time::Duration;
 
 use nih_plug::prelude::*;
 
-use crate::common_types::{EvalStatus, RuntimeStats, Status, UICommand};
 use crate::event::PyO3NoteEvent;
 use crate::host::Host;
 use crate::params::{ModeParam, PyO3PluginParams2};
-use crate::source_state::SourceState;
+use crate::source_state::{Source, SourceState};
+use crate::utils::{note_event_timing, EvalStatus, RuntimeStats, Status, UICommand};
 
-mod common_types;
 mod editor_vizia;
 pub mod event;
 mod host;
 mod params;
 mod source_path;
 mod source_state;
+mod transport;
+mod utils;
 
 type SysEx = ();
 
@@ -70,10 +71,6 @@ impl PyO3Plugin {
         self.runtime_stats_in
             .lock()
             .write(self.host.runtime_stats().cloned());
-    }
-
-    fn write_source_path(&self, path: String) {
-        *self.params.source_path.0.lock() = path;
     }
 
     fn read_source_path(&self) -> String {
@@ -135,6 +132,20 @@ impl PyO3Plugin {
     }
 }
 
+struct RunResult {
+    buffer: Vec<Vec<f32>>,
+    events: Vec<PyO3NoteEvent>,
+}
+
+struct RunParams {
+    now: usize,
+    sample_rate: f32,
+    buffer: Vec<Vec<f32>>,
+    events: Vec<PyO3NoteEvent>,
+    transport: transport::Transport,
+    source: Source,
+}
+
 impl Plugin for PyO3Plugin {
     const NAME: &'static str = "PyO3Plugin";
     const VENDOR: &'static str = "seunje";
@@ -161,7 +172,19 @@ impl Plugin for PyO3Plugin {
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
     type SysExMessage = SysEx;
 
+    // now: usize,
+    // sample_rate: f32,
+    // buffer: &mut Buffer,
+    // events: Vec<PyO3NoteEvent>,
+    // transport: &transport::Transport,
+    // source: &Source,
+    // ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
+
     type BackgroundTask = ();
+    //type BackgroundTask = (
+    //    crossbeam_channel::Sender<RunParams>,
+    //    crossbeam_channel::Receiver<RunResult>,
+    //);
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
@@ -190,12 +213,9 @@ impl Plugin for PyO3Plugin {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = Some(buffer_config.sample_rate);
-        std::env::var("PYO3_PLUGIN_SOURCE_PATH")
-            .into_iter()
-            .for_each(|path| {
-                self.write_source_path(path);
-                self.load();
-            });
+        if !self.params.source_path.0.lock().is_empty() {
+            self.load();
+        }
         true
     }
 
@@ -222,12 +242,30 @@ impl Plugin for PyO3Plugin {
                 while let Some(next_event) = context.next_event() {
                     events.push(next_event.into());
                 }
-                let result = self.host.run(self.now, sample_rate, buffer, events, source);
+                let ctx_transport = context.transport();
+                let transport = transport::Transport {
+                    playing: ctx_transport.playing,
+                    sample_rate: ctx_transport.sample_rate,
+                    tempo: ctx_transport.tempo,
+                    pos_samples: ctx_transport.pos_samples(),
+                    time_sig_numerator: ctx_transport.time_sig_numerator,
+                    time_sig_denominator: ctx_transport.time_sig_denominator,
+                    pos_beats: ctx_transport.pos_beats(),
+                    bar_number: ctx_transport.bar_number(),
+                };
+                let result =
+                    self.host
+                        .run(self.now, sample_rate, buffer, events, &transport, source);
                 match result {
                     Ok(processed_events) => {
-                        processed_events
-                            .into_iter()
-                            .for_each(|e| context.send_event(e.into()));
+                        processed_events.into_iter().for_each(|e| {
+                            let e: NoteEvent<()> = e.into();
+                            assert!(
+                                note_event_timing(&e).unwrap()
+                                    < buffer.samples().try_into().unwrap()
+                            );
+                            context.send_event(e);
+                        });
                         if self.status.eval_status != EvalStatus::Ok {
                             self.status.eval_status = EvalStatus::Ok;
                             self.publish_status();
@@ -240,7 +278,7 @@ impl Plugin for PyO3Plugin {
                 };
                 if self.params.editor_state.is_open()
                     && self.now - self.stats_updated
-                    >= (self.stats_update_every.as_secs_f64() * sample_rate as f64) as usize
+                        >= (self.stats_update_every.as_secs_f64() * sample_rate as f64) as usize
                 {
                     self.stats_updated = self.now;
                     self.publish_stats();

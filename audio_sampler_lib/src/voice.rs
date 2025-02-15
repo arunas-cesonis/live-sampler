@@ -1,13 +1,6 @@
 use crate::clip::Clip;
-use crate::common_types::{LoopMode, Note};
+use crate::common_types::Note;
 use crate::volume::Volume;
-
-#[derive(Clone, Copy, Debug)]
-pub struct Player {
-    pub mode: LoopMode,
-    pub offset: usize,
-    pub length: usize,
-}
 
 #[derive(Clone, Debug)]
 pub struct Voice {

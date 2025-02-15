@@ -1,24 +1,27 @@
 use std::collections::VecDeque;
+use std::ffi::{CStr, CString};
 use std::time::Duration;
 
+use crate::event::{add_pyo3_note_events, PyO3NoteEvent};
+use crate::utils::{EvalError, RuntimeStats};
 use nih_plug::buffer::Buffer;
 use nih_plug::nih_log;
+use pyo3::ffi::c_str;
 use pyo3::prelude::PyModule;
-use pyo3::types::{IntoPyDict, PyList, PyNone, PyTuple};
+use pyo3::types::{IntoPyDict, PyList, PyModuleMethods, PyNone, PyTuple};
 use pyo3::{
-    pyfunction, wrap_pyfunction, FromPyObject, IntoPy, Py, PyAny, PyErr, Python, ToPyObject,
+    pyfunction, wrap_pyfunction, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny,
+    PyErr, Python,
 };
 
-use crate::common_types::{EvalError, RuntimeStats};
-use crate::event::{add_pyo3_note_events, PyO3NoteEvent};
-
 use crate::source_state::Source;
+use crate::transport;
 
 #[pyfunction(name = "print")]
 #[pyo3(signature = (* args))]
-fn host_print(args: &PyTuple) {
+fn host_print(args: &Bound<PyTuple>) {
     let s = args
-        .iter()
+        .into_iter()
         .map(|a| a.to_string())
         .collect::<Vec<_>>()
         .join(" ");
@@ -73,9 +76,9 @@ pub struct Host {
     stats: Option<Stats>,
 }
 
-fn create_host_module(py: Python) -> Result<&PyModule, PyErr> {
+fn create_host_module(py: Python) -> Result<Bound<PyModule>, PyErr> {
     let host_module = PyModule::new(py, "host")?;
-    host_module.add_function(wrap_pyfunction!(host_print, host_module)?)?;
+    host_module.add_function(wrap_pyfunction!(host_print, &host_module)?)?;
     add_pyo3_note_events(py, &host_module)?;
     Ok(host_module)
 }
@@ -97,6 +100,7 @@ impl Host {
         sample_rate: f32,
         buffer: &mut Buffer,
         events: Vec<PyO3NoteEvent>,
+        transport: &transport::Transport,
         source: &Source,
     ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
         assert!(sample_rate > 0.0);
@@ -104,8 +108,8 @@ impl Host {
         struct PythonProcessResult(Py<PyAny>, Vec<Vec<f32>>, Vec<PyO3NoteEvent>);
 
         let mut frame_stats = FrameStats {
-            now: now,
-            sample_rate: sample_rate,
+            now,
+            sample_rate,
             d: Duration::from_secs(0),
             events_to_pyo3: events.len(),
             events_from_pyo3: 0,
@@ -114,31 +118,51 @@ impl Host {
         let buf = buffer.as_slice();
         let result = Python::with_gil(|py| -> Result<(PythonProcessResult, Duration), PyErr> {
             let tmp = buf.iter().map(|x| x.to_vec()).collect::<Vec<_>>();
-            let pybuf: Py<PyAny> = PyList::new(py, tmp).into_py(py);
-            let events: Py<PyAny> = PyList::new(py, events).into_py(py);
-            let state = self
+            let pybuf: Bound<PyAny> = PyList::new(py, tmp).unwrap().into_bound_py_any(py).unwrap();
+            let events: Bound<PyAny> = PyList::new(py, events)
+                .unwrap()
+                .into_bound_py_any(py)
+                .unwrap();
+            let transport: Bound<PyAny> = transport
+                .into_pyobject(py)
+                .unwrap()
+                .into_bound_py_any(py)
+                .unwrap();
+            let state: Py<PyAny> = self
                 .python_state
                 .take()
-                .unwrap_or(PyNone::get(py).to_object(py));
-            let hm = self
-                .host_module
-                .take()
-                .unwrap_or(create_host_module(py)?.to_object(py));
-            let host_module = hm.downcast::<PyModule>(py)?;
-            let globals = [("host", host_module)].into_py_dict(py);
-            let locals = [("state", state), ("buffer", pybuf), ("events", events)].into_py_dict(py);
+                .unwrap_or(PyNone::get(py).into_bound_py_any(py).unwrap().into());
+            let hm = self.host_module.take().unwrap_or(
+                create_host_module(py)?
+                    .into_bound_py_any(py)
+                    .unwrap()
+                    .into(),
+            );
+            //let host_module = hm.downcast::<PyModule>(py)?;
+            let host_module = hm;
+            let globals = [("host", &host_module)].into_py_dict(py).unwrap();
+            let locals = [
+                ("state", state),
+                ("buffer", pybuf.into()),
+                ("events", events.into()),
+                ("transport", transport.into()),
+            ]
+            .into_py_dict(py)
+            .unwrap();
 
             let time = std::time::Instant::now();
-            py.run(source.text.as_str(), Some(globals), Some(locals))?;
-            let result: &PyAny = py.eval(
-                "process(state, buffer, events)",
-                Some(globals),
-                Some(locals),
+            let source_text: CString = CString::new(source.text.as_str()).unwrap();
+            let source_text: &CStr = source_text.as_c_str();
+            py.run(source_text, Some(&globals), Some(&locals))?;
+            let result: Bound<'_, PyAny> = py.eval(
+                c_str!("process(state, buffer, events, transport)"),
+                Some(&globals),
+                Some(&locals),
             )?;
             let d = time.elapsed();
             self.host_module = Some(host_module.into());
 
-            let result: Result<PythonProcessResult, PyErr> = result.extract();
+            let result: Result<PythonProcessResult, PyErr> = result.unbind().extract(py);
 
             Ok((result?, d))
         });

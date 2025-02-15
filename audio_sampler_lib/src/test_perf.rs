@@ -21,7 +21,6 @@ mod test {
                     attack_samples: 0,
                     decay_samples: 0,
                     loop_length: TimeOrRatio::Ratio(1.0),
-                    recording_mode: RecordingMode::NoteTriggered,
                     ..Params::default()
                 },
                 output: vec![],
@@ -68,7 +67,7 @@ mod test {
             self.sampler.stop_playing(Note::new(note, 0), &self.params);
         }
         pub fn start_recording(&mut self) {
-            self.sampler.start_recording(&self.params);
+            self.sampler.start_recording();
         }
         pub fn stop_recording(&mut self) {
             self.sampler.stop_recording(&self.params);

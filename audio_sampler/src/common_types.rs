@@ -1,8 +1,8 @@
+use audio_sampler_lib::common_types::{LoopMode, NoteOffBehaviour, VersionedWaveformSummary};
+use audio_sampler_lib::sampler::VoiceInfo;
+use nih_plug::prelude::Enum;
 use std::convert::TryInto;
 use std::sync::Arc;
-use nih_plug::prelude::Enum;
-use audio_sampler_lib::common_types::{LoopMode, NoteOffBehaviour, RecordingMode, VersionedWaveformSummary};
-use audio_sampler_lib::sampler::VoiceInfo;
 
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum MIDIChannelParam {
@@ -118,23 +118,6 @@ impl From<NoteOffBehaviourParam> for NoteOffBehaviour {
     }
 }
 
-impl From<RecordingModeParam> for RecordingMode {
-    fn from(param: RecordingModeParam) -> Self {
-        match param {
-            RecordingModeParam::NoteTriggered => RecordingMode::NoteTriggered,
-            RecordingModeParam::AlwaysOn => RecordingMode::AlwaysOn,
-        }
-    }
-}
-
-#[derive(Debug, Enum, PartialEq, Clone, Copy)]
-pub enum RecordingModeParam {
-    #[name = "Only when C-2 is on"]
-    NoteTriggered,
-    #[name = "Always (last bar)"]
-    AlwaysOn,
-}
-
 #[derive(Debug, Enum, PartialEq, Clone, Copy)]
 pub enum TimeOrRatioUnitParam {
     #[name = "1/16 notes"]
@@ -144,7 +127,6 @@ pub enum TimeOrRatioUnitParam {
     #[name = "Percentage of length"]
     Ratio,
 }
-
 
 #[derive(Clone, Default, Debug)]
 pub struct Info {
@@ -159,10 +141,3 @@ impl Default for NoteOffBehaviourParam {
         NoteOffBehaviourParam::DecayAndZeroCrossing
     }
 }
-
-impl Default for RecordingModeParam {
-    fn default() -> Self {
-        RecordingModeParam::NoteTriggered
-    }
-}
-
