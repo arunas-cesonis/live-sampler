@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use crate::params::{ModeParam, PyO3PluginParams2};
+use crate::utils::{RuntimeStats, Status, UICommand};
 use nih_plug::editor::Editor;
 use nih_plug::params::Param;
 use nih_plug_vizia::assets::register_noto_sans_bold;
@@ -8,14 +10,10 @@ use nih_plug_vizia::widgets::param_base::ParamWidgetBase;
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
-use crate::params::{ModeParam, PyO3PluginParams2};
-use crate::utils::{RuntimeStats, Status, UICommand};
-
 #[derive(Clone, Lens)]
 pub struct Data {
     pub(crate) commands: Arc<crossbeam_channel::Sender<UICommand>>,
     pub(crate) params: Arc<PyO3PluginParams2>,
-    pub(crate) status: Status,
     pub(crate) status_out: Arc<parking_lot::Mutex<triple_buffer::Output<Status>>>,
     pub(crate) runtime_stats_out:
         Arc<parking_lot::Mutex<triple_buffer::Output<Option<RuntimeStats>>>>,
@@ -37,7 +35,7 @@ impl Model for Data {
         });
     }
 }
-const WINDOW_SIZE: (u32, u32) = (640, 640);
+const WINDOW_SIZE: (u32, u32) = (640, 800);
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub(crate) fn default_state() -> Arc<ViziaState> {
@@ -76,7 +74,6 @@ fn mode_button<'a>(cx: &'a mut Context, title: &'a str, mode: ModeParam) -> Hand
     )
     .top(Pixels(10.0))
 }
-
 pub(crate) fn create2(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         register_noto_sans_bold(cx);
@@ -107,12 +104,13 @@ pub(crate) fn create2(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<d
                         .width(Stretch(1.0))
                         .right(Pixels(10.0))
                         .on_edit(|ctx, s| ctx.emit(EditorEvent::UpdatePath(s.to_string())));
+
                         Label::new(cx, "File status").top(Pixels(10.0));
                         Label::new(
                             cx,
                             Data::status_out.map(|x| {
-                                let files_status = x.lock().read().file_status.clone();
-                                format!("{:?}", files_status)
+                                let file_status = x.lock().read().file_status.clone();
+                                format!("{:?}", file_status)
                             }),
                         )
                         .background_color(Color::white())
@@ -123,6 +121,7 @@ pub(crate) fn create2(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<d
                         .height(Pixels(30.0))
                         .width(Stretch(1.0))
                         .top(Pixels(10.0));
+
                         HStack::new(cx, |cx| {
                             Button::new(
                                 cx,

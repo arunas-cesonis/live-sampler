@@ -9,7 +9,7 @@ use nih_plug::prelude::*;
 use crate::event::PyO3NoteEvent;
 use crate::host::Host;
 use crate::params::{ModeParam, PyO3PluginParams2};
-use crate::source_state::{Source, SourceState};
+use crate::source_state::SourceState;
 use crate::utils::{note_event_timing, EvalStatus, RuntimeStats, Status, UICommand};
 
 mod editor_vizia;
@@ -90,10 +90,10 @@ impl PyO3Plugin {
     }
 
     fn load(&mut self) {
-        let fst = self.source_state.load_updated_path(
-            self.read_source_path(),
-            self.params.watch_source_path.value(),
-        );
+        let source_path = self.read_source_path();
+        let fst = self
+            .source_state
+            .load_updated_path(&source_path, self.params.watch_source_path.value());
         if !fst.is_loaded() {
             self.host.clear();
         }
@@ -130,20 +130,6 @@ impl PyO3Plugin {
             self.do_ui_command(cmd);
         }
     }
-}
-
-struct RunResult {
-    buffer: Vec<Vec<f32>>,
-    events: Vec<PyO3NoteEvent>,
-}
-
-struct RunParams {
-    now: usize,
-    sample_rate: f32,
-    buffer: Vec<Vec<f32>>,
-    events: Vec<PyO3NoteEvent>,
-    transport: transport::Transport,
-    source: Source,
 }
 
 impl Plugin for PyO3Plugin {
@@ -198,7 +184,6 @@ impl Plugin for PyO3Plugin {
             //source_path: self.params.source_path.clone(),
             commands: tx,
             params: self.params.clone(),
-            status: self.status_out.lock().read().clone(),
             status_out: self.status_out.clone(),
             runtime_stats_out: self.runtime_stats_out.clone(),
         };

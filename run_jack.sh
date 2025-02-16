@@ -1,5 +1,5 @@
 #!/bin/sh
-set -eu
+set -eux
 cargo build --package audio_sampler --release
 export DYLD_LIBRARY_PATH='/opt/homebrew/lib/'
-./target/release/audio-sampler --backend jack
+./target/release/pyo3_plugin --backend jack
