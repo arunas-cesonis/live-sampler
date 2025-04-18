@@ -105,6 +105,15 @@ pub(crate) fn create2(editor_state: Arc<ViziaState>, data: Data) -> Option<Box<d
                         .right(Pixels(10.0))
                         .on_edit(|ctx, s| ctx.emit(EditorEvent::UpdatePath(s.to_string())));
 
+                        Button::new(
+                            cx,
+                            |cx| {
+                                cx.emit(EditorEvent::UpdatePath("python/test.py".to_string()));
+                            },
+                            |cx| Label::new(cx, "python/test.py"),
+                        )
+                        .top(Pixels(10.0));
+
                         Label::new(cx, "File status").top(Pixels(10.0));
                         Label::new(
                             cx,
