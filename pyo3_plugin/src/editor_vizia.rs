@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::params::{ModeParam, PyO3PluginParams2};
+use crate::plugin_params::{ModeParam, PyO3PluginParams2};
 use crate::utils::{RuntimeStats, Status, UICommand};
 use nih_plug::editor::Editor;
 use nih_plug::params::Param;

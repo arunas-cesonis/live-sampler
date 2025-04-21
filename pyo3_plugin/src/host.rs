@@ -3,7 +3,10 @@ use std::ffi::{CStr, CString};
 use std::time::Duration;
 
 use crate::event::{add_pyo3_note_events, PyO3NoteEvent};
+use crate::run_params::RunResult;
+use crate::source_state::Source;
 use crate::utils::{EvalError, RuntimeStats};
+use crate::{transport, RunParams};
 use nih_plug::buffer::Buffer;
 use nih_plug::nih_log;
 use pyo3::ffi::c_str;
@@ -13,9 +16,6 @@ use pyo3::{
     pyfunction, wrap_pyfunction, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny,
     PyErr, Python,
 };
-
-use crate::source_state::Source;
-use crate::transport;
 
 #[pyfunction(name = "print")]
 #[pyo3(signature = (* args))]
@@ -94,34 +94,28 @@ impl Host {
         self.stats = None;
     }
 
-    pub fn run(
-        &mut self,
-        now: usize,
-        buffer: &mut Buffer,
-        events: Vec<PyO3NoteEvent>,
-        transport: &transport::Transport,
-        source: &Source,
-    ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
+    pub fn run(&mut self, rp: RunParams) -> RunResult {
         #[derive(FromPyObject)]
         struct PythonProcessResult(Py<PyAny>, Vec<Vec<f32>>, Vec<PyO3NoteEvent>);
 
         let mut frame_stats = FrameStats {
-            now,
-            sample_rate: transport.sample_rate,
+            now: rp.now,
+            sample_rate: rp.transport.sample_rate,
             d: Duration::from_secs(0),
-            events_to_pyo3: events.len(),
+            events_to_pyo3: rp.events.len(),
             events_from_pyo3: 0,
         };
 
-        let buf = buffer.as_slice();
+        let buf = rp.buffer.as_slice();
         let result = Python::with_gil(|py| -> Result<(PythonProcessResult, Duration), PyErr> {
             let tmp = buf.iter().map(|x| x.to_vec()).collect::<Vec<_>>();
             let pybuf: Bound<PyAny> = PyList::new(py, tmp).unwrap().into_bound_py_any(py).unwrap();
-            let events: Bound<PyAny> = PyList::new(py, events)
+            let events: Bound<PyAny> = PyList::new(py, rp.events)
                 .unwrap()
                 .into_bound_py_any(py)
                 .unwrap();
-            let transport: Bound<PyAny> = transport
+            let transport: Bound<PyAny> = rp
+                .transport
                 .into_pyobject(py)
                 .unwrap()
                 .into_bound_py_any(py)
@@ -149,7 +143,7 @@ impl Host {
             .unwrap();
 
             let time = std::time::Instant::now();
-            let source_text: CString = CString::new(source.text.as_str()).unwrap();
+            let source_text: CString = CString::new(rp.source.text.as_str()).unwrap();
             let source_text: &CStr = source_text.as_c_str();
             py.run(source_text, Some(&globals), Some(&locals))?;
             let result: Bound<'_, PyAny> = py.eval(
@@ -175,15 +169,14 @@ impl Host {
                 let stats = self.stats.as_mut().unwrap();
                 stats.record(frame_stats);
 
-                self.copyback_buffer(buffer, &in_buffer)?;
                 self.python_state = Some(new_state);
-                Ok(events)
+                Ok((in_buffer, events))
             }
             Err(e) => Err(EvalError::PythonError(e.to_string())),
         }
     }
 
-    fn copyback_buffer(&self, buf: &mut Buffer, result: &[Vec<f32>]) -> Result<(), EvalError> {
+    pub fn copyback_buffer(buf: &mut Buffer, result: &[Vec<f32>]) -> Result<(), EvalError> {
         let nc = buf.channels();
         let ns = buf.samples();
         if nc != result.len() {

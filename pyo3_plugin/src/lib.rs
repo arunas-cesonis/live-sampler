@@ -8,14 +8,15 @@ use nih_plug::prelude::*;
 
 use crate::event::PyO3NoteEvent;
 use crate::host::Host;
-use crate::params::{ModeParam, PyO3PluginParams2};
-use crate::source_state::SourceState;
+use crate::plugin_params::{ModeParam, PyO3PluginParams2};
+use crate::source_state::{Source, SourceState};
 use crate::utils::{note_event_timing, EvalStatus, RuntimeStats, Status, UICommand};
 
 mod editor_vizia;
 pub mod event;
 mod host;
-mod params;
+mod plugin_params;
+mod run_params;
 mod source_path;
 mod source_state;
 mod transport;
@@ -37,6 +38,10 @@ pub struct PyO3Plugin {
     status: Status,
     source_state: SourceState,
     host: Host,
+    background_task: Option<(
+        crossbeam_channel::Sender<RunParams>,
+        crossbeam_channel::Receiver<RunResult>,
+    )>,
 }
 
 // unsafe impl Send for PyO3Plugin {}
@@ -59,9 +64,20 @@ impl Default for PyO3Plugin {
             source_state: SourceState::Empty,
             status: Status::default(),
             host: Host::default(),
+            background_task: None,
         }
     }
 }
+
+pub struct RunParams {
+    now: usize,
+    buffer: Vec<Vec<f32>>,
+    events: Vec<PyO3NoteEvent>,
+    transport: transport::Transport,
+    source: Source,
+}
+
+pub struct RunResult {}
 
 impl PyO3Plugin {
     fn publish_status(&mut self) {
@@ -158,19 +174,10 @@ impl Plugin for PyO3Plugin {
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
     type SysExMessage = SysEx;
 
-    // now: usize,
-    // sample_rate: f32,
-    // buffer: &mut Buffer,
-    // events: Vec<PyO3NoteEvent>,
-    // transport: &transport::Transport,
-    // source: &Source,
-    // ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
-
-    type BackgroundTask = ();
-    //type BackgroundTask = (
-    //    crossbeam_channel::Sender<RunParams>,
-    //    crossbeam_channel::Receiver<RunResult>,
-    //);
+    type BackgroundTask = (
+        crossbeam_channel::Receiver<RunParams>,
+        crossbeam_channel::Sender<RunResult>,
+    );
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
@@ -208,6 +215,14 @@ impl Plugin for PyO3Plugin {
         self.host.clear();
     }
 
+    fn task_executor(&mut self) -> TaskExecutor<Self> {
+        Box::new(
+            |(rx_params, tx_result)| {
+                while let Ok(params) = rx_params.recv() {}
+            },
+        )
+    }
+
     fn process(
         &mut self,
         buffer: &mut Buffer,
@@ -237,17 +252,26 @@ impl Plugin for PyO3Plugin {
                     pos_beats: ctx_transport.pos_beats(),
                     bar_number: ctx_transport.bar_number(),
                 };
-                let result = self.host.run(self.now, buffer, events, &transport, source);
+                let params = RunParams {
+                    now: self.now,
+                    buffer: buffer
+                        .as_slice()
+                        .iter()
+                        .map(|x| x.to_vec())
+                        .collect::<Vec<_>>(),
+                    events,
+                    transport,
+                    source: source.clone(),
+                };
+                let result = self.host.run(params);
                 match result {
-                    Ok(processed_events) => {
+                    Ok((in_buffer, processed_events)) => {
                         processed_events.into_iter().for_each(|e| {
                             let e: NoteEvent<()> = e.into();
-                            assert!(
-                                note_event_timing(&e).unwrap()
-                                    < buffer.samples().try_into().unwrap()
-                            );
+                            assert!(note_event_timing(&e).unwrap() < in_buffer[0].len() as u32);
                             context.send_event(e);
                         });
+                        Host::copyback_buffer(buffer, &in_buffer);
                         if self.status.eval_status != EvalStatus::Ok {
                             self.status.eval_status = EvalStatus::Ok;
                             self.publish_status();
