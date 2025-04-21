@@ -97,19 +97,17 @@ impl Host {
     pub fn run(
         &mut self,
         now: usize,
-        sample_rate: f32,
         buffer: &mut Buffer,
         events: Vec<PyO3NoteEvent>,
         transport: &transport::Transport,
         source: &Source,
     ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
-        assert!(sample_rate > 0.0);
         #[derive(FromPyObject)]
         struct PythonProcessResult(Py<PyAny>, Vec<Vec<f32>>, Vec<PyO3NoteEvent>);
 
         let mut frame_stats = FrameStats {
             now,
-            sample_rate,
+            sample_rate: transport.sample_rate,
             d: Duration::from_secs(0),
             events_to_pyo3: events.len(),
             events_from_pyo3: 0,

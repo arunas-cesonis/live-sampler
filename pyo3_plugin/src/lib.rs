@@ -221,7 +221,6 @@ impl Plugin for PyO3Plugin {
         self.check_watcher();
 
         if let Some(source) = self.source_state.get_source() {
-            let sample_rate = self.sample_rate.unwrap();
             if mode == ModeParam::Run && !self.status.eval_status.is_error() {
                 let mut events: Vec<PyO3NoteEvent> = vec![];
                 while let Some(next_event) = context.next_event() {
@@ -238,9 +237,7 @@ impl Plugin for PyO3Plugin {
                     pos_beats: ctx_transport.pos_beats(),
                     bar_number: ctx_transport.bar_number(),
                 };
-                let result =
-                    self.host
-                        .run(self.now, sample_rate, buffer, events, &transport, source);
+                let result = self.host.run(self.now, buffer, events, &transport, source);
                 match result {
                     Ok(processed_events) => {
                         processed_events.into_iter().for_each(|e| {
@@ -263,7 +260,8 @@ impl Plugin for PyO3Plugin {
                 };
                 if self.params.editor_state.is_open()
                     && self.now - self.stats_updated
-                        >= (self.stats_update_every.as_secs_f64() * sample_rate as f64) as usize
+                        >= (self.stats_update_every.as_secs_f64() * transport.sample_rate as f64)
+                            as usize
                 {
                     self.stats_updated = self.now;
                     self.publish_stats();
