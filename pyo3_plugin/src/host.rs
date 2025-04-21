@@ -3,7 +3,7 @@ use std::ffi::{CStr, CString};
 use std::time::Duration;
 
 use crate::event::{add_pyo3_note_events, PyO3NoteEvent};
-use crate::run_params::RunResult;
+use crate::run_params::{RunOutput, RunResult};
 use crate::source_state::Source;
 use crate::utils::{EvalError, RuntimeStats};
 use crate::{transport, RunParams};
@@ -170,7 +170,10 @@ impl Host {
                 stats.record(frame_stats);
 
                 self.python_state = Some(new_state);
-                Ok((in_buffer, events))
+                Ok(RunOutput {
+                    buffer: in_buffer,
+                    events,
+                })
             }
             Err(e) => Err(EvalError::PythonError(e.to_string())),
         }

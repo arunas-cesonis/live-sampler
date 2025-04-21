@@ -10,4 +10,9 @@ pub struct RunParams {
     pub source: Source,
 }
 
-pub type RunResult = Result<(Vec<Vec<f32>>, Vec<PyO3NoteEvent>), EvalError>;
+pub struct RunOutput {
+    pub buffer: Vec<Vec<f32>>,
+    pub events: Vec<PyO3NoteEvent>,
+}
+
+pub type RunResult = Result<RunOutput, EvalError>;

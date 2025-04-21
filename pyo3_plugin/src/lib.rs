@@ -9,6 +9,7 @@ use nih_plug::prelude::*;
 use crate::event::PyO3NoteEvent;
 use crate::host::Host;
 use crate::plugin_params::{ModeParam, PyO3PluginParams2};
+use crate::run_params::RunOutput;
 use crate::source_state::{Source, SourceState};
 use crate::utils::{note_event_timing, EvalStatus, RuntimeStats, Status, UICommand};
 
@@ -265,16 +266,29 @@ impl Plugin for PyO3Plugin {
                 };
                 let result = self.host.run(params);
                 match result {
-                    Ok((in_buffer, processed_events)) => {
-                        processed_events.into_iter().for_each(|e| {
-                            let e: NoteEvent<()> = e.into();
-                            assert!(note_event_timing(&e).unwrap() < in_buffer[0].len() as u32);
-                            context.send_event(e);
-                        });
-                        Host::copyback_buffer(buffer, &in_buffer);
-                        if self.status.eval_status != EvalStatus::Ok {
-                            self.status.eval_status = EvalStatus::Ok;
-                            self.publish_status();
+                    Ok(RunOutput {
+                        buffer: in_buffer,
+                        events: processed_events,
+                    }) => {
+                        let result = Host::copyback_buffer(buffer, &in_buffer);
+                        match result {
+                            Ok(()) => {
+                                processed_events.into_iter().for_each(|e| {
+                                    let e: NoteEvent<()> = e.into();
+                                    assert!(
+                                        note_event_timing(&e).unwrap() < in_buffer[0].len() as u32
+                                    );
+                                    context.send_event(e);
+                                });
+                                if self.status.eval_status != EvalStatus::Ok {
+                                    self.status.eval_status = EvalStatus::Ok;
+                                    self.publish_status();
+                                }
+                            }
+                            Err(e) => {
+                                self.status.eval_status = EvalStatus::Error(e);
+                                self.publish_status();
+                            }
                         }
                     }
                     Err(e) => {
