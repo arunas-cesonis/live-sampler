@@ -1,17 +1,21 @@
 extern crate core;
 
-use std::num::NonZeroU32;
-use std::sync::Arc;
-use std::time::Duration;
-
-use nih_plug::prelude::*;
-
+use crate::config_file::ConfigFile;
 use crate::event::PyO3NoteEvent;
 use crate::host::Host;
 use crate::params::{ModeParam, PyO3PluginParams2};
+use crate::source_path::PersistedSourcePath;
 use crate::source_state::{Source, SourceState};
-use crate::utils::{note_event_timing, EvalStatus, RuntimeStats, Status, UICommand};
+use crate::utils::{note_event_timing, EvalError, EvalStatus, RuntimeStats, Status, UICommand};
+use crossbeam_channel::internal::SelectHandle;
+use nih_plug::params::persist::PersistentField;
+use nih_plug::prelude::*;
+use std::num::NonZeroU32;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
+mod config_file;
 mod editor_vizia;
 pub mod event;
 mod host;
@@ -22,6 +26,41 @@ mod transport;
 mod utils;
 
 type SysEx = ();
+
+#[derive(Debug)]
+pub enum HostMessage {
+    Run(RunParams),
+    Clear,
+}
+
+#[derive(Debug)]
+pub struct RunParams {
+    pub now: usize,
+    pub sample_rate: f32,
+    pub buffer: Vec<Vec<f32>>,
+    pub events: Vec<PyO3NoteEvent>,
+    pub transport: transport::Transport,
+    pub source: Source,
+}
+
+#[derive(Debug)]
+pub struct RunOutput {
+    pub events: Vec<PyO3NoteEvent>,
+    pub buffer: Vec<Vec<f32>>,
+    pub runtime_stats: Option<RuntimeStats>,
+}
+
+pub type RunResult = Result<RunOutput, EvalError>;
+
+struct Runner {
+    tx: crossbeam_channel::Sender<HostMessage>,
+    rx: crossbeam_channel::Receiver<RunResult>,
+}
+
+pub struct RunnerTask {
+    tx: crossbeam_channel::Sender<RunResult>,
+    rx: crossbeam_channel::Receiver<HostMessage>,
+}
 
 pub struct PyO3Plugin {
     sample_rate: Option<f32>,
@@ -36,7 +75,8 @@ pub struct PyO3Plugin {
     stats_update_every: Duration,
     status: Status,
     source_state: SourceState,
-    host: Host,
+    runner: Option<Runner>,
+    last_stats: Option<RuntimeStats>,
 }
 
 // unsafe impl Send for PyO3Plugin {}
@@ -58,19 +98,21 @@ impl Default for PyO3Plugin {
             stats_update_every: Duration::from_secs(1),
             source_state: SourceState::Empty,
             status: Status::default(),
-            host: Host::default(),
+            runner: None,
+            last_stats: None,
         }
     }
 }
 
 impl PyO3Plugin {
+    fn clear_host(&mut self) {
+        self.runner = None;
+    }
     fn publish_status(&mut self) {
         self.status_in.lock().write(self.status.clone());
     }
     fn publish_stats(&mut self) {
-        self.runtime_stats_in
-            .lock()
-            .write(self.host.runtime_stats().cloned());
+        self.runtime_stats_in.lock().write(self.last_stats.clone());
     }
 
     fn read_source_path(&self) -> String {
@@ -90,12 +132,14 @@ impl PyO3Plugin {
     }
 
     fn load(&mut self) {
-        let fst = self.source_state.load_updated_path(
-            self.read_source_path(),
-            self.params.watch_source_path.value(),
-        );
+        let source_path = self.read_source_path();
+        let fst = self
+            .source_state
+            .load_updated_path(&source_path, self.params.watch_source_path.value());
         if !fst.is_loaded() {
-            self.host.clear();
+            self.clear_host();
+        } else {
+            ConfigFile::store_last_loaded(&source_path);
         }
         self.status.eval_status = EvalStatus::NotExecuted;
         self.status.file_status = fst;
@@ -109,7 +153,7 @@ impl PyO3Plugin {
                 self.load();
             }
             UICommand::Reset => {
-                self.host.clear();
+                self.clear_host();
                 self.status.eval_status = EvalStatus::NotExecuted;
                 self.publish_status();
             }
@@ -130,20 +174,6 @@ impl PyO3Plugin {
             self.do_ui_command(cmd);
         }
     }
-}
-
-struct RunResult {
-    buffer: Vec<Vec<f32>>,
-    events: Vec<PyO3NoteEvent>,
-}
-
-struct RunParams {
-    now: usize,
-    sample_rate: f32,
-    buffer: Vec<Vec<f32>>,
-    events: Vec<PyO3NoteEvent>,
-    transport: transport::Transport,
-    source: Source,
 }
 
 impl Plugin for PyO3Plugin {
@@ -180,11 +210,7 @@ impl Plugin for PyO3Plugin {
     // source: &Source,
     // ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
 
-    type BackgroundTask = ();
-    //type BackgroundTask = (
-    //    crossbeam_channel::Sender<RunParams>,
-    //    crossbeam_channel::Receiver<RunResult>,
-    //);
+    type BackgroundTask = RunnerTask;
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
@@ -198,7 +224,6 @@ impl Plugin for PyO3Plugin {
             //source_path: self.params.source_path.clone(),
             commands: tx,
             params: self.params.clone(),
-            status: self.status_out.lock().read().clone(),
             status_out: self.status_out.clone(),
             runtime_stats_out: self.runtime_stats_out.clone(),
         };
@@ -213,6 +238,11 @@ impl Plugin for PyO3Plugin {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = Some(buffer_config.sample_rate);
+        if self.params.source_path.0.lock().is_empty() {
+            if let Some(path) = ConfigFile::restore_last_loaded() {
+                self.params.source_path.set(path);
+            }
+        }
         if !self.params.source_path.0.lock().is_empty() {
             self.load();
         }
@@ -220,7 +250,39 @@ impl Plugin for PyO3Plugin {
     }
 
     fn reset(&mut self) {
-        self.host.clear();
+        self.clear_host();
+    }
+
+    fn task_executor(&mut self) -> TaskExecutor<Self> {
+        Box::new(|task| {
+            let mut host = Host::default();
+            while let Ok(msg) = task.rx.recv() {
+                let rr = match msg {
+                    HostMessage::Clear => host.clear(),
+                    HostMessage::Run(run_params) => {
+                        let rr = host.run2(
+                            run_params.now,
+                            run_params.sample_rate,
+                            run_params.buffer,
+                            run_params.events,
+                            run_params.transport,
+                            run_params.source,
+                        );
+                        if !task.tx.is_ready() {
+                            return;
+                        }
+                        let sent = match rr {
+                            Ok((events, buffer)) => task.tx.send(Ok(RunOutput {
+                                events,
+                                buffer,
+                                runtime_stats: host.runtime_stats().cloned(),
+                            })),
+                            Err(e) => task.tx.send(Err(e)),
+                        };
+                    }
+                };
+            }
+        })
     }
 
     fn process(
@@ -234,6 +296,14 @@ impl Plugin for PyO3Plugin {
         let mode = self.params.mode.value();
         self.recv_and_do_ui_commands();
         self.check_watcher();
+        if self.runner.is_none() {
+            let (tx1, rx1) = crossbeam_channel::bounded(0);
+            let (tx2, rx2) = crossbeam_channel::bounded(0);
+            let task = RunnerTask { tx: tx1, rx: rx2 };
+            context.execute_background(task);
+            self.runner = Some(Runner { tx: tx2, rx: rx1 });
+        }
+        let runner = self.runner.as_ref().unwrap();
 
         if let Some(source) = self.source_state.get_source() {
             let sample_rate = self.sample_rate.unwrap();
@@ -253,9 +323,38 @@ impl Plugin for PyO3Plugin {
                     pos_beats: ctx_transport.pos_beats(),
                     bar_number: ctx_transport.bar_number(),
                 };
-                let result =
-                    self.host
-                        .run(self.now, sample_rate, buffer, events, &transport, source);
+                runner.tx.send(HostMessage::Run(RunParams {
+                    now: self.now,
+                    sample_rate,
+                    buffer: buffer
+                        .as_slice_immutable()
+                        .iter()
+                        .map(|s| s.to_vec())
+                        .collect(),
+                    events: events.clone(),
+                    transport: transport.clone(),
+                    source: source.clone(),
+                }));
+
+                let result = match runner.rx.recv() {
+                    Ok(Ok(r)) => {
+                        self.last_stats = r.runtime_stats;
+                        match Host::copyback_buffer(buffer, &r.buffer) {
+                            Ok(()) => Ok(r.events),
+                            Err(e) => Err(e),
+                        }
+                    }
+                    Ok(Err(e)) => Err(e),
+                    Err(_) => {
+                        self.runner = None;
+                        Err(EvalError::OtherError("channel recv failed".to_string()))
+                    }
+                };
+
+                // let result =
+                //     self.host
+                //         .run(self.now, sample_rate, buffer, events, &transport, source);
+
                 match result {
                     Ok(processed_events) => {
                         processed_events.into_iter().for_each(|e| {

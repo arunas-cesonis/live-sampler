@@ -1,14 +1,16 @@
-def process(state, buf, events):
-  if state is None:
-    state = {"prev": [0] * len(buf)}
-  for j in range(len(buf)):
-    prev = state["prev"][j]
-    
-    for i in range(1, len(buf[j])):
-      cur = buf[j][i]
-      buf[j][i] = (prev + cur) * 0.5
-      prev = cur
-    state["prev"][j] = prev
+def process(state, buf, events, transport):
+    class State:
+        def __init__(self):
+            self.prev = []
 
-  return (state, buf, events)
-
+    if state is None:
+        state = State()
+    for c in range(len(buf)):
+        if len(state.prev) <= c:
+            state.prev.append([])
+        for i in range(len(buf[c])):
+            if len(state.prev[c]) <= i:
+                state.prev[c].append(0.0)
+            buf[c][i] = buf[c][i] * 0.5 + state.prev[c][i] * 0.5
+            state.prev[c][i] = buf[c][i]
+    return (state, buf, events)

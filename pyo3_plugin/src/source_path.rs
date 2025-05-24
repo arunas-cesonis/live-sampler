@@ -5,7 +5,13 @@ use std::sync::Arc;
 pub struct PersistedSourcePath(pub Arc<parking_lot::Mutex<String>>);
 impl Default for PersistedSourcePath {
     fn default() -> Self {
-        Self(Arc::new(parking_lot::Mutex::new("".to_string())))
+        Self::from_str("")
+    }
+}
+
+impl PersistedSourcePath {
+    pub fn from_str(s: &str) -> PersistedSourcePath {
+        Self(Arc::new(parking_lot::Mutex::new(s.to_string())))
     }
 }
 
