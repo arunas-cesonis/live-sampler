@@ -1,17 +1,20 @@
 extern crate core;
 
-use std::num::NonZeroU32;
-use std::sync::Arc;
-use std::time::Duration;
-
-use nih_plug::prelude::*;
-
+use crate::config_file::ConfigFile;
 use crate::event::PyO3NoteEvent;
 use crate::host::Host;
 use crate::params::{ModeParam, PyO3PluginParams2};
-use crate::source_state::SourceState;
-use crate::utils::{note_event_timing, EvalStatus, RuntimeStats, Status, UICommand};
+use crate::source_path::PersistedSourcePath;
+use crate::source_state::{Source, SourceState};
+use crate::utils::{note_event_timing, EvalError, EvalStatus, RuntimeStats, Status, UICommand};
+use nih_plug::params::persist::PersistentField;
+use nih_plug::prelude::*;
+use std::num::NonZeroU32;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
+mod config_file;
 mod editor_vizia;
 pub mod event;
 mod host;
@@ -22,6 +25,27 @@ mod transport;
 mod utils;
 
 type SysEx = ();
+
+pub struct RunParams {
+    pub now: usize,
+    pub sample_rate: f32,
+    pub buffer: Vec<Vec<f32>>,
+    pub events: Vec<PyO3NoteEvent>,
+    pub transport: transport::Transport,
+    pub source: Source,
+}
+
+pub type RunResult = Result<Vec<PyO3NoteEvent>, EvalError>;
+
+struct Runner {
+    tx: crossbeam_channel::Sender<RunParams>,
+    rx: crossbeam_channel::Receiver<RunResult>,
+}
+
+pub struct RunnerTask {
+    tx: crossbeam_channel::Sender<RunResult>,
+    rx: crossbeam_channel::Receiver<RunParams>,
+}
 
 pub struct PyO3Plugin {
     sample_rate: Option<f32>,
@@ -37,6 +61,7 @@ pub struct PyO3Plugin {
     status: Status,
     source_state: SourceState,
     host: Host,
+    runner: Option<Runner>,
 }
 
 // unsafe impl Send for PyO3Plugin {}
@@ -59,6 +84,7 @@ impl Default for PyO3Plugin {
             source_state: SourceState::Empty,
             status: Status::default(),
             host: Host::default(),
+            runner: None,
         }
     }
 }
@@ -96,6 +122,8 @@ impl PyO3Plugin {
             .load_updated_path(&source_path, self.params.watch_source_path.value());
         if !fst.is_loaded() {
             self.host.clear();
+        } else {
+            ConfigFile::store_last_loaded(&source_path);
         }
         self.status.eval_status = EvalStatus::NotExecuted;
         self.status.file_status = fst;
@@ -166,11 +194,7 @@ impl Plugin for PyO3Plugin {
     // source: &Source,
     // ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
 
-    type BackgroundTask = ();
-    //type BackgroundTask = (
-    //    crossbeam_channel::Sender<RunParams>,
-    //    crossbeam_channel::Receiver<RunResult>,
-    //);
+    type BackgroundTask = RunnerTask;
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
@@ -198,6 +222,11 @@ impl Plugin for PyO3Plugin {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = Some(buffer_config.sample_rate);
+        if self.params.source_path.0.lock().is_empty() {
+            if let Some(path) = ConfigFile::restore_last_loaded() {
+                self.params.source_path.set(path);
+            }
+        }
         if !self.params.source_path.0.lock().is_empty() {
             self.load();
         }
@@ -219,6 +248,14 @@ impl Plugin for PyO3Plugin {
         let mode = self.params.mode.value();
         self.recv_and_do_ui_commands();
         self.check_watcher();
+        if self.runner.is_none() {
+            let (tx1, rx1) = crossbeam_channel::bounded(0);
+            let (tx2, rx2) = crossbeam_channel::bounded(0);
+            let task = RunnerTask { tx: tx1, rx: rx2 };
+            context.execute_background(task);
+            self.runner = Some(Runner { tx: tx2, rx: rx1 });
+        }
+        let runner = self.runner.as_ref().unwrap();
 
         if let Some(source) = self.source_state.get_source() {
             let sample_rate = self.sample_rate.unwrap();
@@ -238,6 +275,18 @@ impl Plugin for PyO3Plugin {
                     pos_beats: ctx_transport.pos_beats(),
                     bar_number: ctx_transport.bar_number(),
                 };
+                runner.tx.send(RunParams {
+                    now: self.now,
+                    sample_rate,
+                    buffer: buffer
+                        .as_slice_immutable()
+                        .iter()
+                        .map(|s| s.to_vec())
+                        .collect(),
+                    events: events.clone(),
+                    transport: transport.clone(),
+                    source: source.clone(),
+                });
                 let result =
                     self.host
                         .run(self.now, sample_rate, buffer, events, &transport, source);

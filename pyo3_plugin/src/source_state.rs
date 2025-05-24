@@ -5,6 +5,7 @@ use notify::{RecommendedWatcher, Watcher};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+#[derive(Clone)]
 pub struct Source {
     pub(crate) text: String,
     pub(crate) time: Instant,
