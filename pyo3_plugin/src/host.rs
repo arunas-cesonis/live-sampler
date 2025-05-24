@@ -94,6 +94,109 @@ impl Host {
         self.stats = None;
     }
 
+    pub fn run2(
+        &mut self,
+        now: usize,
+        sample_rate: f32,
+        buffer: Vec<Vec<f32>>,
+        events: Vec<PyO3NoteEvent>,
+        transport: transport::Transport,
+        source: Source,
+    ) -> Result<(Vec<PyO3NoteEvent>, Vec<Vec<f32>>), EvalError> {
+        assert!(sample_rate > 0.0);
+        #[derive(FromPyObject)]
+        struct PythonProcessResult(Py<PyAny>, Vec<Vec<f32>>, Vec<PyO3NoteEvent>);
+
+        let mut frame_stats = FrameStats {
+            now,
+            sample_rate,
+            d: Duration::from_secs(0),
+            events_to_pyo3: events.len(),
+            events_from_pyo3: 0,
+        };
+
+        let buf = buffer.as_slice();
+        let result = Python::with_gil(|py| -> Result<(PythonProcessResult, Duration), PyErr> {
+            let tmp = buf.iter().map(|x| x.to_vec()).collect::<Vec<_>>();
+            let pybuf: Bound<PyAny> = PyList::new(py, tmp).unwrap().into_bound_py_any(py).unwrap();
+            let events: Bound<PyAny> = PyList::new(py, events)
+                .unwrap()
+                .into_bound_py_any(py)
+                .unwrap();
+            let transport: Bound<PyAny> = transport
+                .into_pyobject(py)
+                .unwrap()
+                .into_bound_py_any(py)
+                .unwrap();
+            let state: Py<PyAny> = self
+                .python_state
+                .take()
+                .unwrap_or(PyNone::get(py).into_bound_py_any(py).unwrap().into());
+            let hm = self.host_module.take().unwrap_or(
+                create_host_module(py)?
+                    .into_bound_py_any(py)
+                    .unwrap()
+                    .into(),
+            );
+            //let host_module = hm.downcast::<PyModule>(py)?;
+            let host_module = hm;
+            let globals = [("host", &host_module)].into_py_dict(py).unwrap();
+            let locals = [
+                ("state", state),
+                ("buffer", pybuf.into()),
+                ("events", events.into()),
+                ("transport", transport.into()),
+            ]
+            .into_py_dict(py)
+            .unwrap();
+
+            let time = std::time::Instant::now();
+            let source_text: CString = CString::new(source.text.as_str()).unwrap();
+            let source_text: &CStr = source_text.as_c_str();
+            py.run(source_text, Some(&globals), Some(&locals))?;
+            let result: Bound<'_, PyAny> = py.eval(
+                c_str!("process(state, buffer, events, transport)"),
+                Some(&globals),
+                Some(&locals),
+            )?;
+            let d = time.elapsed();
+            self.host_module = Some(host_module.into());
+
+            let result: Result<PythonProcessResult, PyErr> = result.unbind().extract(py);
+
+            Ok((result?, d))
+        });
+        match result {
+            Ok((PythonProcessResult(new_state, in_buffer, events), d)) => {
+                frame_stats.d = d;
+                frame_stats.events_from_pyo3 = events.len();
+
+                if self.stats.is_none() {
+                    self.stats = Some(Stats::default());
+                }
+                let stats = self.stats.as_mut().unwrap();
+                stats.record(frame_stats);
+
+                self.python_state = Some(new_state);
+
+                if (in_buffer.len() != buffer.len()) {
+                    return Err(Self::err_buffer_channels(buffer.len(), in_buffer.len()));
+                }
+                for i in 0..buffer.len() {
+                    if in_buffer[i].len() != buffer[i].len() {
+                        return Err(Self::err_buffer_samples(
+                            buffer[i].len(),
+                            in_buffer[i].len(),
+                            i,
+                        ));
+                    }
+                }
+                Ok((events, in_buffer))
+            }
+            Err(e) => Err(EvalError::PythonError(e.to_string())),
+        }
+    }
+
     pub fn run(
         &mut self,
         now: usize,
@@ -177,7 +280,7 @@ impl Host {
                 let stats = self.stats.as_mut().unwrap();
                 stats.record(frame_stats);
 
-                self.copyback_buffer(buffer, &in_buffer)?;
+                Self::copyback_buffer(buffer, &in_buffer)?;
                 self.python_state = Some(new_state);
                 Ok(events)
             }
@@ -185,15 +288,25 @@ impl Host {
         }
     }
 
-    fn copyback_buffer(&self, buf: &mut Buffer, result: &[Vec<f32>]) -> Result<(), EvalError> {
+    fn err_buffer_channels(expected: usize, actual: usize) -> EvalError {
+        EvalError::OtherError(format!(
+            "Number of channels returned from python ({}) does not match the buffer ({}):",
+            actual, expected
+        ))
+    }
+
+    fn err_buffer_samples(expected: usize, actual: usize, channel: usize) -> EvalError {
+        EvalError::OtherError(format!(
+            "Number of samples returned from python ({}) does not match the number of samples in the buffer ({}) at channel {}",
+            actual, expected, channel
+        ))
+    }
+
+    pub fn copyback_buffer(buf: &mut Buffer, result: &[Vec<f32>]) -> Result<(), EvalError> {
         let nc = buf.channels();
         let ns = buf.samples();
         if nc != result.len() {
-            return Err(EvalError::OtherError(format!(
-                "Number of channels returned from python ({}) does not match the buffer ({}):",
-                result.len(),
-                nc
-            )));
+            return Err(Self::err_buffer_channels(nc, result.len()));
         }
         if let Some((i, xlen)) = result.iter().enumerate().find_map(|(i, x)| {
             if x.len() != ns {
@@ -202,10 +315,7 @@ impl Host {
                 None
             }
         }) {
-            return Err(EvalError::OtherError(format!(
-                "Number of samples returned from python ({}) does not match the number of samples in the buffer ({}) at channel {}",
-                xlen, ns, i
-            )));
+            return Err(Self::err_buffer_samples(ns, xlen, i));
         }
         let sl = buf.as_slice();
         for i in 0..ns {

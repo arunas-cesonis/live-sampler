@@ -7,6 +7,7 @@ use crate::params::{ModeParam, PyO3PluginParams2};
 use crate::source_path::PersistedSourcePath;
 use crate::source_state::{Source, SourceState};
 use crate::utils::{note_event_timing, EvalError, EvalStatus, RuntimeStats, Status, UICommand};
+use crossbeam_channel::internal::SelectHandle;
 use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
 use std::num::NonZeroU32;
@@ -26,6 +27,13 @@ mod utils;
 
 type SysEx = ();
 
+#[derive(Debug)]
+pub enum HostMessage {
+    Run(RunParams),
+    Clear,
+}
+
+#[derive(Debug)]
 pub struct RunParams {
     pub now: usize,
     pub sample_rate: f32,
@@ -35,16 +43,23 @@ pub struct RunParams {
     pub source: Source,
 }
 
-pub type RunResult = Result<Vec<PyO3NoteEvent>, EvalError>;
+#[derive(Debug)]
+pub struct RunOutput {
+    pub events: Vec<PyO3NoteEvent>,
+    pub buffer: Vec<Vec<f32>>,
+    pub runtime_stats: Option<RuntimeStats>,
+}
+
+pub type RunResult = Result<RunOutput, EvalError>;
 
 struct Runner {
-    tx: crossbeam_channel::Sender<RunParams>,
+    tx: crossbeam_channel::Sender<HostMessage>,
     rx: crossbeam_channel::Receiver<RunResult>,
 }
 
 pub struct RunnerTask {
     tx: crossbeam_channel::Sender<RunResult>,
-    rx: crossbeam_channel::Receiver<RunParams>,
+    rx: crossbeam_channel::Receiver<HostMessage>,
 }
 
 pub struct PyO3Plugin {
@@ -60,8 +75,8 @@ pub struct PyO3Plugin {
     stats_update_every: Duration,
     status: Status,
     source_state: SourceState,
-    host: Host,
     runner: Option<Runner>,
+    last_stats: Option<RuntimeStats>,
 }
 
 // unsafe impl Send for PyO3Plugin {}
@@ -83,20 +98,21 @@ impl Default for PyO3Plugin {
             stats_update_every: Duration::from_secs(1),
             source_state: SourceState::Empty,
             status: Status::default(),
-            host: Host::default(),
             runner: None,
+            last_stats: None,
         }
     }
 }
 
 impl PyO3Plugin {
+    fn clear_host(&mut self) {
+        self.runner = None;
+    }
     fn publish_status(&mut self) {
         self.status_in.lock().write(self.status.clone());
     }
     fn publish_stats(&mut self) {
-        self.runtime_stats_in
-            .lock()
-            .write(self.host.runtime_stats().cloned());
+        self.runtime_stats_in.lock().write(self.last_stats.clone());
     }
 
     fn read_source_path(&self) -> String {
@@ -121,7 +137,7 @@ impl PyO3Plugin {
             .source_state
             .load_updated_path(&source_path, self.params.watch_source_path.value());
         if !fst.is_loaded() {
-            self.host.clear();
+            self.clear_host();
         } else {
             ConfigFile::store_last_loaded(&source_path);
         }
@@ -137,7 +153,7 @@ impl PyO3Plugin {
                 self.load();
             }
             UICommand::Reset => {
-                self.host.clear();
+                self.clear_host();
                 self.status.eval_status = EvalStatus::NotExecuted;
                 self.publish_status();
             }
@@ -234,7 +250,53 @@ impl Plugin for PyO3Plugin {
     }
 
     fn reset(&mut self) {
-        self.host.clear();
+        self.clear_host();
+    }
+
+    fn task_executor(&mut self) -> TaskExecutor<Self> {
+        Box::new(|task| {
+            let mut host = Host::default();
+            nih_warn!("ENTER");
+            while let Ok(msg) = task.rx.recv() {
+                let rr = match msg {
+                    HostMessage::Clear => {
+                        nih_warn!("RECV CLEAR");
+                        host.clear()
+                    }
+                    HostMessage::Run(run_params) => {
+                        nih_warn!("RECV RUN");
+                        let rr = host.run2(
+                            run_params.now,
+                            run_params.sample_rate,
+                            run_params.buffer,
+                            run_params.events,
+                            run_params.transport,
+                            run_params.source,
+                        );
+                        nih_warn!("RUN ok={:?}", rr.is_ok());
+                        if !task.tx.is_ready() {
+                            return;
+                        }
+                        let sent = match rr {
+                            Ok((events, buffer)) => task.tx.send(Ok(RunOutput {
+                                events,
+                                buffer,
+                                runtime_stats: host.runtime_stats().cloned(),
+                            })),
+                            Err(e) => task.tx.send(Err(e)),
+                        };
+                        nih_warn!("SENT");
+                        if sent.is_err() {
+                            nih_warn!("Send results failed: {:?}", sent);
+                        } else {
+                            nih_warn!("Replied {:?}", sent);
+                        }
+                    }
+                };
+                nih_warn!("RECEIVED");
+            }
+            nih_warn!("EXIT");
+        })
     }
 
     fn process(
@@ -275,7 +337,8 @@ impl Plugin for PyO3Plugin {
                     pos_beats: ctx_transport.pos_beats(),
                     bar_number: ctx_transport.bar_number(),
                 };
-                runner.tx.send(RunParams {
+                nih_warn!("A");
+                runner.tx.send(HostMessage::Run(RunParams {
                     now: self.now,
                     sample_rate,
                     buffer: buffer
@@ -286,10 +349,28 @@ impl Plugin for PyO3Plugin {
                     events: events.clone(),
                     transport: transport.clone(),
                     source: source.clone(),
-                });
-                let result =
-                    self.host
-                        .run(self.now, sample_rate, buffer, events, &transport, source);
+                }));
+
+                let result = match runner.rx.recv() {
+                    Ok(Ok(r)) => {
+                        self.last_stats = r.runtime_stats;
+                        match Host::copyback_buffer(buffer, &r.buffer) {
+                            Ok(()) => Ok(r.events),
+                            Err(e) => Err(e),
+                        }
+                    }
+                    Ok(Err(e)) => Err(e),
+                    Err(_) => {
+                        self.runner = None;
+                        Err(EvalError::OtherError("channel recv failed".to_string()))
+                    }
+                };
+
+                nih_warn!("B");
+                // let result =
+                //     self.host
+                //         .run(self.now, sample_rate, buffer, events, &transport, source);
+
                 match result {
                     Ok(processed_events) => {
                         processed_events.into_iter().for_each(|e| {
