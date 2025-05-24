@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 // 'time 'in this module is calculated as number of audio frames processed
 
+#[allow(unused)]
 pub struct Params {
     pub sample_rate: f32, // for better messaging / debugging purposes
     pub passthru: bool,
