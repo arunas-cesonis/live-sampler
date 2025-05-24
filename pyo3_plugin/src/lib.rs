@@ -4,14 +4,12 @@ use crate::config_file::ConfigFile;
 use crate::event::PyO3NoteEvent;
 use crate::host::Host;
 use crate::params::{ModeParam, PyO3PluginParams2};
-use crate::source_path::PersistedSourcePath;
 use crate::source_state::{Source, SourceState};
 use crate::utils::{note_event_timing, EvalError, EvalStatus, RuntimeStats, Status, UICommand};
 use crossbeam_channel::internal::SelectHandle;
 use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
 use std::num::NonZeroU32;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -257,10 +255,10 @@ impl Plugin for PyO3Plugin {
         Box::new(|task| {
             let mut host = Host::default();
             while let Ok(msg) = task.rx.recv() {
-                let rr = match msg {
+                match msg {
                     HostMessage::Clear => host.clear(),
                     HostMessage::Run(run_params) => {
-                        let rr = host.run2(
+                        let rr = host.run(
                             run_params.now,
                             run_params.sample_rate,
                             run_params.buffer,
@@ -279,6 +277,9 @@ impl Plugin for PyO3Plugin {
                             })),
                             Err(e) => task.tx.send(Err(e)),
                         };
+                        if sent.is_err() {
+                            return;
+                        }
                     }
                 };
             }
@@ -323,7 +324,7 @@ impl Plugin for PyO3Plugin {
                     pos_beats: ctx_transport.pos_beats(),
                     bar_number: ctx_transport.bar_number(),
                 };
-                runner.tx.send(HostMessage::Run(RunParams {
+                let sent = runner.tx.send(HostMessage::Run(RunParams {
                     now: self.now,
                     sample_rate,
                     buffer: buffer
@@ -335,25 +336,25 @@ impl Plugin for PyO3Plugin {
                     transport: transport.clone(),
                     source: source.clone(),
                 }));
-
-                let result = match runner.rx.recv() {
-                    Ok(Ok(r)) => {
-                        self.last_stats = r.runtime_stats;
-                        match Host::copyback_buffer(buffer, &r.buffer) {
-                            Ok(()) => Ok(r.events),
-                            Err(e) => Err(e),
+                let result = if sent.is_err() {
+                    Err(EvalError::OtherError("channel send failed".to_string()))
+                } else {
+                    let result = match runner.rx.recv() {
+                        Ok(Ok(r)) => {
+                            self.last_stats = r.runtime_stats;
+                            match Host::copyback_buffer(buffer, &r.buffer) {
+                                Ok(()) => Ok(r.events),
+                                Err(e) => Err(e),
+                            }
                         }
-                    }
-                    Ok(Err(e)) => Err(e),
-                    Err(_) => {
-                        self.runner = None;
-                        Err(EvalError::OtherError("channel recv failed".to_string()))
-                    }
+                        Ok(Err(e)) => Err(e),
+                        Err(_) => {
+                            self.runner = None;
+                            Err(EvalError::OtherError("channel recv failed".to_string()))
+                        }
+                    };
+                    result
                 };
-
-                // let result =
-                //     self.host
-                //         .run(self.now, sample_rate, buffer, events, &transport, source);
 
                 match result {
                     Ok(processed_events) => {

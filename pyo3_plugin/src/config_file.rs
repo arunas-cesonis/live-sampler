@@ -25,7 +25,7 @@ impl ConfigFile {
             let path = config_dir.join(".pyo3_plugin");
             let r = std::fs::write(&path, source_path);
             if let Err(e) = &r {
-                nih_warn!("Failed to write last loaded path at {:?}: {:?}", path, r);
+                nih_warn!("Failed to write last loaded path at {:?}: {:?}", path, e);
             } else {
                 nih_log!("Write last loaded path at {:?}: {:?}", path, source_path);
             }

@@ -94,7 +94,7 @@ impl Host {
         self.stats = None;
     }
 
-    pub fn run2(
+    pub fn run(
         &mut self,
         now: usize,
         sample_rate: f32,
@@ -179,7 +179,7 @@ impl Host {
 
                 self.python_state = Some(new_state);
 
-                if (in_buffer.len() != buffer.len()) {
+                if in_buffer.len() != buffer.len() {
                     return Err(Self::err_buffer_channels(buffer.len(), in_buffer.len()));
                 }
                 for i in 0..buffer.len() {
@@ -192,97 +192,6 @@ impl Host {
                     }
                 }
                 Ok((events, in_buffer))
-            }
-            Err(e) => Err(EvalError::PythonError(e.to_string())),
-        }
-    }
-
-    pub fn run(
-        &mut self,
-        now: usize,
-        sample_rate: f32,
-        buffer: &mut Buffer,
-        events: Vec<PyO3NoteEvent>,
-        transport: &transport::Transport,
-        source: &Source,
-    ) -> Result<Vec<PyO3NoteEvent>, EvalError> {
-        assert!(sample_rate > 0.0);
-        #[derive(FromPyObject)]
-        struct PythonProcessResult(Py<PyAny>, Vec<Vec<f32>>, Vec<PyO3NoteEvent>);
-
-        let mut frame_stats = FrameStats {
-            now,
-            sample_rate,
-            d: Duration::from_secs(0),
-            events_to_pyo3: events.len(),
-            events_from_pyo3: 0,
-        };
-
-        let buf = buffer.as_slice();
-        let result = Python::with_gil(|py| -> Result<(PythonProcessResult, Duration), PyErr> {
-            let tmp = buf.iter().map(|x| x.to_vec()).collect::<Vec<_>>();
-            let pybuf: Bound<PyAny> = PyList::new(py, tmp).unwrap().into_bound_py_any(py).unwrap();
-            let events: Bound<PyAny> = PyList::new(py, events)
-                .unwrap()
-                .into_bound_py_any(py)
-                .unwrap();
-            let transport: Bound<PyAny> = transport
-                .into_pyobject(py)
-                .unwrap()
-                .into_bound_py_any(py)
-                .unwrap();
-            let state: Py<PyAny> = self
-                .python_state
-                .take()
-                .unwrap_or(PyNone::get(py).into_bound_py_any(py).unwrap().into());
-            let hm = self.host_module.take().unwrap_or(
-                create_host_module(py)?
-                    .into_bound_py_any(py)
-                    .unwrap()
-                    .into(),
-            );
-            //let host_module = hm.downcast::<PyModule>(py)?;
-            let host_module = hm;
-            let globals = [("host", &host_module)].into_py_dict(py).unwrap();
-            let locals = [
-                ("state", state),
-                ("buffer", pybuf.into()),
-                ("events", events.into()),
-                ("transport", transport.into()),
-            ]
-            .into_py_dict(py)
-            .unwrap();
-
-            let time = std::time::Instant::now();
-            let source_text: CString = CString::new(source.text.as_str()).unwrap();
-            let source_text: &CStr = source_text.as_c_str();
-            py.run(source_text, Some(&globals), Some(&locals))?;
-            let result: Bound<'_, PyAny> = py.eval(
-                c_str!("process(state, buffer, events, transport)"),
-                Some(&globals),
-                Some(&locals),
-            )?;
-            let d = time.elapsed();
-            self.host_module = Some(host_module.into());
-
-            let result: Result<PythonProcessResult, PyErr> = result.unbind().extract(py);
-
-            Ok((result?, d))
-        });
-        match result {
-            Ok((PythonProcessResult(new_state, in_buffer, events), d)) => {
-                frame_stats.d = d;
-                frame_stats.events_from_pyo3 = events.len();
-
-                if self.stats.is_none() {
-                    self.stats = Some(Stats::default());
-                }
-                let stats = self.stats.as_mut().unwrap();
-                stats.record(frame_stats);
-
-                Self::copyback_buffer(buffer, &in_buffer)?;
-                self.python_state = Some(new_state);
-                Ok(events)
             }
             Err(e) => Err(EvalError::PythonError(e.to_string())),
         }
