@@ -256,15 +256,10 @@ impl Plugin for PyO3Plugin {
     fn task_executor(&mut self) -> TaskExecutor<Self> {
         Box::new(|task| {
             let mut host = Host::default();
-            nih_warn!("ENTER");
             while let Ok(msg) = task.rx.recv() {
                 let rr = match msg {
-                    HostMessage::Clear => {
-                        nih_warn!("RECV CLEAR");
-                        host.clear()
-                    }
+                    HostMessage::Clear => host.clear(),
                     HostMessage::Run(run_params) => {
-                        nih_warn!("RECV RUN");
                         let rr = host.run2(
                             run_params.now,
                             run_params.sample_rate,
@@ -273,7 +268,6 @@ impl Plugin for PyO3Plugin {
                             run_params.transport,
                             run_params.source,
                         );
-                        nih_warn!("RUN ok={:?}", rr.is_ok());
                         if !task.tx.is_ready() {
                             return;
                         }
@@ -285,17 +279,9 @@ impl Plugin for PyO3Plugin {
                             })),
                             Err(e) => task.tx.send(Err(e)),
                         };
-                        nih_warn!("SENT");
-                        if sent.is_err() {
-                            nih_warn!("Send results failed: {:?}", sent);
-                        } else {
-                            nih_warn!("Replied {:?}", sent);
-                        }
                     }
                 };
-                nih_warn!("RECEIVED");
             }
-            nih_warn!("EXIT");
         })
     }
 
@@ -337,7 +323,6 @@ impl Plugin for PyO3Plugin {
                     pos_beats: ctx_transport.pos_beats(),
                     bar_number: ctx_transport.bar_number(),
                 };
-                nih_warn!("A");
                 runner.tx.send(HostMessage::Run(RunParams {
                     now: self.now,
                     sample_rate,
@@ -366,7 +351,6 @@ impl Plugin for PyO3Plugin {
                     }
                 };
 
-                nih_warn!("B");
                 // let result =
                 //     self.host
                 //         .run(self.now, sample_rate, buffer, events, &transport, source);
